@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 import torch
 
-from .categories import CORE_CAMERA, CORE_CHARACTER, CORE_LAYOUT, INSPECT_COMPARE, INSPECT_DEBUG
+from ..categories import CORE_CAMERA, CORE_CHARACTER, CORE_LAYOUT, INSPECT_COMPARE, INSPECT_DEBUG
 
 try:
     import folder_paths  # type: ignore
