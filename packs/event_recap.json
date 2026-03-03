@@ -1,0 +1,24 @@
+{
+  "id": "pack_event_recap",
+  "name": "Pulse Event Recap",
+  "tags": ["Event", "Highlight", "Story"],
+  "description": "High-energy recap template covering venue, people, key moments, and social-ready wrap-up frames.",
+  "defaults": { "count": 10, "ratios": ["4:5", "9:16", "1:1"] },
+  "promptStyle": {
+    "base": "live event reportage, cinematic available light, layered crowd composition, expressive reactions, authentic documentary pacing",
+    "neg": "empty scenes, flat conference room lighting, staged stock-photo posing, waxy skin smoothing"
+  },
+  "shotList": [
+    "venue exterior establishing frame",
+    "arrival moment with attendees",
+    "crowd wide shot with atmosphere",
+    "speaker mid-shot with gesture",
+    "audience reaction close-up",
+    "detail shot of badges or signage",
+    "networking moment with depth",
+    "stage close-up with lighting accents",
+    "behind-the-scenes transition frame",
+    "after-event wrap shot"
+  ],
+  "export": { "type": "mixed", "zip": true, "filenamePattern": "pulse_recap_{index}" }
+}

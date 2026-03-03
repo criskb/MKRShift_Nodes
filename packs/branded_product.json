@@ -1,0 +1,22 @@
+{
+  "id": "pack_branded_product",
+  "name": "Commerce Product Playbook",
+  "tags": ["Product", "Ad", "Conversion"],
+  "description": "Conversion-focused product set balancing premium studio polish with contextual in-use storytelling.",
+  "defaults": { "count": 8, "ratios": ["4:5", "1:1"] },
+  "promptStyle": {
+    "base": "commercial product photography, controlled softbox lighting, crisp silhouette edges, tactile material detail, premium ecommerce finish",
+    "neg": "cluttered set design, distorted geometry, muddy focus, artificial text overlays, noisy low-light artifacts"
+  },
+  "shotList": [
+    "hero product shot with clean negative space",
+    "angled three-quarter showcase frame",
+    "macro material detail",
+    "benefit-focused in-use scenario",
+    "packaging and product composition",
+    "lifestyle context frame",
+    "comparison or feature isolation shot",
+    "closing conversion-ready hero"
+  ],
+  "export": { "type": "carousel", "zip": true, "filenamePattern": "commerce_{index}" }
+}
