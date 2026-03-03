@@ -1,0 +1,22 @@
+{
+  "id": "pack_social_dump",
+  "name": "After Hours Dump",
+  "tags": ["Carousel", "Lifestyle", "Mixed"],
+  "description": "Camera-roll style set with flash moments, texture, and intentional imperfection for social-first storytelling.",
+  "defaults": { "count": 12, "ratios": ["4:5", "1:1", "9:16"] },
+  "promptStyle": {
+    "base": "editorial lifestyle photography, candid framing, direct flash accents, natural skin texture, motion micro-blur, documentary social aesthetic",
+    "neg": "plastic skin, over-retouched beauty pass, sterile studio look, generic stock setup, heavy typography"
+  },
+  "shotList": [
+    "street-level opener with movement",
+    "tight detail of hands and objects",
+    "mirror or reflective portrait angle",
+    "on-camera flash moment in low light",
+    "food or drink texture close-up",
+    "friends-in-frame candid scene",
+    "environment context shot with depth",
+    "late-night closing frame"
+  ],
+  "export": { "type": "carousel", "zip": true, "filenamePattern": "afterhours_{index}" }
+}
