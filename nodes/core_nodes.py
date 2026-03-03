@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 import torch
 
-from .categories import CORE_CAMERA, CORE_CHARACTER, CORE_LAYOUT, INSPECT_COMPARE, INSPECT_DEBUG
+from ..categories import CORE_CAMERA, CORE_CHARACTER, CORE_LAYOUT, INSPECT_COMPARE, INSPECT_DEBUG
 
 try:
     import folder_paths  # type: ignore
@@ -18,9 +18,10 @@ except Exception:
     folder_paths = None
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+PACKAGE_ROOT = os.path.dirname(THIS_DIR)
 CONFIG_CANDIDATES = (
-    os.path.join(THIS_DIR, "config", "params.json"),
-    os.path.join(THIS_DIR, "web", "config", "params.json"),
+    os.path.join(PACKAGE_ROOT, "config", "params.json"),
+    os.path.join(PACKAGE_ROOT, "web", "config", "params.json"),
 )
 
 STYLE_PRESETS: Dict[str, Dict[str, List[str]]] = {
@@ -482,7 +483,7 @@ def _comfy_batch_to_pil_list(image: torch.Tensor) -> List[Image.Image]:
 def _temp_dir() -> str:
     if folder_paths and hasattr(folder_paths, "get_temp_directory"):
         return str(folder_paths.get_temp_directory())
-    fallback = os.path.join(THIS_DIR, ".temp")
+    fallback = os.path.join(PACKAGE_ROOT, ".temp")
     os.makedirs(fallback, exist_ok=True)
     return fallback
 

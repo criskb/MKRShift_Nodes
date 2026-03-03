@@ -7,17 +7,17 @@ import numpy as np
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 import torch
 
-from .categories import MEDIA_AUDIO_FX, MEDIA_AUDIO_UTILITY, MEDIA_VIDEO_FX, MEDIA_VIDEO_UTILITY, MEDIA_WATERMARK
-from .xmedia_batch1_nodes import (
+from ..categories import MEDIA_AUDIO_FX, MEDIA_AUDIO_UTILITY, MEDIA_VIDEO_FX, MEDIA_VIDEO_UTILITY, MEDIA_WATERMARK
+from .media_batch_video_nodes import (
     _build_video_payload,
     _decode_video_to_pil,
     _pil_to_tensor,
     _save_video_from_pil,
 )
-from .xmedia_batch2_nodes import _load_audio_waveform, _save_audio_result
-from .xmedia_nodes import _json_text, _make_video_payload, _read_video_metadata
-from .xpresave import _image_batch_to_pil, _output_dir, _resolve_output_file, _sanitize_basename
-from .xpresave_media import _extract_input_file, _safe_ext
+from .media_batch_transform_nodes import _load_audio_waveform, _save_audio_result
+from ..xmedia_nodes import _json_text, _make_video_payload, _read_video_metadata
+from ..xpresave import _image_batch_to_pil, _output_dir, _resolve_output_file, _sanitize_basename
+from ..xpresave_media import _extract_input_file, _safe_ext
 
 
 def _clamp_int(value: int, low: int, high: int) -> int:

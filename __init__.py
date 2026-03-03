@@ -73,7 +73,7 @@ from .xmedia_extra_nodes import (
     MKRSelectSceneRange,
     MKRTrimVideoByTime,
 )
-from .xmedia_batch1_nodes import (
+from .nodes.media_batch_video_nodes import (
     MKRAssembleFramesToVideo,
     MKRExtractVideoFrames,
     MKRFreezeFrame,
@@ -85,7 +85,7 @@ from .xmedia_batch1_nodes import (
     MKRVideoSpeedRamp,
     MKRVideoSplitAtTimes,
 )
-from .xmedia_batch2_nodes import (
+from .nodes.media_batch_transform_nodes import (
     MKRAudioGainPan,
     MKRAudioLimiter,
     MKRAudioResampleConvert,
@@ -97,7 +97,7 @@ from .xmedia_batch2_nodes import (
     MKRVideoRotateFlip,
     MKRVideoTemporalBlend,
 )
-from .xmedia_batch3_nodes import (
+from .nodes.media_batch_watermark_audio_nodes import (
     MKRAudioBitcrush,
     MKRAudioChannelRouter,
     MKRAudioEQ3Band,
@@ -109,7 +109,7 @@ from .xmedia_batch3_nodes import (
     MKRVideoGammaContrast,
     MKRVideoWatermark,
 )
-from .xmedia_batch4_nodes import (
+from .nodes.media_batch_analysis_nodes import (
     MKRAudioClippingDetector,
     MKRBlackFrameDetector,
     MKREDLExport,
@@ -121,7 +121,7 @@ from .xmedia_batch4_nodes import (
     MKRProxyTranscode,
     MKRQualityReport,
 )
-from .xmedia_batch5_nodes import (
+from .nodes.media_batch_cinematic_nodes import (
     MKRAutoReframeSubject,
     MKRDepthFog,
     MKRFilmGatePack,
@@ -133,7 +133,7 @@ from .xmedia_batch5_nodes import (
     MKRShotMatchColor,
     MKRTimeRemapCurve,
 )
-from .xmedia_batch6_nodes import (
+from .nodes.media_batch_audio_delivery_nodes import (
     MKRChapterMarkerGenerator,
     MKRCompressorGate,
     MKRDeEsser,
