@@ -162,6 +162,12 @@ _GENERIC_SHOTS = [
     "final result",
 ]
 
+_ROLE_SEQUENCES: Dict[str, List[str]] = {
+    "Carousel": ["hook", "detail", "benefit", "context", "proof", "cta"],
+    "Story": ["hook", "detail", "motion", "reaction", "cta"],
+    "Mixed": ["hero", "detail", "context", "offer", "proof", "cta"],
+}
+
 _PACKS_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
@@ -340,6 +346,31 @@ def _select_ratio(aspect: str, output_mode: str, platform: str, pack: Dict[str, 
     return _platform_value(platform).get("ratio_default", "4:5")
 
 
+def _build_ratio_plan(aspect: str, output_mode: str, platform: str, pack: Dict[str, Any], count: int) -> List[str]:
+    item_count = int(max(1, count))
+    explicit = str(aspect or "").strip()
+    if explicit and explicit != "Auto":
+        return [explicit] * item_count
+
+    pack_ratios = [str(r).strip() for r in pack.get("defaults", {}).get("ratios", []) if str(r).strip()]
+    if output_mode == "Story":
+        return ["9:16"] * item_count
+
+    if output_mode == "Mixed":
+        cycle = pack_ratios or [
+            _platform_value(platform).get("ratio_default", "4:5"),
+            "1:1",
+            "9:16",
+        ]
+        cycle = _dedupe_keep_order([ratio for ratio in cycle if ratio])
+        if not cycle:
+            cycle = ["4:5", "1:1", "9:16"]
+        return [cycle[idx % len(cycle)] for idx in range(item_count)]
+
+    chosen = pack_ratios[0] if pack_ratios else _platform_value(platform).get("ratio_default", "4:5")
+    return [str(chosen)] * item_count
+
+
 def _parse_start_date(value: str) -> date:
     text = str(value or "").strip()
     if not text:
@@ -359,15 +390,31 @@ def _parse_start_date(value: str) -> date:
         return date.today()
 
 
-def _build_shot_plan(pack: Dict[str, Any], count: int) -> List[Dict[str, Any]]:
+def _shot_role_for_index(index: int, count: int, output_mode: str) -> str:
+    key = output_mode if output_mode in _ROLE_SEQUENCES else "Mixed"
+    sequence = _ROLE_SEQUENCES[key]
+    if count <= 1:
+        return sequence[0]
+    if index == 0:
+        return sequence[0]
+    if index == count - 1:
+        return sequence[-1]
+    middle = sequence[1:-1] or sequence[:1]
+    return middle[(index - 1) % len(middle)]
+
+
+def _build_shot_plan(pack: Dict[str, Any], count: int, ratios: List[str], output_mode: str) -> List[Dict[str, Any]]:
     shots = [str(x).strip() for x in pack.get("shotList", []) if str(x).strip()] or list(_GENERIC_SHOTS)
     out: List[Dict[str, Any]] = []
     for idx in range(count):
         shot = shots[idx % len(shots)]
+        ratio = ratios[idx] if idx < len(ratios) else (ratios[0] if ratios else "4:5")
         out.append(
             {
                 "index": idx + 1,
                 "shot": shot,
+                "ratio": ratio,
+                "role": _shot_role_for_index(idx, count, output_mode),
                 "slot": f"item_{idx + 1:02d}",
             }
         )
@@ -790,10 +837,12 @@ class MKRshiftSocialPackBuilder:
         pack_id = str(pack_data.get("id", "missing_packs"))
 
         item_count = int(max(1, min(60, int(count))))
-        aspect_used = _select_ratio(aspect, output_mode, platform, pack_data)
+        ratio_plan = _build_ratio_plan(aspect, output_mode, platform, pack_data, item_count)
+        aspect_used = ratio_plan[0] if ratio_plan else _select_ratio(aspect, output_mode, platform, pack_data)
+        ratios_used = _dedupe_keep_order([str(r).strip() for r in ratio_plan if str(r).strip()])
         has_logo = brand_logo is not None
 
-        shot_plan = _build_shot_plan(pack_data, item_count)
+        shot_plan = _build_shot_plan(pack_data, item_count, ratio_plan, output_mode)
         hashtag_pool = _build_hashtag_pool(
             pack_tags=pack_data.get("tags", []),
             project_name=project_name,
@@ -809,13 +858,15 @@ class MKRshiftSocialPackBuilder:
 
         for idx, shot_item in enumerate(shot_plan):
             shot = shot_item.get("shot", "")
+            ratio = str(shot_item.get("ratio", aspect_used) or aspect_used)
+            role = str(shot_item.get("role", "") or "")
             hook = _build_hook(hook_style, idx, shot, product_name)
             hashtags = _build_hashtags(hashtag_pool, hashtag_mode, idx)
 
             prompt = _build_prompt(
                 pack=pack_data,
                 shot=shot,
-                ratio=aspect_used,
+                ratio=ratio,
                 output_mode=output_mode,
                 branding=branding,
                 caption_tone=caption_tone,
@@ -846,6 +897,8 @@ class MKRshiftSocialPackBuilder:
                 {
                     "index": idx + 1,
                     "shot": shot,
+                    "role": role,
+                    "ratio": ratio,
                     "hook": hook,
                     "prompt": prompt,
                     "negative": negative,
@@ -855,6 +908,10 @@ class MKRshiftSocialPackBuilder:
             )
 
         schedule = _build_schedule(item_count, start_date, platform)
+        for idx, item in enumerate(assets):
+            if idx < len(schedule) and isinstance(schedule[idx], dict):
+                item["publish_at_local"] = schedule[idx].get("publish_at_local", "")
+                item["platform"] = schedule[idx].get("platform", platform)
 
         warnings = _readiness_warnings(
             pack_missing=pack_missing,
@@ -886,6 +943,8 @@ class MKRshiftSocialPackBuilder:
                 "output_mode": output_mode,
                 "count": item_count,
                 "aspect": aspect_used,
+                "aspect_strategy": "per_asset_cycle" if len(ratios_used) > 1 else "uniform",
+                "ratios_used": ratios_used,
                 "branding": branding,
                 "seed_mode": seed_mode,
                 "hashtag_mode": hashtag_mode,

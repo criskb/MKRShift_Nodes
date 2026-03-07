@@ -8,6 +8,7 @@ from PIL import Image, ImageFilter
 import torch
 
 from .categories import UTILITY_MASK
+from .xshared import rgb_to_hsv_np as _rgb_to_hsv, to_image_batch as _to_image_batch
 
 try:
     import folder_paths  # type: ignore
@@ -15,19 +16,6 @@ except Exception:
     folder_paths = None
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
-    if not torch.is_tensor(image):
-        raise TypeError("image input is not a torch tensor")
-    t = image.detach().float()
-    if t.ndim == 3:
-        t = t.unsqueeze(0)
-    if t.ndim != 4:
-        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape={tuple(t.shape)}")
-    if t.shape[-1] not in (3, 4):
-        raise ValueError(f"Expected channels=3 or 4, got shape={tuple(t.shape)}")
-    return t.clamp(0.0, 1.0)
 
 
 def _to_mask_batch(mask: Optional[torch.Tensor], batch: int, h: int, w: int) -> Optional[np.ndarray]:
@@ -97,30 +85,6 @@ def _soft_band_circular(x: np.ndarray, center: float, half_width: float, softnes
     return 1.0 - _smoothstep(inner, outer, dist)
 
 
-def _rgb_to_hsv(rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    r = rgb[..., 0]
-    g = rgb[..., 1]
-    b = rgb[..., 2]
-    maxc = np.maximum(np.maximum(r, g), b)
-    minc = np.minimum(np.minimum(r, g), b)
-    delta = maxc - minc
-
-    v = maxc
-    s = np.where(maxc > 1e-8, delta / np.maximum(maxc, 1e-8), 0.0).astype(np.float32, copy=False)
-    h = np.zeros_like(maxc, dtype=np.float32)
-
-    mask = delta > 1e-8
-    r_is_max = (maxc == r) & mask
-    g_is_max = (maxc == g) & mask
-    b_is_max = (maxc == b) & mask
-
-    h[r_is_max] = ((g[r_is_max] - b[r_is_max]) / delta[r_is_max]) % 6.0
-    h[g_is_max] = ((b[g_is_max] - r[g_is_max]) / delta[g_is_max]) + 2.0
-    h[b_is_max] = ((r[b_is_max] - g[b_is_max]) / delta[b_is_max]) + 4.0
-    h = (h / 6.0) % 1.0
-    return h.astype(np.float32, copy=False), s, v.astype(np.float32, copy=False)
-
-
 def _channel_map(rgb: np.ndarray, alpha: np.ndarray, channel: str) -> np.ndarray:
     key = str(channel).lower()
     if key == "red":
@@ -184,6 +148,29 @@ def _build_mode_mask(
         dist = np.linalg.norm(rgb - target[None, None, :], axis=-1) / math.sqrt(3.0)
         tol = float(max(0.0, color_tolerance))
         return np.clip(1.0 - _soft_threshold(dist, tol, soft), 0.0, 1.0)
+
+    if mode_key == "skin_tones":
+        hue, sat, val = _rgb_to_hsv(rgb)
+        hue_center_skin = 24.0 / 360.0
+        hue_half_width = 28.0 / 360.0
+        hue_softness = max(6.0 / 360.0, soft * 0.35)
+        hue_dist = np.abs(((hue - hue_center_skin + 0.5) % 1.0) - 0.5)
+        hue_sel = 1.0 - _smoothstep(hue_half_width, hue_half_width + hue_softness, hue_dist)
+
+        sat_sel = _soft_range(sat, 0.10, 0.68, max(0.05, soft * 1.5))
+        val_sel = _soft_range(val, 0.18, 0.98, max(0.06, soft * 1.25))
+
+        y = (0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]).astype(np.float32, copy=False)
+        cb = np.clip((rgb[..., 2] - y) * 0.564 + 0.5, 0.0, 1.0)
+        cr = np.clip((rgb[..., 0] - y) * 0.713 + 0.5, 0.0, 1.0)
+        cb_sel = 1.0 - _smoothstep(0.06, 0.17, np.abs(cb - 0.43))
+        cr_sel = 1.0 - _smoothstep(0.06, 0.17, np.abs(cr - 0.56))
+
+        warmth = np.clip((rgb[..., 0] - rgb[..., 2]) * 1.25 + ((rgb[..., 0] - rgb[..., 1]) * 0.35) + 0.15, 0.0, 1.0)
+        warmth_sel = _soft_threshold(warmth, 0.18, max(0.05, soft))
+
+        confidence = np.clip(hue_sel * sat_sel * val_sel * cb_sel * cr_sel * warmth_sel, 0.0, 1.0)
+        return _soft_threshold(confidence, float(threshold), max(0.04, soft))
 
     if mode_key == "edge":
         luma = (0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]).astype(np.float32, copy=False)
@@ -280,6 +267,7 @@ class x1MaskGen:
                         "saturation",
                         "value",
                         "chroma_key",
+                        "skin_tones",
                         "edge",
                         "radial",
                     ],

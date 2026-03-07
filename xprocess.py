@@ -7,6 +7,7 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import torch
 
 from .categories import FX_PHOTO, FX_STYLIZE
+from .xshared import mask_to_batch as _mask_to_batch, to_image_batch as _to_image_batch
 
 
 @dataclass(frozen=True)
@@ -40,73 +41,6 @@ class ProcessSettings:
     bloom_threshold: float
     blur_radius: float
     sharpen: float
-
-
-def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
-    if not torch.is_tensor(image):
-        raise TypeError("image input is not a torch tensor")
-    t = image.detach().float()
-    if t.ndim == 3:
-        t = t.unsqueeze(0)
-    if t.ndim != 4:
-        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape={tuple(t.shape)}")
-    if t.shape[-1] not in (3, 4):
-        raise ValueError(f"Expected channels=3 or 4, got shape={tuple(t.shape)}")
-    return t.clamp(0.0, 1.0)
-
-
-def _mask_to_batch(
-    mask: Optional[torch.Tensor],
-    batch: int,
-    h: int,
-    w: int,
-    feather_radius: float,
-    invert_mask: bool,
-    device: torch.device,
-) -> torch.Tensor:
-    if mask is None:
-        out = torch.ones((batch, h, w), dtype=torch.float32)
-        return out.to(device=device)
-
-    if not torch.is_tensor(mask):
-        raise TypeError("mask input is not a torch tensor")
-
-    m = mask.detach().float().cpu()
-
-    if m.ndim == 2:
-        m = m.unsqueeze(0)
-    elif m.ndim == 4:
-        if m.shape[-1] in (1, 3, 4):
-            m = m[..., 0]
-        elif m.shape[1] in (1, 3, 4):
-            m = m[:, 0, ...]
-        else:
-            raise ValueError(f"Unsupported MASK shape={tuple(m.shape)}")
-    elif m.ndim != 3:
-        raise ValueError(f"Unsupported MASK dims={m.ndim}")
-
-    if m.shape[0] == 1 and batch > 1:
-        m = m.expand(batch, -1, -1)
-    elif m.shape[0] != batch:
-        raise ValueError(f"Mask batch {m.shape[0]} does not match image batch {batch}")
-
-    out_np = np.zeros((batch, h, w), dtype=np.float32)
-    do_feather = feather_radius > 0.0
-    feather = float(max(0.0, feather_radius))
-
-    for idx in range(batch):
-        sample = np.clip(m[idx].numpy(), 0.0, 1.0)
-        pil = Image.fromarray((sample * 255.0).astype(np.uint8), mode="L")
-        if pil.size != (w, h):
-            pil = pil.resize((w, h), resample=Image.Resampling.BILINEAR)
-        if do_feather:
-            pil = pil.filter(ImageFilter.GaussianBlur(radius=feather))
-        out_np[idx] = np.asarray(pil, dtype=np.float32) / 255.0
-
-    out = torch.from_numpy(np.clip(out_np, 0.0, 1.0))
-    if invert_mask:
-        out = 1.0 - out
-    return out.to(device=device)
 
 
 def _pil_from_rgb_float(rgb: np.ndarray) -> Image.Image:

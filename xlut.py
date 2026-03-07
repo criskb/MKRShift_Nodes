@@ -10,6 +10,7 @@ from PIL import Image
 import torch
 
 from .categories import COLOR_LUT
+from .xshared import to_image_batch as _to_image_batch
 
 try:
     import folder_paths  # type: ignore
@@ -50,19 +51,6 @@ class LutCube:
     domain_min: Tuple[float, float, float]
     domain_max: Tuple[float, float, float]
     table: np.ndarray
-
-
-def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
-    if not torch.is_tensor(image):
-        raise TypeError("image input is not a torch tensor")
-    t = image.detach().float()
-    if t.ndim == 3:
-        t = t.unsqueeze(0)
-    if t.ndim != 4:
-        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape={tuple(t.shape)}")
-    if t.shape[-1] not in (3, 4):
-        raise ValueError(f"Expected IMAGE channels 3 or 4, got shape={tuple(t.shape)}")
-    return t.clamp(0.0, 1.0)
 
 
 def _candidate_lut_dirs() -> List[str]:

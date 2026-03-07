@@ -6,6 +6,7 @@ from PIL import Image
 import torch
 
 from .categories import UTILITY_RESIZE
+from .xshared import to_image_batch as _to_image_batch
 
 
 _ANCHOR_FACTORS = {
@@ -19,19 +20,6 @@ _ANCHOR_FACTORS = {
     "bottom": (0.5, 1.0),
     "bottom_right": (1.0, 1.0),
 }
-
-
-def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
-    if not torch.is_tensor(image):
-        raise TypeError("image input is not a torch tensor")
-    t = image.detach().float()
-    if t.ndim == 3:
-        t = t.unsqueeze(0)
-    if t.ndim != 4:
-        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape={tuple(t.shape)}")
-    if t.shape[-1] not in (3, 4):
-        raise ValueError(f"Expected channels=3 or 4, got shape={tuple(t.shape)}")
-    return t.clamp(0.0, 1.0)
 
 
 def _to_mask_batch(mask: Optional[torch.Tensor], batch: int) -> Optional[np.ndarray]:

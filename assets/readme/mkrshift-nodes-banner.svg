@@ -1,0 +1,20 @@
+<svg width="1600" height="420" viewBox="0 0 1600 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="420" rx="40" fill="#101714"/>
+  <rect x="28" y="28" width="1544" height="364" rx="24" fill="#121B17" stroke="#2A3B33" stroke-width="2"/>
+  <rect x="82" y="78" width="10" height="264" rx="5" fill="#D2FD51"/>
+  <rect x="112" y="78" width="220" height="16" rx="8" fill="#1B2822"/>
+  <rect x="112" y="106" width="156" height="10" rx="5" fill="#2A3B33"/>
+  <rect x="1118" y="82" width="372" height="256" rx="24" fill="#0D1411" stroke="#30453A" stroke-width="2"/>
+  <rect x="1152" y="116" width="168" height="16" rx="8" fill="#D2FD51" fill-opacity="0.18"/>
+  <rect x="1152" y="150" width="292" height="10" rx="5" fill="#22312B"/>
+  <rect x="1152" y="174" width="248" height="10" rx="5" fill="#22312B"/>
+  <rect x="1152" y="224" width="120" height="36" rx="18" fill="#D2FD51"/>
+  <rect x="1288" y="224" width="126" height="36" rx="18" fill="#18231E" stroke="#355044" stroke-width="2"/>
+  <rect x="1152" y="282" width="96" height="28" rx="14" fill="#18231E" stroke="#2B3D34" stroke-width="2"/>
+  <rect x="1258" y="282" width="156" height="28" rx="14" fill="#18231E" stroke="#2B3D34" stroke-width="2"/>
+  <text x="112" y="214" fill="#D2FD51" font-family="Avenir Next, Trebuchet MS, Segoe UI, sans-serif" font-size="102" font-weight="800" letter-spacing="0.1em">MKR</text>
+  <text x="420" y="214" fill="#EEF7EF" font-family="Avenir Next, Trebuchet MS, Segoe UI, sans-serif" font-size="102" font-weight="700">Shift Nodes</text>
+  <text x="114" y="268" fill="#93A596" font-family="Avenir Next, Trebuchet MS, Segoe UI, sans-serif" font-size="28" font-weight="500">
+    ComfyUI node pack for lookdev, utility work, media finishing, and social planning
+  </text>
+</svg>

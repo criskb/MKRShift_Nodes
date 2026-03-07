@@ -857,6 +857,30 @@ function readMaskParams(node) {
   };
 }
 
+function skinToneConfidence(r, g, b, params) {
+  const [hue, sat, val] = rgbToHsv(r, g, b);
+  const hueCenter = 24 / 360;
+  const hueHalfWidth = 28 / 360;
+  const hueSoftness = Math.max(6 / 360, Math.max(0, params.softness) * 0.35);
+  const hueWrapped = ((hue - hueCenter + 1.5) % 1) - 0.5;
+  const hueSel = 1 - smoothstep(hueHalfWidth, hueHalfWidth + hueSoftness, Math.abs(hueWrapped));
+
+  const satSel = softRange(sat, 0.10, 0.68, Math.max(0.05, Math.max(0, params.softness) * 1.5));
+  const valSel = softRange(val, 0.18, 0.98, Math.max(0.06, Math.max(0, params.softness) * 1.25));
+
+  const y = (0.299 * r) + (0.587 * g) + (0.114 * b);
+  const cb = clamp01(((b - y) * 0.564) + 0.5);
+  const cr = clamp01(((r - y) * 0.713) + 0.5);
+  const cbSel = 1 - smoothstep(0.06, 0.17, Math.abs(cb - 0.43));
+  const crSel = 1 - smoothstep(0.06, 0.17, Math.abs(cr - 0.56));
+
+  const warmth = clamp01(((r - b) * 1.25) + ((r - g) * 0.35) + 0.15);
+  const warmthSel = softThreshold(warmth, 0.18, Math.max(0.05, params.softness));
+
+  const confidence = clamp01(hueSel * satSel * valSel * cbSel * crSel * warmthSel);
+  return softThreshold(confidence, params.threshold, Math.max(0.04, params.softness));
+}
+
 function buildLocalMaskPreview(sourceImage, params) {
   // Fast local preview path for Node 2.0: renders from current widget values without graph execution.
   const iw = sourceImage.naturalWidth || sourceImage.width || 1;
@@ -945,6 +969,8 @@ function buildLocalMaskPreview(sourceImage, params) {
         } else {
           m = softRange(val, params.minValue, params.maxValue, params.softness);
         }
+      } else if (mode === "skin_tones") {
+        m = skinToneConfidence(r, g, b, params);
       } else if (mode === "chroma_key") {
         const dr = r - params.targetR;
         const dg = g - params.targetG;

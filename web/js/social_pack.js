@@ -1,86 +1,272 @@
 import { app } from "../../../scripts/app.js";
 
-const UI = {
-  MIN_W: 920,
-  MIN_H: 620,
-  PAD: 14,
-  SAFE_TOP: 72,
-  SAFE_BOTTOM: 24,
-  HEADER_H: 62,
-  BOTTOM_H: 172,
-  GAP: 12,
-  LEFT_RATIO: 0.56,
-  CARD_COLS: 2,
-  CARD_ROWS: 3,
-  CARD_GAP: 10,
+const EXT = "mkrshift.socialpack";
+const DOM_WIDGET_NAME = "mkr_social_pack_summary";
+const STYLE_ID = "mkrshift-social-pack-compact-style";
+const DEFAULT_W = 380;
+const DEFAULT_H = 760;
+const MIN_SUMMARY_H = 232;
+const POLL_MS = 350;
+
+const PLATFORM_DEFAULT_RATIOS = {
+  Instagram: "4:5",
+  TikTok: "9:16",
+  "YouTube Shorts": "9:16",
+  LinkedIn: "1:1",
+  X: "1:1",
+  Mixed: "4:5",
 };
 
-const THEME = {
-  shellStart: "#163146",
-  shellEnd: "#275167",
-  shellStroke: "#4d7d95",
-  panelStart: "#fbf5e9",
-  panelEnd: "#f0e4cf",
-  panelStroke: "#cebea4",
-  panelText: "#1d2b36",
-  panelMuted: "#5f6f78",
-  accent: "#e86f51",
-  accentSoft: "#f4b08a",
-  accentDeep: "#bf563c",
-  accentAlt: "#2f9786",
-  accentAltSoft: "#92d4c6",
-  cardStart: "#fffaf1",
-  cardEnd: "#f3e8d4",
-  cardStroke: "#d8c4a1",
-  cardSelectedStroke: "#e86f51",
-  cardSelectedGlow: "rgba(232,111,81,0.35)",
-  chipBg: "#f1ddbe",
-  chipText: "#5f4f37",
-  previewBg: "#d6e4ea",
-  previewStroke: "#89a4b3",
-  previewPlaceholder: "#6f8493",
-  controlBg: "#f8efdf",
-  controlStroke: "#cdb99a",
-  controlValue: "#26343e",
-  controlButtonBg: "#25586f",
-  controlButtonText: "#f6f9fb",
-  statusOk: "#2f9e44",
-  statusWarn: "#bb6a0b",
-  statusCardStart: "#f9ecd3",
-  statusCardEnd: "#f0dec0",
-  statusCardStroke: "#c9af84",
+const ROLE_SEQUENCES = {
+  Carousel: ["hook", "detail", "benefit", "context", "proof", "cta"],
+  Story: ["hook", "detail", "motion", "reaction", "cta"],
+  Mixed: ["hero", "detail", "context", "offer", "proof", "cta"],
 };
 
-const FONT = {
-  hero: "700 22px 'Avenir Next Condensed', 'Avenir Next', 'Trebuchet MS', 'Segoe UI', sans-serif",
-  heading: "700 15px 'Avenir Next', 'Trebuchet MS', 'Segoe UI', sans-serif",
-  label: "600 11px 'Avenir Next', 'Trebuchet MS', 'Segoe UI', sans-serif",
-  body: "500 12px 'Avenir Next', 'Trebuchet MS', 'Segoe UI', sans-serif",
-  bodyBold: "700 12px 'Avenir Next', 'Trebuchet MS', 'Segoe UI', sans-serif",
-  tiny: "500 10px 'Avenir Next', 'Trebuchet MS', 'Segoe UI', sans-serif",
-};
+const STYLE_CSS = `
+:root {
+  --mkr-social-bg: #0d1411;
+  --mkr-social-panel: #121b17;
+  --mkr-social-panel-soft: #18221d;
+  --mkr-social-border: #27362f;
+  --mkr-social-border-strong: #355044;
+  --mkr-social-text: #eef7ef;
+  --mkr-social-muted: #90a596;
+  --mkr-social-accent: #d2fd51;
+  --mkr-social-accent-soft: #dffb86;
+  --mkr-social-accent-green: #d2fd51;
+  --mkr-social-warn: #f1b44a;
+}
+
+.mkr-social-compact {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: ${MIN_SUMMARY_H}px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  color: var(--mkr-social-text);
+  font: 500 12px "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+  background: var(--mkr-social-panel);
+  border: 1px solid var(--mkr-social-border);
+  border-radius: 14px;
+}
+
+.mkr-social-compact__head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.mkr-social-compact__eyebrow {
+  color: var(--mkr-social-accent-soft);
+  font: 700 10px "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.mkr-social-compact__title {
+  margin: 2px 0 0;
+  font: 700 16px "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+.mkr-social-compact__subtitle {
+  margin-top: 3px;
+  color: var(--mkr-social-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.mkr-social-compact__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mkr-social-compact__button {
+  appearance: none;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--mkr-social-border-strong);
+  background: var(--mkr-social-panel-soft);
+  color: var(--mkr-social-text);
+  font: 700 10px "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.mkr-social-compact__button:hover {
+  border-color: var(--mkr-social-accent);
+  color: var(--mkr-social-accent-soft);
+}
+
+.mkr-social-compact__button.is-primary {
+  color: #0b1108;
+  border-color: rgba(210,253,81,0.55);
+  background: var(--mkr-social-accent);
+}
+
+.mkr-social-compact__content {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.mkr-social-compact__thumb {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--mkr-social-border-strong);
+  background: var(--mkr-social-bg);
+}
+
+.mkr-social-compact__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mkr-social-compact__thumb-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px;
+  color: var(--mkr-social-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.mkr-social-compact__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--mkr-social-border-strong);
+  background: var(--mkr-social-panel-soft);
+  color: var(--mkr-social-accent-soft);
+  font: 700 10px "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.mkr-social-compact__pack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mkr-social-compact__pack-name {
+  margin: 0;
+  font: 700 13px "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+.mkr-social-compact__meta,
+.mkr-social-compact__note {
+  color: var(--mkr-social-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mkr-social-compact__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mkr-social-compact__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--mkr-social-bg);
+  border: 1px solid var(--mkr-social-border);
+  color: var(--mkr-social-text);
+  font: 700 10px "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+.mkr-social-compact__warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mkr-social-compact__warning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--mkr-social-border);
+  background: var(--mkr-social-bg);
+}
+
+.mkr-social-compact__warning-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--mkr-social-warn);
+  box-shadow: 0 0 12px currentColor;
+}
+
+.mkr-social-compact__warning.is-ok .mkr-social-compact__warning-dot {
+  background: var(--mkr-social-accent-green);
+}
+
+.mkr-social-compact__warning-text {
+  color: var(--mkr-social-text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+`;
 
 let packsRequest = null;
+
+function getApp() {
+  return globalThis?.comfyAPI?.app?.app || globalThis?.app || app || null;
+}
 
 function getApi() {
   return globalThis?.api || globalThis?.comfyAPI?.api || null;
 }
 
 function apiUrl(path) {
-  const p = String(path || "");
   const apiObj = getApi();
+  const text = String(path || "");
   if (apiObj && typeof apiObj.apiURL === "function") {
-    return apiObj.apiURL(p);
+    return apiObj.apiURL(text);
   }
-  return p;
+  return text;
 }
 
 function fetchApiCompat(path, init = undefined) {
-  const comfyApi = getApi();
-  if (comfyApi && typeof comfyApi.fetchApi === "function") {
-    return comfyApi.fetchApi(path, init);
+  const apiObj = getApi();
+  if (apiObj && typeof apiObj.fetchApi === "function") {
+    return apiObj.fetchApi(path, init);
   }
   return fetch(path, init);
+}
+
+function ensureStyle() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent = STYLE_CSS;
+  document.head.appendChild(style);
 }
 
 function matchesSocialPackName(name) {
@@ -106,96 +292,8 @@ function isSocialPackNodeDef(nodeData) {
   return candidates.some(matchesSocialPackName);
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function roundRectPath(ctx, x, y, w, h, r) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  if (ctx.roundRect) {
-    ctx.roundRect(x, y, w, h, radius);
-  } else {
-    ctx.rect(x, y, w, h);
-  }
-}
-
-function drawRoundedFill(ctx, x, y, w, h, r, fill) {
-  roundRectPath(ctx, x, y, w, h, r);
-  ctx.fillStyle = fill;
-  ctx.fill();
-}
-
-function drawRoundedStroke(ctx, x, y, w, h, r, stroke, lineWidth = 1) {
-  roundRectPath(ctx, x, y, w, h, r);
-  ctx.lineWidth = lineWidth;
-  ctx.strokeStyle = stroke;
-  ctx.stroke();
-}
-
-function drawRoundedGradient(ctx, rect, radius, colorA, colorB, vertical = true) {
-  const g = vertical
-    ? ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h)
-    : ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
-  g.addColorStop(0, colorA);
-  g.addColorStop(1, colorB);
-  drawRoundedFill(ctx, rect.x, rect.y, rect.w, rect.h, radius, g);
-}
-
-function trimText(ctx, text, maxWidth) {
-  const raw = String(text ?? "");
-  if (!raw) return "";
-  if (ctx.measureText(raw).width <= maxWidth) return raw;
-  let value = raw;
-  while (value.length > 1 && ctx.measureText(`${value}...`).width > maxWidth) {
-    value = value.slice(0, -1);
-  }
-  return `${value}...`;
-}
-
-function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
-  const words = String(text ?? "").split(/\s+/).filter(Boolean);
-  if (!words.length) return 0;
-
-  const lines = [];
-  let current = words[0];
-  for (let i = 1; i < words.length; i++) {
-    const next = `${current} ${words[i]}`;
-    if (ctx.measureText(next).width <= maxWidth) {
-      current = next;
-    } else {
-      lines.push(current);
-      current = words[i];
-      if (lines.length >= maxLines) break;
-    }
-  }
-  if (lines.length < maxLines && current) {
-    lines.push(current);
-  }
-  if (lines.length > maxLines) {
-    lines.length = maxLines;
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-    if (i === maxLines - 1 && i < words.length) {
-      line = trimText(ctx, line, maxWidth);
-    }
-    ctx.fillText(line, x, y + i * lineHeight);
-  }
-  return lines.length;
-}
-
-function extractPackId(value) {
-  const text = String(value ?? "");
-  if (text.includes("(") && text.endsWith(")")) {
-    return text.split("(").pop().slice(0, -1).trim();
-  }
-  return text.trim();
-}
-
 function getWidget(node, name) {
-  return node.widgets?.find((w) => w.name === name);
+  return node.widgets?.find((widget) => String(widget?.name || "") === name);
 }
 
 function getWidgetChoices(widget) {
@@ -206,40 +304,136 @@ function getWidgetChoices(widget) {
   return [];
 }
 
+function widgetString(node, name, fallback = "") {
+  const widget = getWidget(node, name);
+  if (widget && widget.value !== undefined) return String(widget.value);
+  const prop = node?.properties?.[name];
+  if (prop !== undefined) return String(prop);
+  return String(fallback);
+}
+
+function widgetInt(node, name, fallback = 0) {
+  const raw = Number.parseInt(widgetString(node, name, fallback), 10);
+  return Number.isFinite(raw) ? raw : fallback;
+}
+
 function setWidgetValue(node, widget, value) {
   if (!widget) return;
   widget.value = value;
-  if (typeof widget.callback === "function") {
-    widget.callback(value, app.graph, node, widget);
+  node.properties = node.properties || {};
+  if (widget.name) {
+    node.properties[widget.name] = value;
   }
+  if (typeof widget.callback === "function") {
+    widget.callback(value, getApp()?.graph, node, widget);
+  }
+  refreshCompactUI(node);
+  markDirty(node);
 }
 
 function markDirty(node) {
-  node.setDirtyCanvas?.(true, true);
-  app.graph?.setDirtyCanvas?.(true, true);
+  node?.setDirtyCanvas?.(true, true);
+  getApp()?.graph?.setDirtyCanvas?.(true, true);
 }
 
-function hideWidget(widget) {
-  if (!widget) return;
-  widget.type = "hidden";
-  widget.computeSize = () => [0, -4];
-}
-
-function hideBuiltInWidgets(node) {
-  if (!Array.isArray(node.widgets)) return;
-  for (const widget of node.widgets) {
-    hideWidget(widget);
+function dedupeKeepOrder(values) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    const clean = String(value || "").trim();
+    if (!clean) continue;
+    const token = clean.toLowerCase();
+    if (seen.has(token)) continue;
+    seen.add(token);
+    out.push(clean);
   }
+  return out;
 }
 
-function pointInRect(point, rect) {
-  if (!point || !rect) return false;
-  return (
-    point.x >= rect.x &&
-    point.x <= rect.x + rect.w &&
-    point.y >= rect.y &&
-    point.y <= rect.y + rect.h
-  );
+function extractPackId(value) {
+  const text = String(value ?? "").trim();
+  if (text.includes("(") && text.endsWith(")")) {
+    return text.split("(").pop().slice(0, -1).trim();
+  }
+  return text;
+}
+
+function selectedPackIdFromNode(node) {
+  const fromProperty = String(node?.properties?.selected_pack_id || "").trim();
+  if (fromProperty) return fromProperty;
+  return extractPackId(widgetString(node, "pack", ""));
+}
+
+function connectedInput(node, name) {
+  return !!node?.inputs?.find((entry) => entry?.name === name)?.link;
+}
+
+function effectiveRatioPlan(node, selectedPack) {
+  const count = Math.max(1, widgetInt(node, "count", selectedPack?.default_count ?? 12));
+  const outputMode = widgetString(node, "output_mode", "Carousel");
+  const aspect = widgetString(node, "aspect", "Auto").trim();
+  const platform = widgetString(node, "platform", "Mixed");
+
+  if (aspect && aspect !== "Auto") {
+    return Array.from({ length: count }, () => aspect);
+  }
+
+  const packRatios = Array.isArray(selectedPack?.ratios)
+    ? dedupeKeepOrder(selectedPack.ratios.map((value) => String(value)))
+    : [];
+
+  if (outputMode === "Story") {
+    return Array.from({ length: count }, () => "9:16");
+  }
+
+  if (outputMode === "Mixed") {
+    const cycle = packRatios.length
+      ? packRatios
+      : dedupeKeepOrder([PLATFORM_DEFAULT_RATIOS[platform] || "4:5", "1:1", "9:16"]);
+    return Array.from({ length: count }, (_, index) => cycle[index % cycle.length]);
+  }
+
+  const chosen = packRatios[0] || PLATFORM_DEFAULT_RATIOS[platform] || "4:5";
+  return Array.from({ length: count }, () => chosen);
+}
+
+function effectiveRolePlan(node, count) {
+  const outputMode = widgetString(node, "output_mode", "Carousel");
+  const sequence = ROLE_SEQUENCES[outputMode] || ROLE_SEQUENCES.Mixed;
+  if (count <= 1) return [sequence[0]];
+
+  const middle = sequence.slice(1, -1).length ? sequence.slice(1, -1) : [sequence[0]];
+  return Array.from({ length: count }, (_, index) => {
+    if (index === 0) return sequence[0];
+    if (index === count - 1) return sequence[sequence.length - 1];
+    return middle[(index - 1) % middle.length];
+  });
+}
+
+function summarizeSequence(values, maxVisible = 4) {
+  if (!Array.isArray(values) || !values.length) return "Auto";
+  const shown = values.slice(0, maxVisible);
+  const joined = shown.join(" -> ");
+  return values.length > maxVisible ? `${joined} -> ...` : joined;
+}
+
+function inferWidgetType(widget) {
+  if (getWidgetChoices(widget).length) return "combo";
+  if (typeof widget?.value === "boolean") return "toggle";
+  if (typeof widget?.value === "number") return "number";
+  return "string";
+}
+
+function restoreVisibleWidgets(node) {
+  if (!Array.isArray(node?.widgets)) return;
+  for (const widget of node.widgets) {
+    const name = String(widget?.name || "");
+    if (!name || name === DOM_WIDGET_NAME) continue;
+    if (String(widget?.type || "") !== "hidden") continue;
+    widget.type = inferWidgetType(widget);
+    widget.hidden = false;
+    delete widget.computeSize;
+  }
 }
 
 function buildViewUrl(info) {
@@ -249,7 +443,10 @@ function buildViewUrl(info) {
   return apiUrl(`/view?filename=${encodeURIComponent(info.filename)}${subfolder}&type=${encodeURIComponent(type)}`);
 }
 
-async function fetchPacksFromBackend() {
+async function fetchPacksFromBackend(force = false) {
+  if (force) {
+    packsRequest = null;
+  }
   if (!packsRequest) {
     packsRequest = (async () => {
       try {
@@ -268,8 +465,7 @@ async function fetchPacksFromBackend() {
 }
 
 function fallbackPacksFromWidget(node) {
-  const widget = getWidget(node, "pack");
-  const values = getWidgetChoices(widget);
+  const values = getWidgetChoices(getWidget(node, "pack"));
   return values.map((entry) => {
     const raw = String(entry);
     const id = extractPackId(raw);
@@ -288,956 +484,440 @@ function fallbackPacksFromWidget(node) {
   });
 }
 
-function preloadPackImages(state) {
-  for (const pack of state.packs) {
-    if (!pack.preview) continue;
-    if (state.packImages[pack.id]) continue;
+function ensureState(node) {
+  if (node.__mkrshiftSocialState) return node.__mkrshiftSocialState;
+  node.__mkrshiftSocialState = {
+    packs: [],
+    selectedPackId: "",
+    previewUrl: "",
+    loadingPacks: false,
+    backendReadiness: null,
+    dom: null,
+    domWidget: null,
+    pollTimer: null,
+    lastSig: "",
+    lastRenderKey: "",
+  };
+  return node.__mkrshiftSocialState;
+}
 
-    const entry = {
-      img: new Image(),
-      loaded: false,
-      failed: false,
-    };
-    entry.img.onload = () => {
-      entry.loaded = true;
-      markDirty(state.node);
-    };
-    entry.img.onerror = () => {
-      entry.failed = true;
-      markDirty(state.node);
-    };
-    entry.img.src = apiUrl(pack.preview);
-    state.packImages[pack.id] = entry;
+function clearStateTimer(state) {
+  if (!state?.pollTimer) return;
+  clearInterval(state.pollTimer);
+  state.pollTimer = null;
+}
+
+function normalizeDomWidgetStack(node, state) {
+  if (!Array.isArray(node?.widgets) || !state?.domWidget) return;
+  const domWidgets = node.widgets.filter((widget) => String(widget?.name || "") === DOM_WIDGET_NAME);
+  if (domWidgets.length > 1) {
+    node.widgets = node.widgets.filter((widget) => String(widget?.name || "") !== DOM_WIDGET_NAME || widget === state.domWidget);
+  }
+  const index = node.widgets.indexOf(state.domWidget);
+  if (index > -1 && index !== node.widgets.length - 1) {
+    node.widgets.splice(index, 1);
+    node.widgets.push(state.domWidget);
   }
 }
 
-function queueRedraw(state) {
-  if (state.redrawQueued) return;
-  state.redrawQueued = true;
-  const raf = globalThis.requestAnimationFrame || ((fn) => setTimeout(fn, 16));
-  raf(() => {
-    state.redrawQueued = false;
-    markDirty(state.node);
-  });
+function getSelectedPack(state) {
+  if (!Array.isArray(state?.packs) || !state.packs.length) return null;
+  return state.packs.find((pack) => pack.id === state.selectedPackId) || state.packs[0] || null;
 }
 
 function syncPackSelection(node, state, packId) {
-  if (!packId) return;
-  state.selectedPackId = packId;
-  state.selectionAnimStart = Date.now();
+  const clean = String(packId || "").trim();
+  if (!clean) return;
+  state.selectedPackId = clean;
   node.properties = node.properties || {};
-  node.properties.selected_pack_id = packId;
-
-  const packIdWidget = getWidget(node, "pack_id");
-  if (packIdWidget && packIdWidget.value !== packId) {
-    setWidgetValue(node, packIdWidget, packId);
-  }
+  node.properties.selected_pack_id = clean;
 
   const packWidget = getWidget(node, "pack");
   if (packWidget) {
-    const options = getWidgetChoices(packWidget);
-    const match = options.find((option) => extractPackId(option) === packId);
-    if (match && packWidget.value !== match) {
+    const match = getWidgetChoices(packWidget).find((choice) => extractPackId(choice) === clean);
+    if (match && String(packWidget.value) !== String(match)) {
       setWidgetValue(node, packWidget, match);
+      return;
     }
   }
+
+  refreshCompactUI(node);
 }
 
-function pickInitialPackId(node, packs) {
-  const fromProperty = String(node.properties?.selected_pack_id ?? "").trim();
-  if (fromProperty) return fromProperty;
+function applyPackDefaults(node, state) {
+  const selectedPack = getSelectedPack(state);
+  if (!selectedPack) return;
 
-  const packWidget = getWidget(node, "pack");
-  const fromWidget = extractPackId(packWidget?.value ?? "");
-  if (fromWidget) return fromWidget;
+  const countWidget = getWidget(node, "count");
+  if (countWidget) {
+    const min = Number(countWidget.options?.min ?? 1);
+    const max = Number(countWidget.options?.max ?? 999);
+    const fallback = Number(countWidget.value ?? min);
+    const raw = Number(selectedPack.default_count ?? fallback);
+    const next = Number.isFinite(raw) ? Math.max(min, Math.min(max, raw)) : fallback;
+    setWidgetValue(node, countWidget, next);
+  }
 
-  return packs[0]?.id || "";
+  const aspectWidget = getWidget(node, "aspect");
+  if (aspectWidget) {
+    const choices = getWidgetChoices(aspectWidget).map((value) => String(value));
+    if (choices.includes("Auto")) {
+      setWidgetValue(node, aspectWidget, "Auto");
+    } else if (choices.includes("9:16") && widgetString(node, "output_mode", "Carousel") === "Story") {
+      setWidgetValue(node, aspectWidget, "9:16");
+    } else if (Array.isArray(selectedPack.ratios) && selectedPack.ratios.length) {
+      const preferred = selectedPack.ratios.find((ratio) => choices.includes(String(ratio)));
+      if (preferred) {
+        setWidgetValue(node, aspectWidget, String(preferred));
+      }
+    }
+  }
+
+  refreshCompactUI(node);
 }
 
-function loadInputPreviewImage(state, previewInfo) {
-  if (!previewInfo?.filename) return;
-  const url = buildViewUrl(previewInfo);
-  if (!url) return;
-
-  state.inputPreview = previewInfo;
-  state.inputPreviewUrl = url;
-  state.inputImage = {
-    img: new Image(),
-    loaded: false,
-    failed: false,
-  };
-  state.inputImage.img.onload = () => {
-    state.inputImage.loaded = true;
-    markDirty(state.node);
-  };
-  state.inputImage.img.onerror = () => {
-    state.inputImage.failed = true;
-    markDirty(state.node);
-  };
-  state.inputImage.img.src = `${url}&_ts=${Date.now()}`;
-}
-
-function getImageLinked(node, inputName) {
-  const input = node.inputs?.find((entry) => entry.name === inputName);
-  return !!input?.link;
-}
-
-function getReadinessLines(node) {
+function compactWarnings(node, state) {
   const lines = [];
 
-  if (!getImageLinked(node, "image")) {
+  if (!connectedInput(node, "image")) {
     lines.push({ level: "warn", text: "IMAGE input is not connected." });
   }
 
-  const brandingValue = String(getWidget(node, "branding")?.value ?? "Off");
-  if (brandingValue !== "Off" && !getImageLinked(node, "brand_logo")) {
-    lines.push({ level: "warn", text: "Branding enabled, but logo input is missing." });
+  if (widgetString(node, "branding", "Off") !== "Off" && !connectedInput(node, "brand_logo")) {
+    lines.push({ level: "warn", text: "Branding is enabled but the logo input is missing." });
+  }
+
+  const outputMode = widgetString(node, "output_mode", "Carousel");
+  const aspect = widgetString(node, "aspect", "Auto").trim();
+  if (outputMode === "Mixed" && aspect && aspect !== "Auto") {
+    lines.push({ level: "warn", text: `Mixed mode is locked to ${aspect}. Use Auto if you want the pack ratio cycle.` });
+  } else if (outputMode === "Story" && aspect && !["Auto", "9:16"].includes(aspect)) {
+    lines.push({ level: "warn", text: `Story mode is currently using ${aspect} instead of a vertical frame.` });
+  }
+
+  const backendWarnings = Array.isArray(state?.backendReadiness?.warnings) ? state.backendReadiness.warnings : [];
+  for (const warning of backendWarnings) {
+    const text = String(warning || "").trim();
+    if (!text) continue;
+    if (lines.some((entry) => entry.text.toLowerCase() === text.toLowerCase())) continue;
+    lines.push({ level: "warn", text });
   }
 
   if (!lines.length) {
-    return [{ level: "ok", text: "Ready to queue and generate." }];
+    lines.push({ level: "ok", text: "Ready to queue and generate." });
   }
 
   return lines.slice(0, 3);
 }
 
-function getLocalPos(node, event, pos) {
-  if (Array.isArray(pos) && pos.length >= 2) {
-    return { x: pos[0], y: pos[1] };
-  }
-  if (event && typeof event.canvasX === "number" && typeof event.canvasY === "number") {
+function summaryImageInfo(node, state, selectedPack) {
+  if (state.previewUrl) {
     return {
-      x: event.canvasX - node.pos[0],
-      y: event.canvasY - node.pos[1],
+      src: state.previewUrl,
+      badge: "Source",
+      placeholder: "",
+      note: "",
     };
   }
-  return null;
-}
 
-function setNodeMinSize(node) {
-  if (!Array.isArray(node.size) || node.size.length < 2) {
-    node.size = [UI.MIN_W, UI.MIN_H];
-    return;
-  }
-  node.size[0] = Math.max(node.size[0], UI.MIN_W);
-  node.size[1] = Math.max(node.size[1], UI.MIN_H);
-}
-
-function ensureNodeState(node) {
-  if (node.__mkrshiftSocialState) return node.__mkrshiftSocialState;
-
-  const state = {
-    node,
-    packs: [],
-    packImages: {},
-    selectedPackId: "",
-    page: 0,
-    cardsPerPage: UI.CARD_COLS * UI.CARD_ROWS,
-    loadingPacks: false,
-    inputPreview: null,
-    inputPreviewUrl: "",
-    inputImage: null,
-    selectionAnimStart: 0,
-    redrawQueued: false,
-    hitboxes: {
-      libraryPanel: null,
-      cards: [],
-      prevPage: null,
-      nextPage: null,
-      controls: [],
-      headerButtons: [],
-    },
-  };
-
-  node.__mkrshiftSocialState = state;
-  return state;
-}
-
-function getSelectedPack(state) {
-  if (!state.packs.length) return null;
-  const match = state.packs.find((pack) => pack.id === state.selectedPackId);
-  return match || state.packs[0] || null;
-}
-
-function cycleWidgetValue(node, widgetName, step = 1) {
-  const widget = getWidget(node, widgetName);
-  if (!widget) return;
-  const values = getWidgetChoices(widget);
-  if (!values.length) return;
-
-  const current = String(widget.value);
-  const currentIndex = Math.max(0, values.findIndex((v) => String(v) === current));
-  const nextIndex = (currentIndex + step + values.length) % values.length;
-  setWidgetValue(node, widget, values[nextIndex]);
-}
-
-function adjustCount(node, direction) {
-  const widget = getWidget(node, "count");
-  if (!widget) return;
-  const options = widget.options || {};
-  const step = Number(options.step ?? 1);
-  const min = Number(options.min ?? 1);
-  const max = Number(options.max ?? 999);
-  const value = Number(widget.value ?? min);
-  const next = clamp(value + direction * step, min, max);
-  setWidgetValue(node, widget, next);
-}
-
-function applyPackDefaults(node, state) {
-  const pack = getSelectedPack(state);
-  if (!pack) return;
-
-  const countWidget = getWidget(node, "count");
-  if (countWidget) {
-    const options = countWidget.options || {};
-    const min = Number(options.min ?? 1);
-    const max = Number(options.max ?? 999);
-    const fallback = Number(countWidget.value ?? min);
-    const raw = Number(pack.default_count ?? fallback);
-    const next = Number.isFinite(raw) ? clamp(raw, min, max) : fallback;
-    setWidgetValue(node, countWidget, next);
-  }
-
-  const aspectWidget = getWidget(node, "aspect");
-  const ratios = Array.isArray(pack.ratios) ? pack.ratios.map((r) => String(r)) : [];
-  if (aspectWidget && ratios.length) {
-    const choices = getWidgetChoices(aspectWidget).map((v) => String(v));
-    const preferred = ratios.find((ratio) => choices.includes(ratio)) || ratios[0];
-    if (preferred) {
-      setWidgetValue(node, aspectWidget, preferred);
-    }
-  }
-
-  markDirty(node);
-}
-
-function chooseRandomPack(node, state) {
-  if (state.packs.length < 2) return;
-  const pool = state.packs.filter((pack) => pack.id !== state.selectedPackId);
-  const randomPack = pool[Math.floor(Math.random() * pool.length)] || state.packs[0];
-  if (!randomPack) return;
-  syncPackSelection(node, state, randomPack.id);
-  markDirty(node);
-}
-
-function drawImageCover(ctx, image, x, y, w, h) {
-  const iw = image.width;
-  const ih = image.height;
-  if (!iw || !ih) return;
-
-  const scale = Math.max(w / iw, h / ih);
-  const sw = w / scale;
-  const sh = h / scale;
-  const sx = (iw - sw) * 0.5;
-  const sy = (ih - sh) * 0.5;
-  ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
-}
-
-function drawImageContain(ctx, image, x, y, w, h) {
-  const iw = image.width;
-  const ih = image.height;
-  if (!iw || !ih) return;
-
-  const scale = Math.min(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) * 0.5;
-  const dy = y + (h - dh) * 0.5;
-  ctx.drawImage(image, dx, dy, dw, dh);
-}
-
-function drawShellBackdrop(ctx, rect) {
-  drawRoundedGradient(ctx, rect, 14, THEME.shellStart, THEME.shellEnd, false);
-  drawRoundedStroke(ctx, rect.x, rect.y, rect.w, rect.h, 14, THEME.shellStroke, 1.2);
-
-  const glowRect = {
-    x: rect.x + 12,
-    y: rect.y + 10,
-    w: rect.w - 24,
-    h: 20,
-  };
-  const g = ctx.createLinearGradient(glowRect.x, glowRect.y, glowRect.x + glowRect.w, glowRect.y);
-  g.addColorStop(0, "rgba(244,176,138,0.0)");
-  g.addColorStop(0.3, "rgba(244,176,138,0.42)");
-  g.addColorStop(1, "rgba(47,151,134,0.0)");
-  drawRoundedFill(ctx, glowRect.x, glowRect.y, glowRect.w, glowRect.h, 10, g);
-}
-
-function drawPanelBase(ctx, rect, radius = 12) {
-  drawRoundedGradient(ctx, rect, radius, THEME.panelStart, THEME.panelEnd, true);
-  drawRoundedStroke(ctx, rect.x, rect.y, rect.w, rect.h, radius, THEME.panelStroke, 1);
-}
-
-function drawHeader(ctx, node, state, rect, selectedPack) {
-  state.hitboxes.headerButtons = [];
-  drawPanelBase(ctx, rect, 12);
-
-  const stripeRect = { x: rect.x + 10, y: rect.y + 10, w: rect.w - 20, h: 5 };
-  const stripe = ctx.createLinearGradient(stripeRect.x, stripeRect.y, stripeRect.x + stripeRect.w, stripeRect.y);
-  stripe.addColorStop(0, THEME.accentAlt);
-  stripe.addColorStop(1, THEME.accent);
-  drawRoundedFill(ctx, stripeRect.x, stripeRect.y, stripeRect.w, stripeRect.h, 3, stripe);
-
-  ctx.fillStyle = THEME.panelText;
-  ctx.font = FONT.hero;
-  ctx.fillText("MKRshift Social Studio", rect.x + 14, rect.y + 42);
-
-  ctx.fillStyle = THEME.panelMuted;
-  ctx.font = FONT.body;
-  const subtitle = selectedPack
-    ? `${selectedPack.name} selected \u2022 ${state.packs.length} pack${state.packs.length === 1 ? "" : "s"}`
-    : `No pack selected \u2022 ${state.packs.length} available`;
-  ctx.fillText(trimText(ctx, subtitle, rect.w * 0.56), rect.x + 15, rect.y + 57);
-
-  const buttons = [
-    { id: "random", label: "Surprise" },
-    { id: "defaults", label: "Use Defaults" },
-    { id: "reload", label: "Reload" },
-  ];
-
-  ctx.font = FONT.label;
-  const gap = 8;
-  let cursorX = rect.x + rect.w - 14;
-  for (let i = buttons.length - 1; i >= 0; i--) {
-    const button = buttons[i];
-    const textW = ctx.measureText(button.label).width;
-    const w = Math.max(70, textW + 22);
-    const h = 26;
-    const b = { x: cursorX - w, y: rect.y + 24, w, h, action: button.id };
-
-    const fill = button.id === "defaults" ? THEME.accentAlt : THEME.controlButtonBg;
-    drawRoundedFill(ctx, b.x, b.y, b.w, b.h, 8, fill);
-    drawRoundedStroke(ctx, b.x, b.y, b.w, b.h, 8, "rgba(255,255,255,0.24)", 1);
-
-    ctx.fillStyle = THEME.controlButtonText;
-    ctx.font = FONT.label;
-    const tx = b.x + (b.w - textW) / 2;
-    ctx.fillText(button.label, tx, b.y + 17);
-
-    state.hitboxes.headerButtons.push(b);
-    cursorX = b.x - gap;
-  }
-}
-
-function drawLibrary(ctx, state, rect) {
-  state.hitboxes.libraryPanel = rect;
-  state.hitboxes.cards = [];
-  state.hitboxes.prevPage = null;
-  state.hitboxes.nextPage = null;
-
-  drawPanelBase(ctx, rect, 12);
-
-  ctx.fillStyle = THEME.panelText;
-  ctx.font = FONT.heading;
-  ctx.fillText("Pack Library", rect.x + 12, rect.y + 22);
-
-  ctx.fillStyle = THEME.panelMuted;
-  ctx.font = FONT.tiny;
-  ctx.fillText(`${state.packs.length} curated flows`, rect.x + 12, rect.y + 36);
-
-  const cardsTop = rect.y + 42;
-  const cardsArea = {
-    x: rect.x + 8,
-    y: cardsTop,
-    w: rect.w - 16,
-    h: rect.h - 50,
-  };
-
-  const cols = UI.CARD_COLS;
-  const rows = UI.CARD_ROWS;
-  const gap = UI.CARD_GAP;
-  const cardsPerPage = cols * rows;
-  state.cardsPerPage = cardsPerPage;
-
-  const totalPages = Math.max(1, Math.ceil(state.packs.length / cardsPerPage));
-  state.page = clamp(state.page, 0, totalPages - 1);
-  const pageStart = state.page * cardsPerPage;
-  const pageItems = state.packs.slice(pageStart, pageStart + cardsPerPage);
-
-  if (totalPages > 1) {
-    const pagerText = `${state.page + 1}/${totalPages}`;
-    ctx.font = FONT.tiny;
-    const pagerWidth = ctx.measureText(pagerText).width;
-    const btnW = 20;
-    const btnH = 16;
-    const right = rect.x + rect.w - 10;
-
-    const prevRect = { x: right - btnW * 2 - 36, y: rect.y + 10, w: btnW, h: btnH };
-    const nextRect = { x: right - btnW - 8, y: rect.y + 10, w: btnW, h: btnH };
-    state.hitboxes.prevPage = prevRect;
-    state.hitboxes.nextPage = nextRect;
-
-    drawRoundedFill(ctx, prevRect.x, prevRect.y, prevRect.w, prevRect.h, 4, THEME.controlButtonBg);
-    drawRoundedFill(ctx, nextRect.x, nextRect.y, nextRect.w, nextRect.h, 4, THEME.controlButtonBg);
-    ctx.fillStyle = THEME.controlButtonText;
-    ctx.fillText("<", prevRect.x + 7, prevRect.y + 12);
-    ctx.fillText(">", nextRect.x + 7, nextRect.y + 12);
-
-    ctx.fillStyle = THEME.panelMuted;
-    ctx.fillText(pagerText, right - btnW - 12 - pagerWidth, rect.y + 22);
-  }
-
-  if (!pageItems.length) {
-    drawRoundedFill(ctx, cardsArea.x + 4, cardsArea.y + 8, cardsArea.w - 8, cardsArea.h - 16, 10, "rgba(255,255,255,0.35)");
-    ctx.fillStyle = THEME.panelMuted;
-    ctx.font = FONT.body;
-    ctx.fillText("No pack files found in /packs", cardsArea.x + 16, cardsArea.y + cardsArea.h / 2);
-    return;
-  }
-
-  const cardW = (cardsArea.w - gap * (cols + 1)) / cols;
-  const cardH = (cardsArea.h - gap * (rows + 1)) / rows;
-
-  for (let i = 0; i < pageItems.length; i++) {
-    const pack = pageItems[i];
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const cardRect = {
-      x: cardsArea.x + gap + col * (cardW + gap),
-      y: cardsArea.y + gap + row * (cardH + gap),
-      w: cardW,
-      h: cardH,
-      packId: pack.id,
+  if (selectedPack?.preview) {
+    return {
+      src: apiUrl(selectedPack.preview),
+      badge: "Pack",
+      placeholder: "",
+      note: connectedInput(node, "image") ? "Queue once to swap the pack preview with your live source image." : "",
     };
-    state.hitboxes.cards.push(cardRect);
-
-    const selected = state.selectedPackId === pack.id;
-    const animT = selected ? clamp((Date.now() - state.selectionAnimStart) / 260, 0, 1) : 1;
-    const glowAlpha = selected ? 0.35 * (1 - animT) + 0.15 : 0;
-    if (selected && animT < 1) {
-      queueRedraw(state);
-    }
-
-    if (selected) {
-      ctx.save();
-      ctx.shadowColor = `rgba(232,111,81,${glowAlpha.toFixed(3)})`;
-      ctx.shadowBlur = 10 + 14 * (1 - animT);
-      drawRoundedFill(ctx, cardRect.x, cardRect.y, cardRect.w, cardRect.h, 10, THEME.cardStart);
-      ctx.restore();
-    }
-
-    drawRoundedGradient(ctx, cardRect, 10, THEME.cardStart, THEME.cardEnd, true);
-    drawRoundedStroke(
-      ctx,
-      cardRect.x,
-      cardRect.y,
-      cardRect.w,
-      cardRect.h,
-      10,
-      selected ? THEME.cardSelectedStroke : THEME.cardStroke,
-      selected ? 2.2 : 1
-    );
-
-    const imageRect = {
-      x: cardRect.x + 7,
-      y: cardRect.y + 7,
-      w: cardRect.w - 14,
-      h: cardRect.h * 0.5,
-    };
-    drawRoundedFill(ctx, imageRect.x, imageRect.y, imageRect.w, imageRect.h, 7, THEME.previewBg);
-    drawRoundedStroke(ctx, imageRect.x, imageRect.y, imageRect.w, imageRect.h, 7, THEME.previewStroke, 1);
-
-    const imageEntry = state.packImages[pack.id];
-    if (imageEntry?.loaded) {
-      ctx.save();
-      roundRectPath(ctx, imageRect.x, imageRect.y, imageRect.w, imageRect.h, 7);
-      ctx.clip();
-      drawImageCover(ctx, imageEntry.img, imageRect.x, imageRect.y, imageRect.w, imageRect.h);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = THEME.previewPlaceholder;
-      ctx.font = FONT.tiny;
-      ctx.fillText("preview", imageRect.x + 8, imageRect.y + imageRect.h / 2 + 4);
-    }
-
-    const titleY = imageRect.y + imageRect.h + 17;
-    ctx.fillStyle = THEME.panelText;
-    ctx.font = FONT.bodyBold;
-    ctx.fillText(trimText(ctx, pack.name || pack.id, cardRect.w - 14), cardRect.x + 7, titleY);
-
-    const meta = `${pack.default_count ?? 12} frames \u2022 ${(pack.ratios || []).join(" / ") || "Auto"}`;
-    ctx.fillStyle = THEME.panelMuted;
-    ctx.font = FONT.tiny;
-    ctx.fillText(trimText(ctx, meta, cardRect.w - 14), cardRect.x + 7, titleY + 14);
-
-    const tags = Array.isArray(pack.tags) ? pack.tags.slice(0, 2) : [];
-    let tx = cardRect.x + 7;
-    const ty = titleY + 24;
-    ctx.font = FONT.tiny;
-    for (const tag of tags) {
-      const label = trimText(ctx, tag, 60);
-      const tw = ctx.measureText(label).width + 10;
-      if (tx + tw > cardRect.x + cardRect.w - 7) break;
-      drawRoundedFill(ctx, tx, ty - 9, tw, 14, 7, THEME.chipBg);
-      ctx.fillStyle = THEME.chipText;
-      ctx.fillText(label, tx + 5, ty + 1);
-      tx += tw + 4;
-    }
   }
-}
 
-function drawPreviewStage(ctx, node, state, rect, selectedPack) {
-  drawPanelBase(ctx, rect, 12);
-
-  ctx.fillStyle = THEME.panelText;
-  ctx.font = FONT.heading;
-  const heading = selectedPack ? `Creative Stage \u2022 ${selectedPack.name}` : "Creative Stage";
-  ctx.fillText(trimText(ctx, heading, rect.w - 24), rect.x + 12, rect.y + 22);
-
-  const previewRect = {
-    x: rect.x + 12,
-    y: rect.y + 30,
-    w: rect.w - 24,
-    h: Math.floor(rect.h * 0.56),
+  return {
+    src: "",
+    badge: "",
+    placeholder: connectedInput(node, "image")
+      ? "Queue once to capture a source preview."
+      : "Connect IMAGE to get a preview.",
+    note: "",
   };
-
-  const g = ctx.createLinearGradient(previewRect.x, previewRect.y, previewRect.x + previewRect.w, previewRect.y + previewRect.h);
-  g.addColorStop(0, "#e0edf3");
-  g.addColorStop(1, "#cedde4");
-  drawRoundedFill(ctx, previewRect.x, previewRect.y, previewRect.w, previewRect.h, 10, g);
-  drawRoundedStroke(ctx, previewRect.x, previewRect.y, previewRect.w, previewRect.h, 10, THEME.previewStroke, 1.2);
-
-  if (state.inputImage?.loaded) {
-    ctx.save();
-    roundRectPath(ctx, previewRect.x, previewRect.y, previewRect.w, previewRect.h, 10);
-    ctx.clip();
-    drawImageContain(ctx, state.inputImage.img, previewRect.x, previewRect.y, previewRect.w, previewRect.h);
-    ctx.restore();
-  } else {
-    ctx.fillStyle = THEME.previewPlaceholder;
-    ctx.font = FONT.body;
-    const placeholder = getImageLinked(node, "image")
-      ? "Input linked. Queue once to capture a live preview."
-      : "Connect IMAGE input to stage your source.";
-    drawWrappedText(ctx, placeholder, previewRect.x + 14, previewRect.y + previewRect.h / 2 - 10, previewRect.w - 24, 16, 2);
-  }
-
-  const infoY = previewRect.y + previewRect.h + 16;
-  const infoH = rect.y + rect.h - infoY - 10;
-  const infoRect = { x: rect.x + 12, y: infoY, w: rect.w - 24, h: Math.max(44, infoH) };
-
-  drawRoundedFill(ctx, infoRect.x, infoRect.y, infoRect.w, infoRect.h, 10, "rgba(255,255,255,0.45)");
-  drawRoundedStroke(ctx, infoRect.x, infoRect.y, infoRect.w, infoRect.h, 10, "rgba(120,90,56,0.24)", 1);
-
-  if (!selectedPack) {
-    ctx.fillStyle = THEME.panelMuted;
-    ctx.font = FONT.body;
-    ctx.fillText("Select a pack to inspect details.", infoRect.x + 12, infoRect.y + 24);
-    return;
-  }
-
-  const ratioText = Array.isArray(selectedPack.ratios) && selectedPack.ratios.length
-    ? selectedPack.ratios.join(" / ")
-    : "Auto";
-  const exportType = String(selectedPack.export?.type || "mixed");
-  const shotCount = Number(selectedPack.shot_count || 0);
-
-  const metrics = [
-    { label: "Shots", value: shotCount > 0 ? String(shotCount) : "-" },
-    { label: "Ratios", value: ratioText },
-    { label: "Export", value: exportType },
-  ];
-
-  const metricGap = 8;
-  const metricW = (infoRect.w - metricGap * 4) / 3;
-  let mx = infoRect.x + metricGap;
-  const my = infoRect.y + 8;
-  for (const metric of metrics) {
-    drawRoundedFill(ctx, mx, my, metricW, 24, 7, "rgba(255,255,255,0.64)");
-    ctx.fillStyle = THEME.panelMuted;
-    ctx.font = FONT.tiny;
-    ctx.fillText(metric.label, mx + 7, my + 10);
-    ctx.fillStyle = THEME.panelText;
-    ctx.font = FONT.label;
-    ctx.fillText(trimText(ctx, metric.value, metricW - 14), mx + 7, my + 21);
-    mx += metricW + metricGap;
-  }
-
-  ctx.fillStyle = THEME.panelMuted;
-  ctx.font = FONT.tiny;
-  drawWrappedText(
-    ctx,
-    selectedPack.description || "No pack description available.",
-    infoRect.x + 10,
-    infoRect.y + 42,
-    infoRect.w - 20,
-    13,
-    2
-  );
 }
 
-function drawControlsRow(ctx, node, state, rect, specs) {
-  const present = specs.filter((spec) => !!getWidget(node, spec.key));
-  if (!present.length) return;
-
-  const gap = 8;
-  const cellW = (rect.w - gap * (present.length - 1)) / present.length;
-  let x = rect.x;
-
-  for (const spec of present) {
-    const control = { x, y: rect.y, w: cellW, h: rect.h };
-
-    drawRoundedFill(ctx, control.x, control.y, control.w, control.h, 9, THEME.controlBg);
-    drawRoundedStroke(ctx, control.x, control.y, control.w, control.h, 9, THEME.controlStroke, 1);
-
-    ctx.fillStyle = THEME.panelMuted;
-    ctx.font = FONT.tiny;
-    ctx.fillText(spec.label, control.x + 8, control.y + 12);
-
-    const widget = getWidget(node, spec.key);
-    const value = String(widget?.value ?? "");
-
-    if (spec.type === "count") {
-      const btnW = 18;
-      const btnH = 18;
-      const minusRect = { x: control.x + 8, y: control.y + control.h - 24, w: btnW, h: btnH };
-      const plusRect = { x: control.x + control.w - btnW - 8, y: control.y + control.h - 24, w: btnW, h: btnH };
-
-      drawRoundedFill(ctx, minusRect.x, minusRect.y, minusRect.w, minusRect.h, 4, THEME.controlButtonBg);
-      drawRoundedFill(ctx, plusRect.x, plusRect.y, plusRect.w, plusRect.h, 4, THEME.controlButtonBg);
-      ctx.fillStyle = THEME.controlButtonText;
-      ctx.font = FONT.bodyBold;
-      ctx.fillText("-", minusRect.x + 7, minusRect.y + 13);
-      ctx.fillText("+", plusRect.x + 6, plusRect.y + 13);
-
-      ctx.fillStyle = THEME.controlValue;
-      ctx.font = FONT.bodyBold;
-      const v = trimText(ctx, value, control.w - 70);
-      const tw = ctx.measureText(v).width;
-      ctx.fillText(v, control.x + (control.w - tw) / 2, control.y + control.h - 11);
-
-      state.hitboxes.controls.push({ kind: "count", minusRect, plusRect });
-    } else {
-      ctx.fillStyle = THEME.controlValue;
-      ctx.font = FONT.bodyBold;
-      ctx.fillText(trimText(ctx, value, control.w - 16), control.x + 8, control.y + control.h - 11);
-      state.hitboxes.controls.push({ kind: "cycle", key: spec.key, rect: control });
-    }
-
-    x += cellW + gap;
-  }
+function renderKey(node, state) {
+  const selectedPack = getSelectedPack(state);
+  const warnings = compactWarnings(node, state).map((entry) => `${entry.level}:${entry.text}`).join("|");
+  const ratios = summarizeSequence(effectiveRatioPlan(node, selectedPack), 3);
+  const roles = summarizeSequence(effectiveRolePlan(node, Math.max(1, widgetInt(node, "count", selectedPack?.default_count ?? 12))), 4);
+  return [
+    state.loadingPacks ? "loading" : "idle",
+    state.selectedPackId,
+    selectedPack?.name || "",
+    selectedPack?.preview || "",
+    selectedPack?.description || "",
+    selectedPack?.default_count || 0,
+    Array.isArray(selectedPack?.ratios) ? selectedPack.ratios.join(",") : "",
+    widgetString(node, "pack", ""),
+    widgetString(node, "output_mode", ""),
+    widgetString(node, "aspect", ""),
+    widgetString(node, "platform", ""),
+    widgetString(node, "branding", ""),
+    widgetString(node, "count", ""),
+    state.previewUrl,
+    JSON.stringify(state.backendReadiness || null),
+    ratios,
+    roles,
+    warnings,
+    connectedInput(node, "image") ? "image" : "noimage",
+    connectedInput(node, "brand_logo") ? "logo" : "nologo",
+  ].join("::");
 }
 
-function drawStatusPanel(ctx, node, rect, selectedPack) {
-  drawRoundedGradient(ctx, rect, 10, THEME.statusCardStart, THEME.statusCardEnd, true);
-  drawRoundedStroke(ctx, rect.x, rect.y, rect.w, rect.h, 10, THEME.statusCardStroke, 1);
-
-  ctx.fillStyle = THEME.panelText;
-  ctx.font = FONT.heading;
-  ctx.fillText("Readiness", rect.x + 10, rect.y + 20);
-
-  const lines = getReadinessLines(node);
-  let y = rect.y + 38;
-  for (const line of lines.slice(0, 3)) {
-    ctx.fillStyle = line.level === "ok" ? THEME.statusOk : THEME.statusWarn;
-    ctx.font = FONT.tiny;
-    drawWrappedText(ctx, line.text, rect.x + 10, y, rect.w - 20, 13, 2);
-    y += 24;
-  }
-
-  ctx.fillStyle = THEME.panelMuted;
-  ctx.font = FONT.tiny;
-  ctx.fillText(`IMAGE: ${getImageLinked(node, "image") ? "connected" : "missing"}`, rect.x + 10, rect.y + rect.h - 32);
-  ctx.fillText(`LOGO: ${getImageLinked(node, "brand_logo") ? "connected" : "missing"}`, rect.x + 10, rect.y + rect.h - 18);
-
-  if (selectedPack) {
-    ctx.fillStyle = THEME.panelText;
-    ctx.font = FONT.tiny;
-    ctx.fillText(trimText(ctx, `Pack: ${selectedPack.id}`, rect.w - 20), rect.x + 10, rect.y + rect.h - 4);
-  }
+function createElement(tag, className = "", text = "") {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text) el.textContent = text;
+  return el;
 }
 
-function drawBottomDeck(ctx, node, state, rect, selectedPack) {
-  state.hitboxes.controls = [];
+function buildCompactSummary(node, state) {
+  const root = state?.dom?.root;
+  if (!root || typeof document === "undefined") return;
 
-  drawPanelBase(ctx, rect, 12);
-
-  ctx.fillStyle = THEME.panelText;
-  ctx.font = FONT.heading;
-  ctx.fillText("Control Deck", rect.x + 12, rect.y + 22);
-
-  const statusW = Math.min(230, Math.max(200, rect.w * 0.24));
-  const statusRect = {
-    x: rect.x + rect.w - statusW - 10,
-    y: rect.y + 30,
-    w: statusW,
-    h: rect.h - 40,
-  };
-
-  const controlsArea = {
-    x: rect.x + 10,
-    y: rect.y + 30,
-    w: rect.w - statusW - 24,
-    h: rect.h - 40,
-  };
-
-  const rowGap = 8;
-  const rowH = (controlsArea.h - rowGap) / 2;
-  const row1 = { x: controlsArea.x, y: controlsArea.y, w: controlsArea.w, h: rowH };
-  const row2 = { x: controlsArea.x, y: controlsArea.y + rowH + rowGap, w: controlsArea.w, h: rowH };
-
-  const specRow1 = [
-    { label: "Mode", key: "output_mode", type: "cycle" },
-    { label: "Count", key: "count", type: "count" },
-    { label: "Aspect", key: "aspect", type: "cycle" },
-    { label: "Brand", key: "branding", type: "cycle" },
-    { label: "Tone", key: "caption_tone", type: "cycle" },
-  ];
-
-  const specRow2 = [
-    { label: "Platform", key: "platform", type: "cycle" },
-    { label: "Objective", key: "objective", type: "cycle" },
-    { label: "Hook", key: "hook_style", type: "cycle" },
-    { label: "CTA", key: "cta_mode", type: "cycle" },
-    { label: "Hashtags", key: "hashtag_mode", type: "cycle" },
-  ];
-
-  drawControlsRow(ctx, node, state, row1, specRow1);
-  drawControlsRow(ctx, node, state, row2, specRow2);
-  drawStatusPanel(ctx, node, statusRect, selectedPack);
-}
-
-function drawLoadingOverlay(ctx, rect) {
-  drawRoundedFill(ctx, rect.x, rect.y, rect.w, rect.h, 12, "rgba(18,31,43,0.62)");
-  ctx.fillStyle = "#f3ead8";
-  ctx.font = FONT.heading;
-  ctx.fillText("Loading packs...", rect.x + 14, rect.y + 26);
-}
-
-function drawSocialPackUI(node, ctx, state) {
-  if (node.flags?.collapsed) return;
-
-  setNodeMinSize(node);
-
-  const packFromWidget = extractPackId(getWidget(node, "pack")?.value ?? "");
-  if (packFromWidget && packFromWidget !== state.selectedPackId) {
-    state.selectedPackId = packFromWidget;
-  }
-
-  const width = node.size[0];
-  const height = node.size[1];
-  const pad = UI.PAD;
-  const safeX = pad;
-  const safeY = pad + UI.SAFE_TOP;
-  const safeW = Math.max(520, width - pad * 2);
-  const safeH = Math.max(360, height - (pad * 2 + UI.SAFE_TOP + UI.SAFE_BOTTOM));
-
-  const shellRect = { x: safeX, y: safeY, w: safeW, h: safeH };
-  drawShellBackdrop(ctx, shellRect);
-
-  const headerRect = { x: safeX + 8, y: safeY + 8, w: safeW - 16, h: UI.HEADER_H };
-  const contentY = headerRect.y + headerRect.h + UI.GAP;
-  const contentH = Math.max(180, safeH - UI.HEADER_H - UI.BOTTOM_H - UI.GAP * 3 - 16);
-
-  const leftW = Math.max(260, Math.round((safeW - UI.GAP - 16) * UI.LEFT_RATIO));
-  const rightW = Math.max(220, safeW - 16 - UI.GAP - leftW);
-  const leftRect = { x: safeX + 8, y: contentY, w: leftW, h: contentH };
-  const rightRect = { x: leftRect.x + leftW + UI.GAP, y: contentY, w: rightW, h: contentH };
-  const bottomRect = {
-    x: safeX + 8,
-    y: contentY + contentH + UI.GAP,
-    w: safeW - 16,
-    h: UI.BOTTOM_H,
-  };
+  const nextKey = renderKey(node, state);
+  if (nextKey === state.lastRenderKey) return;
+  state.lastRenderKey = nextKey;
 
   const selectedPack = getSelectedPack(state);
+  const ratioPlan = effectiveRatioPlan(node, selectedPack);
+  const rolePlan = effectiveRolePlan(node, ratioPlan.length);
+  const warnings = compactWarnings(node, state);
+  const summaryImage = summaryImageInfo(node, state, selectedPack);
+  const shell = createElement("div", "mkr-social-compact");
 
-  drawHeader(ctx, node, state, headerRect, selectedPack);
-  drawLibrary(ctx, state, leftRect);
-  drawPreviewStage(ctx, node, state, rightRect, selectedPack);
-  drawBottomDeck(ctx, node, state, bottomRect, selectedPack);
+  const head = createElement("div", "mkr-social-compact__head");
+  const intro = createElement("div");
+  intro.appendChild(createElement("div", "mkr-social-compact__eyebrow", "Social Builder"));
+  intro.appendChild(createElement("div", "mkr-social-compact__title", "Compact Summary"));
+  const subtitle = state.loadingPacks
+    ? "Refreshing pack metadata..."
+    : selectedPack
+      ? `${selectedPack.name} selected. Native widgets are the main controls.`
+      : "Use the normal widgets above and keep the summary panel for feedback.";
+  intro.appendChild(createElement("div", "mkr-social-compact__subtitle", subtitle));
 
-  if (state.loadingPacks) {
-    drawLoadingOverlay(ctx, shellRect);
+  const actions = createElement("div", "mkr-social-compact__actions");
+  const defaultsButton = createElement("button", "mkr-social-compact__button is-primary", "Defaults");
+  defaultsButton.type = "button";
+  defaultsButton.addEventListener("click", () => applyPackDefaults(node, state));
+  actions.appendChild(defaultsButton);
+
+  const reloadButton = createElement("button", "mkr-social-compact__button", "Reload");
+  reloadButton.type = "button";
+  reloadButton.addEventListener("click", async () => {
+    await loadPacks(node, state, true);
+  });
+  actions.appendChild(reloadButton);
+  head.append(intro, actions);
+  shell.appendChild(head);
+
+  const content = createElement("div", "mkr-social-compact__content");
+  const thumb = createElement("div", "mkr-social-compact__thumb");
+  if (summaryImage.src) {
+    const img = document.createElement("img");
+    img.src = summaryImage.src;
+    img.alt = selectedPack?.name || "Social pack preview";
+    thumb.appendChild(img);
+  } else {
+    thumb.appendChild(createElement("div", "mkr-social-compact__thumb-empty", summaryImage.placeholder));
   }
+  content.appendChild(thumb);
+
+  const packCol = createElement("div", "mkr-social-compact__pack");
+  if (summaryImage.badge) {
+    packCol.appendChild(createElement("div", "mkr-social-compact__badge", `${summaryImage.badge} Preview`));
+  }
+  packCol.appendChild(createElement("div", "mkr-social-compact__pack-name", selectedPack?.name || "No pack selected"));
+
+  const ratioText = Array.isArray(selectedPack?.ratios) && selectedPack.ratios.length
+    ? selectedPack.ratios.join(" / ")
+    : "Auto";
+  const exportType = String(selectedPack?.export?.type || "mixed");
+  const metaText = selectedPack
+    ? `${selectedPack.default_count ?? 12} assets • ${ratioText} • ${exportType}`
+    : "Pack metadata will show here after selection.";
+  packCol.appendChild(createElement("div", "mkr-social-compact__meta", metaText));
+
+  const chips = createElement("div", "mkr-social-compact__chips");
+  for (const label of [
+    `Mode ${widgetString(node, "output_mode", "Carousel")}`,
+    `Count ${widgetInt(node, "count", selectedPack?.default_count ?? 12)}`,
+    `Ratios ${summarizeSequence(ratioPlan, 3)}`,
+    `Pacing ${summarizeSequence(rolePlan, 4)}`,
+  ]) {
+    chips.appendChild(createElement("span", "mkr-social-compact__chip", label));
+  }
+  packCol.appendChild(chips);
+
+  const description = selectedPack?.description
+    || "Choose a pack and the summary will describe the preset and current plan behavior.";
+  packCol.appendChild(createElement("div", "mkr-social-compact__meta", description));
+  if (summaryImage.note) {
+    packCol.appendChild(createElement("div", "mkr-social-compact__note", summaryImage.note));
+  }
+  content.appendChild(packCol);
+  shell.appendChild(content);
+
+  const warningsBox = createElement("div", "mkr-social-compact__warnings");
+  for (const line of warnings) {
+    const row = createElement("div", `mkr-social-compact__warning${line.level === "ok" ? " is-ok" : ""}`);
+    row.appendChild(createElement("span", "mkr-social-compact__warning-dot"));
+    row.appendChild(createElement("div", "mkr-social-compact__warning-text", line.text));
+    warningsBox.appendChild(row);
+  }
+  shell.appendChild(warningsBox);
+
+  root.replaceChildren(shell);
 }
 
-function runHeaderAction(node, state, action) {
-  if (action === "random") {
-    chooseRandomPack(node, state);
-    return;
-  }
-  if (action === "defaults") {
-    applyPackDefaults(node, state);
-    return;
-  }
-  if (action === "reload") {
-    packsRequest = null;
-    loadPacksForNode(node, state).catch((error) => {
-      console.error("[mkrshift.socialpack] reload failed:", error);
-    });
-  }
-}
+function createDomWidget(node, state) {
+  if (typeof document === "undefined" || typeof node.addDOMWidget !== "function") return false;
+  if (state.domWidget) return true;
 
-function handleMouseDown(node, state, point, event) {
-  if (!point) return false;
+  ensureStyle();
+  const root = document.createElement("div");
+  root.style.cssText = "width:100%;box-sizing:border-box;";
+  const widget = node.addDOMWidget(DOM_WIDGET_NAME, "DOM", root, {
+    serialize: false,
+    hideOnZoom: false,
+    margin: 0,
+    getMinHeight: () => MIN_SUMMARY_H,
+    getMaxHeight: () => MIN_SUMMARY_H,
+  });
+  if (!widget) return false;
 
-  for (const button of state.hitboxes.headerButtons) {
-    if (pointInRect(point, button)) {
-      runHeaderAction(node, state, button.action);
-      markDirty(node);
-      return true;
-    }
-  }
-
-  if (state.hitboxes.prevPage && pointInRect(point, state.hitboxes.prevPage)) {
-    state.page = Math.max(0, state.page - 1);
-    markDirty(node);
-    return true;
-  }
-
-  if (state.hitboxes.nextPage && pointInRect(point, state.hitboxes.nextPage)) {
-    const totalPages = Math.max(1, Math.ceil(state.packs.length / state.cardsPerPage));
-    state.page = Math.min(totalPages - 1, state.page + 1);
-    markDirty(node);
-    return true;
-  }
-
-  for (const card of state.hitboxes.cards) {
-    if (pointInRect(point, card)) {
-      syncPackSelection(node, state, card.packId);
-      markDirty(node);
-      return true;
-    }
-  }
-
-  for (const option of state.hitboxes.controls) {
-    if (option.kind === "cycle" && pointInRect(point, option.rect)) {
-      cycleWidgetValue(node, option.key, 1);
-      markDirty(node);
-      return true;
-    }
-
-    if (option.kind === "count") {
-      if (pointInRect(point, option.minusRect)) {
-        adjustCount(node, -1);
-        markDirty(node);
-        return true;
-      }
-      if (pointInRect(point, option.plusRect)) {
-        adjustCount(node, 1);
-        markDirty(node);
-        return true;
-      }
-    }
-  }
-
-  if (state.hitboxes.libraryPanel && pointInRect(point, state.hitboxes.libraryPanel)) {
-    event?.stopPropagation?.();
-    return false;
-  }
-
-  return false;
-}
-
-function handleMouseWheel(node, state, point, event) {
-  if (!point || !state.hitboxes.libraryPanel || !pointInRect(point, state.hitboxes.libraryPanel)) {
-    return false;
-  }
-
-  const totalPages = Math.max(1, Math.ceil(state.packs.length / state.cardsPerPage));
-  if (totalPages <= 1) return false;
-
-  const delta = Number(event?.deltaY ?? 0);
-  if (delta === 0) return false;
-
-  const nextPage = clamp(state.page + (delta > 0 ? 1 : -1), 0, totalPages - 1);
-  if (nextPage !== state.page) {
-    state.page = nextPage;
-    markDirty(node);
-  }
-
-  event?.preventDefault?.();
-  event?.stopPropagation?.();
+  widget.serialize = false;
+  state.dom = { root };
+  state.domWidget = widget;
+  normalizeDomWidgetStack(node, state);
+  buildCompactSummary(node, state);
   return true;
 }
 
-async function loadPacksForNode(node, state) {
-  if (state.loadingPacks) return;
+function compactUiSignature(node, state) {
+  return [
+    widgetString(node, "pack", ""),
+    widgetString(node, "output_mode", ""),
+    widgetString(node, "count", ""),
+    widgetString(node, "aspect", ""),
+    widgetString(node, "platform", ""),
+    widgetString(node, "branding", ""),
+    widgetString(node, "caption_tone", ""),
+    widgetString(node, "objective", ""),
+    widgetString(node, "hook_style", ""),
+    widgetString(node, "cta_mode", ""),
+    widgetString(node, "hashtag_mode", ""),
+    connectedInput(node, "image") ? "image" : "noimage",
+    connectedInput(node, "brand_logo") ? "logo" : "nologo",
+    state.previewUrl,
+    JSON.stringify(state.backendReadiness || null),
+  ].join("|");
+}
+
+function refreshCompactUI(node) {
+  const state = ensureState(node);
+  const selected = selectedPackIdFromNode(node);
+  if (selected && selected !== state.selectedPackId) {
+    state.selectedPackId = selected;
+  }
+  normalizeDomWidgetStack(node, state);
+  buildCompactSummary(node, state);
+}
+
+async function loadPacks(node, state, force = false) {
   state.loadingPacks = true;
+  refreshCompactUI(node);
   markDirty(node);
 
-  const remotePacks = await fetchPacksFromBackend();
+  const remotePacks = await fetchPacksFromBackend(force);
   state.packs = Array.isArray(remotePacks) && remotePacks.length ? remotePacks : fallbackPacksFromWidget(node);
 
-  preloadPackImages(state);
-
-  const selected = pickInitialPackId(node, state.packs);
+  const selected = selectedPackIdFromNode(node) || state.packs[0]?.id || "";
   if (selected) {
-    syncPackSelection(node, state, selected);
+    state.selectedPackId = selected;
   }
 
   state.loadingPacks = false;
+  refreshCompactUI(node);
   markDirty(node);
 }
 
-async function initializeSocialPackNode(node) {
-  const state = ensureNodeState(node);
-  hideBuiltInWidgets(node);
-  setNodeMinSize(node);
-  attachHandlers(node, state);
-  await loadPacksForNode(node, state);
-}
-
 function attachHandlers(node, state) {
-  if (node.__mkrshiftSocialAttached) return;
-  node.__mkrshiftSocialAttached = true;
-
-  const originalDrawForeground = node.onDrawForeground;
-  node.onDrawForeground = function onDrawForeground(ctx) {
-    originalDrawForeground?.apply(this, arguments);
-    drawSocialPackUI(this, ctx, state);
-  };
-
-  const originalMouseDown = node.onMouseDown;
-  node.onMouseDown = function onMouseDown(event, pos) {
-    const point = getLocalPos(this, event, pos);
-    if (handleMouseDown(this, state, point, event)) {
-      return true;
-    }
-    return originalMouseDown?.apply(this, arguments);
-  };
-
-  const originalMouseWheel = node.onMouseWheel;
-  node.onMouseWheel = function onMouseWheel(event, pos) {
-    const point = getLocalPos(this, event, pos);
-    if (handleMouseWheel(this, state, point, event)) {
-      return true;
-    }
-    return originalMouseWheel?.apply(this, arguments);
-  };
+  if (node.__mkrshiftSocialCompactAttached) return;
+  node.__mkrshiftSocialCompactAttached = true;
 
   const originalExecuted = node.onExecuted;
   node.onExecuted = function onExecuted(message) {
     originalExecuted?.apply(this, arguments);
-    const previewInfo = message?.input_preview?.[0] ?? message?.ui?.input_preview?.[0] ?? null;
-    if (previewInfo) {
-      loadInputPreviewImage(state, previewInfo);
-      markDirty(this);
+    const readinessInfo = message?.readiness?.[0] ?? message?.ui?.readiness?.[0] ?? null;
+    if (readinessInfo) {
+      state.backendReadiness = readinessInfo;
     }
+    const previewInfo = message?.input_preview?.[0] ?? message?.ui?.input_preview?.[0] ?? null;
+    if (previewInfo?.filename) {
+      state.previewUrl = `${buildViewUrl(previewInfo)}&_ts=${Date.now()}`;
+    }
+    refreshCompactUI(this);
   };
 
   const originalConfigure = node.onConfigure;
-  node.onConfigure = function onConfigure(info) {
+  node.onConfigure = function onConfigure() {
     originalConfigure?.apply(this, arguments);
-    hideBuiltInWidgets(this);
-    const selectedFromProperty = String(this.properties?.selected_pack_id ?? "").trim();
-    if (selectedFromProperty) {
-      syncPackSelection(this, state, selectedFromProperty);
-    }
-    markDirty(this);
+    restoreVisibleWidgets(this);
+    createDomWidget(this, state);
+    refreshCompactUI(this);
   };
 
   const originalConnectionsChange = node.onConnectionsChange;
   node.onConnectionsChange = function onConnectionsChange() {
     const out = originalConnectionsChange?.apply(this, arguments);
-    markDirty(this);
+    refreshCompactUI(this);
     return out;
+  };
+
+  const originalRemoved = node.onRemoved;
+  node.onRemoved = function onRemoved() {
+    clearStateTimer(state);
+    return originalRemoved?.apply(this, arguments);
   };
 }
 
+function startPolling(node, state) {
+  clearStateTimer(state);
+  state.lastSig = compactUiSignature(node, state);
+  state.pollTimer = setInterval(() => {
+    const nextSig = compactUiSignature(node, state);
+    if (nextSig === state.lastSig) return;
+    state.lastSig = nextSig;
+    refreshCompactUI(node);
+  }, POLL_MS);
+}
+
+async function initializeSocialPackNode(node) {
+  ensureStyle();
+  const state = ensureState(node);
+  restoreVisibleWidgets(node);
+  node.resizable = true;
+  if (!Array.isArray(node.size) || node.size.length < 2) {
+    node.size = [DEFAULT_W, DEFAULT_H];
+  }
+  node.size[0] = Math.max(DEFAULT_W, Number(node.size[0] || DEFAULT_W));
+  node.size[1] = Math.max(DEFAULT_H, Number(node.size[1] || DEFAULT_H));
+
+  createDomWidget(node, state);
+  attachHandlers(node, state);
+  startPolling(node, state);
+  refreshCompactUI(node);
+  await loadPacks(node, state, false);
+}
+
 app.registerExtension({
-  name: "mkrshift.socialpack",
+  name: EXT,
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (!isSocialPackNodeDef(nodeData)) return;
 

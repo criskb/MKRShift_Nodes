@@ -11,6 +11,7 @@ from PIL.PngImagePlugin import PngInfo
 import torch
 
 from .categories import INSPECT_PREVIEW
+from .xshared import to_image_batch as _to_image_batch
 
 try:
     import folder_paths  # type: ignore
@@ -26,21 +27,6 @@ ALLOWED_FIT_MODES = {"contain", "cover", "stretch"}
 
 def _clamp01(value: float) -> float:
     return float(max(0.0, min(1.0, float(value))))
-
-
-def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
-    if not torch.is_tensor(image):
-        raise TypeError("image input is not a torch tensor")
-
-    t = image.detach().float()
-    if t.ndim == 3:
-        t = t.unsqueeze(0)
-    if t.ndim != 4:
-        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape={tuple(t.shape)}")
-    if t.shape[-1] not in (3, 4):
-        raise ValueError(f"Expected channels=3 or 4, got shape={tuple(t.shape)}")
-
-    return t.clamp(0.0, 1.0)
 
 
 def _image_batch_to_pil(image: torch.Tensor) -> List[Image.Image]:

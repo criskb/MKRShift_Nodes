@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from .categories import UTILITY_SHADER
+from .xshared import to_image_batch as _to_image_batch
 
 _SWIZZLE = {"x": 0, "r": 0, "y": 1, "g": 1, "z": 2, "b": 2, "w": 3, "a": 3}
 _TYPE_PREFIX = (
@@ -657,19 +658,6 @@ def _execute_shader(rgba: np.ndarray, statements: Sequence[Tuple[str, str, str, 
 
     out_rgba = output.expanded(4).arr
     return _clamp01(out_rgba.astype(np.float32, copy=False))
-
-
-def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
-    if not torch.is_tensor(image):
-        raise TypeError("image input is not a torch tensor")
-    t = image.detach().float()
-    if t.ndim == 3:
-        t = t.unsqueeze(0)
-    if t.ndim != 4:
-        raise ValueError(f"Expected IMAGE tensor [B,H,W,C], got shape={tuple(t.shape)}")
-    if t.shape[-1] not in (3, 4):
-        raise ValueError(f"Expected channels=3 or 4, got shape={tuple(t.shape)}")
-    return t.clamp(0.0, 1.0)
 
 
 class xShader:
