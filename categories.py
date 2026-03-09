@@ -46,3 +46,7 @@ UTILITY_MEDIA = MEDIA_ROOT
 # Social workflow nodes.
 SOCIAL_BUILDER = f"{ROOT}/Social/Builder"
 SOCIAL_UTILS = f"{ROOT}/Social/Utils"
+
+# Studio workflow nodes.
+STUDIO_PREP = f"{ROOT}/Studio/Prep"
+STUDIO_REVIEW = f"{ROOT}/Studio/Review"

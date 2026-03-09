@@ -37,7 +37,7 @@ class PackAssetTests(unittest.TestCase):
         self.assertTrue(project.get("version"))
         self.assertEqual(comfy.get("DisplayName"), "MKRShift Nodes")
 
-    def test_help_docs_exist_for_custom_ui_nodes(self) -> None:
+    def test_help_docs_exist_for_documented_nodes(self) -> None:
         docs_root = REPO_ROOT / "web" / "docs"
         expected = {
             "AngleShift.md",
@@ -45,6 +45,9 @@ class PackAssetTests(unittest.TestCase):
             "MKRPreSave.md",
             "MKRPresaveVideo.md",
             "MKRPresaveAudio.md",
+            "MKRStudioSlate.md",
+            "MKRStudioReviewFrame.md",
+            "MKRStudioContactSheet.md",
             "MKRshiftSocialPackBuilder.md",
             "xLUT.md",
             "x1MaskGen.md",
@@ -60,6 +63,9 @@ class PackAssetTests(unittest.TestCase):
             "MKRPreSave",
             "MKRPresaveVideo",
             "MKRPresaveAudio",
+            "MKRStudioSlate",
+            "MKRStudioReviewFrame",
+            "MKRStudioContactSheet",
             "MKRshiftSocialPackBuilder",
             "xLUT",
             "x1MaskGen",

@@ -327,6 +327,18 @@ function toUrlList(entries) {
     .filter(Boolean);
 }
 
+function inferEntryMediaKind(entry, fallback = "video") {
+  const explicit = String(entry?.media_kind || "").trim().toLowerCase();
+  if (["image", "video", "audio"].includes(explicit)) return explicit;
+
+  const filename = String(entry?.filename || "");
+  const ext = filename.includes(".") ? filename.split(".").pop().toLowerCase() : "";
+  if (["gif", "webp", "png", "jpg", "jpeg"].includes(ext)) return "image";
+  if (["mp4", "mov", "webm", "m4v"].includes(ext)) return "video";
+  if (["wav", "mp3", "flac", "ogg"].includes(ext)) return "audio";
+  return fallback;
+}
+
 function setSource(el, url) {
   if (!el) return;
   if (!url) {
@@ -338,6 +350,17 @@ function setSource(el, url) {
   if (el.src !== url) {
     el.src = url;
     el.load?.();
+  }
+}
+
+function setImageSource(el, url) {
+  if (!el) return;
+  if (!url) {
+    el.removeAttribute("src");
+    return;
+  }
+  if (el.src !== url) {
+    el.src = url;
   }
 }
 
@@ -481,9 +504,23 @@ function createDomState(node, state) {
   status.textContent = "Queue node to generate preview.";
 
   let mediaEl = null;
+  let imageEl = null;
   let barsWrap = null;
 
   if (state.kind === "video") {
+    const image = document.createElement("img");
+    image.alt = "Preview";
+    image.style.cssText = [
+      "position:absolute",
+      "inset:0",
+      "width:100%",
+      "height:100%",
+      "object-fit:contain",
+      "background:#090909",
+      "display:none",
+    ].join(";");
+    stage.appendChild(image);
+
     const video = document.createElement("video");
     video.style.cssText = [
       "position:absolute",
@@ -492,13 +529,16 @@ function createDomState(node, state) {
       "height:100%",
       "object-fit:contain",
       "background:#090909",
+      "display:none",
     ].join(";");
     video.muted = true;
     video.loop = true;
     video.controls = true;
+    video.preload = "metadata";
     video.playsInline = true;
     stage.appendChild(video);
     mediaEl = video;
+    imageEl = image;
   } else {
     ensureMediaAnimationStyles();
 
@@ -559,6 +599,7 @@ function createDomState(node, state) {
     status,
     modeBadge,
     mediaEl,
+    imageEl,
     barsWrap,
   };
   state.domWidget = widget;
@@ -587,10 +628,18 @@ function updateDomVisuals(node, state) {
   const hasPreview = !!previewUrl;
 
   if (state.kind === "video") {
+    const previewKind = String(state.previewMediaKind || "video").trim().toLowerCase();
+    const showImage = hasPreview && previewKind === "image";
     const video = dom.mediaEl;
+    const image = dom.imageEl;
+    if (image) {
+      image.style.display = showImage ? "block" : "none";
+      setImageSource(image, showImage ? previewUrl : "");
+    }
     if (video) {
-      setSource(video, previewUrl);
-      if (hasPreview && video.paused) {
+      video.style.display = showImage ? "none" : hasPreview ? "block" : "none";
+      setSource(video, showImage ? "" : previewUrl);
+      if (!showImage && hasPreview && video.paused) {
         video.play?.().catch(() => {});
       }
     }
@@ -624,9 +673,13 @@ function applyOutputMessage(node, state, message) {
 
   const urls = toUrlList(entries);
   state.previewUrl = urls[0] || "";
+  state.previewMediaKind = inferEntryMediaKind(entries[0], state.kind);
 
   if (mediaState && typeof mediaState === "object") {
     state.previewOnly = !!mediaState.preview_only;
+    if (typeof mediaState.preview_media_kind === "string" && mediaState.preview_media_kind.trim()) {
+      state.previewMediaKind = mediaState.preview_media_kind.trim().toLowerCase();
+    }
   }
 
   if (saveSummary && typeof saveSummary === "object") {
@@ -664,6 +717,7 @@ function ensureMediaUI(node) {
     kind,
     previewOnly: boolValue(readWidgetOrProperty(node, "preview_only", true), true),
     previewUrl: "",
+    previewMediaKind: kind,
     saveSummary: {},
     dom: null,
     domWidget: null,
