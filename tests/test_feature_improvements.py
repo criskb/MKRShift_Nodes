@@ -16,7 +16,14 @@ if str(PACKAGE_PARENT) not in sys.path:
 from MKRShift_Nodes.nodes.mask_nodes import x1MaskGen  # noqa: E402
 from MKRShift_Nodes.nodes.presave_media_nodes import MKRPresaveVideo  # noqa: E402
 from MKRShift_Nodes.nodes.social_nodes import MKRshiftSocialPackBuilder  # noqa: E402
-from MKRShift_Nodes.nodes.studio_nodes import MKRStudioContactSheet, MKRStudioReviewFrame, MKRStudioSlate  # noqa: E402
+from MKRShift_Nodes.nodes.studio_nodes import (  # noqa: E402
+    MKRStudioCompareBoard,
+    MKRStudioContactSheet,
+    MKRStudioDeliveryPlan,
+    MKRStudioReviewBurnIn,
+    MKRStudioReviewFrame,
+    MKRStudioSlate,
+)
 
 
 class FeatureImprovementTests(unittest.TestCase):
@@ -181,6 +188,156 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertEqual(info["columns"], 3)
         self.assertEqual(info["board_size"], [312, 388])
         self.assertEqual(info["frames"][0]["label"], "SHOT 12")
+
+    def test_studio_delivery_plan_builds_save_ready_naming_bundle(self) -> None:
+        slate_node = MKRStudioSlate()
+        review_node = MKRStudioReviewFrame()
+        delivery_node = MKRStudioDeliveryPlan()
+
+        _, slate_json, _ = slate_node.build(
+            width=640,
+            height=360,
+            theme="Carbon",
+            project="Studio Test",
+            sequence="SEQ_07",
+            shot="B012",
+            take="3",
+            artist="Ada",
+            date_text="2026-03-09",
+        )
+        _, review_info = review_node.frame(image=torch.zeros((1, 64, 96, 3), dtype=torch.float32), version_tag="v003")
+
+        filename_prefix, subfolder, review_title, manifest_notes_json, delivery_plan_json = delivery_node.plan(
+            project="",
+            sequence="",
+            shot="",
+            take="",
+            version_tag="v003",
+            deliverable="Review",
+            department="Lookdev",
+            artist="Ada",
+            client="Northstar",
+            date_text="2026-03-09",
+            naming_mode="Editorial",
+            extension="png",
+            include_take=True,
+            include_date=True,
+            include_artist=True,
+            include_client=False,
+            slate_json=slate_json,
+            review_frame_info=review_info,
+            notes_json='{"priority":"client"}',
+        )
+
+        manifest_notes = json.loads(manifest_notes_json)
+        delivery_plan = json.loads(delivery_plan_json)
+
+        self.assertEqual(filename_prefix, "studio_test_seq_07_b012_t03_v003_lookdev_review_2026_03_09_ada")
+        self.assertEqual(subfolder, "studio_test/seq_07/b012/review/v003")
+        self.assertEqual(review_title, "Studio Test | SEQ_07 | B012 | v003")
+        self.assertEqual(manifest_notes["delivery"]["aspect"], "16:9")
+        self.assertEqual(manifest_notes["labels"]["badge"], "IN REVIEW")
+        self.assertEqual(manifest_notes["suggested_files"]["manifest"], f"{filename_prefix}_manifest.json")
+        self.assertEqual(delivery_plan["manifest_notes"]["source_counts"]["review_frames"], 1)
+
+    def test_studio_review_burnin_uses_delivery_plan_labels(self) -> None:
+        delivery_node = MKRStudioDeliveryPlan()
+        burnin_node = MKRStudioReviewBurnIn()
+
+        _, _, _, _, delivery_plan_json = delivery_node.plan(
+            project="Studio Test",
+            sequence="SEQ_07",
+            shot="B012",
+            take="3",
+            version_tag="v003",
+            deliverable="Review",
+            department="Lookdev",
+            artist="Ada",
+            client="",
+            date_text="2026-03-09",
+            naming_mode="Editorial",
+            extension="png",
+            include_take=True,
+            include_date=True,
+            include_artist=False,
+            include_client=False,
+        )
+
+        frames = torch.zeros((2, 64, 96, 3), dtype=torch.float32)
+        image, info_json = burnin_node.burn_in(
+            image=frames,
+            title="",
+            subtitle="",
+            badge="",
+            theme="Signal",
+            footer_left="",
+            footer_right="",
+            inset_px=10,
+            band_height_px=28,
+            accent_width_px=6,
+            opacity=0.85,
+            show_frame_index=True,
+            delivery_plan_json=delivery_plan_json,
+        )
+
+        info = json.loads(info_json)
+        self.assertEqual(tuple(image.shape), (2, 64, 96, 3))
+        self.assertEqual(info["labels"]["title"], "Studio Test | SEQ_07 | B012 | v003")
+        self.assertEqual(info["labels"]["badge"], "IN REVIEW")
+        self.assertTrue(float(image.mean()) > 0.01)
+
+    def test_studio_compare_board_builds_exportable_pair_layout(self) -> None:
+        delivery_node = MKRStudioDeliveryPlan()
+        compare_node = MKRStudioCompareBoard()
+
+        _, _, _, _, delivery_plan_json = delivery_node.plan(
+            project="Studio Test",
+            sequence="SEQ_07",
+            shot="B012",
+            take="3",
+            version_tag="v004",
+            deliverable="Review",
+            department="Comp",
+            artist="Ada",
+            client="Northstar",
+            date_text="2026-03-09",
+            naming_mode="Editorial",
+            extension="png",
+            include_take=True,
+            include_date=False,
+            include_artist=False,
+            include_client=False,
+        )
+
+        image_a = torch.zeros((1, 64, 96, 3), dtype=torch.float32)
+        image_b = torch.ones((1, 64, 96, 3), dtype=torch.float32)
+        image, info_json = compare_node.board(
+            image_a=image_a,
+            image_b=image_b,
+            title="",
+            subtitle="",
+            label_a="Before",
+            label_b="After",
+            theme="Paper",
+            orientation="Horizontal",
+            footer_left="",
+            footer_right="",
+            margin_px=20,
+            gutter_px=12,
+            header_px=48,
+            footer_px=32,
+            shadow_strength=0.2,
+            show_index=True,
+            delivery_plan_json=delivery_plan_json,
+        )
+
+        info = json.loads(info_json)
+        self.assertEqual(tuple(image.shape), (1, 184, 244, 3))
+        self.assertEqual(info["orientation"], "horizontal")
+        self.assertEqual(info["title"], "Studio Test | SEQ_07 | B012 | v004")
+        self.assertEqual(info["rows"][0]["label_a"], "Before")
+        self.assertEqual(info["rows"][0]["output_size"], [244, 184])
+        self.assertTrue(float(image.mean()) > 0.05)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 import json
 import math
+import re
+from datetime import datetime
 from fractions import Fraction
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -7,7 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import torch
 
-from ..categories import STUDIO_PREP, STUDIO_REVIEW
+from ..categories import STUDIO_DELIVERY, STUDIO_PREP, STUDIO_REVIEW
 
 
 StudioPalette = Dict[str, Tuple[int, int, int]]
@@ -50,6 +52,30 @@ _THEMES: Dict[str, StudioPalette] = {
         "line": (61, 110, 163),
     },
 }
+
+_DELIVERABLES: Dict[str, Dict[str, str]] = {
+    "Review": {"folder": "review", "slug": "review", "badge": "IN REVIEW"},
+    "Client Selects": {"folder": "client_selects", "slug": "selects", "badge": "CLIENT SELECTS"},
+    "Contact Sheet": {"folder": "contact_sheet", "slug": "contact_sheet", "badge": "CONTACT SHEET"},
+    "Turnover": {"folder": "turnover", "slug": "turnover", "badge": "TURNOVER"},
+    "Social Cut": {"folder": "social_cut", "slug": "social_cut", "badge": "SOCIAL CUT"},
+}
+
+_DEPARTMENTS = [
+    "General",
+    "Lookdev",
+    "Animation",
+    "Lighting",
+    "Comp",
+    "Editorial",
+    "Design",
+]
+
+_NAMING_MODES = [
+    "Compact",
+    "Editorial",
+    "Client Friendly",
+]
 
 
 def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
@@ -149,6 +175,24 @@ def _fit_cover(image: Image.Image, size: Tuple[int, int]) -> Image.Image:
     return resized.crop((left, top, left + target_w, top + target_h))
 
 
+def _fit_contain(image: Image.Image, size: Tuple[int, int], fill: Tuple[int, int, int]) -> Image.Image:
+    target_w, target_h = max(1, int(size[0])), max(1, int(size[1]))
+    src = image.convert("RGB")
+    sw, sh = src.size
+    canvas = Image.new("RGB", (target_w, target_h), fill)
+    if sw <= 0 or sh <= 0:
+        return canvas
+    scale = min(target_w / float(sw), target_h / float(sh))
+    resized = src.resize(
+        (max(1, int(round(sw * scale))), max(1, int(round(sh * scale)))),
+        resample=Image.Resampling.LANCZOS,
+    )
+    left = max(0, (target_w - resized.width) // 2)
+    top = max(0, (target_h - resized.height) // 2)
+    canvas.paste(resized, (left, top))
+    return canvas
+
+
 def _ratio_label(width: int, height: int) -> str:
     if width <= 0 or height <= 0:
         return "0:0"
@@ -158,6 +202,84 @@ def _ratio_label(width: int, height: int) -> str:
 
 def _theme(name: str) -> StudioPalette:
     return _THEMES.get(str(name or "Carbon"), _THEMES["Carbon"])
+
+
+def _slug_token(text: Any, fallback: str = "", max_len: int = 48) -> str:
+    raw = str(text or "").strip().lower()
+    if not raw:
+        raw = str(fallback or "").strip().lower()
+    raw = re.sub(r"[^a-z0-9]+", "_", raw)
+    raw = re.sub(r"_+", "_", raw).strip("_")
+    if not raw:
+        raw = str(fallback or "").strip().lower()
+    if max_len > 0:
+        raw = raw[: int(max_len)].strip("_")
+    return raw or str(fallback or "").strip().lower() or "item"
+
+
+def _clean_text(value: Any, fallback: str = "") -> str:
+    text = str(value or "").strip()
+    return text or str(fallback or "").strip()
+
+
+def _json_blob(raw: Any, label: str, warnings: List[str]) -> Dict[str, Any]:
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        warnings.append(f"{label} is not valid JSON")
+        return {}
+    if isinstance(parsed, dict):
+        return parsed
+    warnings.append(f"{label} must be a JSON object")
+    return {}
+
+
+def _normalize_version_tag(value: Any) -> str:
+    text = str(value or "").strip()
+    if re.fullmatch(r"[vV]?\d+", text):
+        digits = int(re.sub(r"[^0-9]", "", text) or "1")
+        return f"v{digits:03d}"
+    token = _slug_token(text, "v001", max_len=16)
+    return token if token.startswith("v") else f"v_{token}"
+
+
+def _normalize_take_token(value: Any) -> Tuple[str, str]:
+    text = str(value or "").strip()
+    if re.fullmatch(r"\d+", text):
+        number = int(text)
+        return f"t{number:02d}", f"{number:02d}"
+    token = _slug_token(text, "", max_len=12)
+    return (f"t_{token}", text) if token else ("", "")
+
+
+def _aspect_from_sources(slate_data: Dict[str, Any], review_info: Dict[str, Any], contact_info: Dict[str, Any]) -> str:
+    aspect = _clean_text(slate_data.get("aspect", ""))
+    if aspect:
+        return aspect
+    frames = review_info.get("frames", []) if isinstance(review_info.get("frames"), list) else []
+    if frames:
+        aspect = _clean_text(frames[0].get("ratio", ""))
+        if aspect:
+            return aspect
+    frames = contact_info.get("frames", []) if isinstance(contact_info.get("frames"), list) else []
+    if frames:
+        aspect = _clean_text(frames[0].get("ratio", ""))
+        if aspect:
+            return aspect
+    return ""
+
+
+def _labels_from_delivery_plan(plan_json: Any, warnings: List[str]) -> Dict[str, str]:
+    payload = _json_blob(plan_json, "delivery_plan_json", warnings)
+    manifest_notes = payload.get("manifest_notes", {}) if isinstance(payload, dict) else {}
+    labels = manifest_notes.get("labels", {}) if isinstance(manifest_notes, dict) else {}
+    if not isinstance(labels, dict):
+        warnings.append("delivery_plan_json labels payload is invalid")
+        return {}
+    return {str(key): _clean_text(value) for key, value in labels.items()}
 
 
 def _render_theme_background(canvas: Image.Image, theme_name: str, palette: StudioPalette) -> None:
@@ -691,3 +813,534 @@ class MKRStudioContactSheet:
             "frames": frames,
         }
         return (_pil_to_batch([base.convert("RGB")]), json.dumps(info, ensure_ascii=False))
+
+
+class MKRStudioDeliveryPlan:
+    SEARCH_ALIASES = ["studio handoff", "delivery naming", "review package", "filename builder"]
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "project": ("STRING", {"default": "MKRShift Production"}),
+                "sequence": ("STRING", {"default": "SEQ_01"}),
+                "shot": ("STRING", {"default": "A001"}),
+                "take": ("STRING", {"default": "1"}),
+                "version_tag": ("STRING", {"default": "v001"}),
+                "deliverable": (list(_DELIVERABLES.keys()), {"default": "Review"}),
+                "department": (_DEPARTMENTS, {"default": "Lookdev"}),
+                "artist": ("STRING", {"default": ""}),
+                "client": ("STRING", {"default": ""}),
+                "date_text": ("STRING", {"default": ""}),
+                "naming_mode": (_NAMING_MODES, {"default": "Editorial"}),
+                "extension": ("STRING", {"default": "png"}),
+                "include_take": ("BOOLEAN", {"default": True}),
+                "include_date": ("BOOLEAN", {"default": True}),
+                "include_artist": ("BOOLEAN", {"default": False}),
+                "include_client": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {
+                "slate_json": ("STRING", {"default": "", "multiline": True}),
+                "review_frame_info": ("STRING", {"default": "", "multiline": True}),
+                "contact_sheet_info": ("STRING", {"default": "", "multiline": True}),
+                "notes_json": ("STRING", {"default": "{}", "multiline": True}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("filename_prefix", "subfolder", "review_title", "manifest_notes_json", "delivery_plan_json")
+    FUNCTION = "plan"
+    CATEGORY = STUDIO_DELIVERY
+
+    def plan(
+        self,
+        project: str = "MKRShift Production",
+        sequence: str = "SEQ_01",
+        shot: str = "A001",
+        take: str = "1",
+        version_tag: str = "v001",
+        deliverable: str = "Review",
+        department: str = "Lookdev",
+        artist: str = "",
+        client: str = "",
+        date_text: str = "",
+        naming_mode: str = "Editorial",
+        extension: str = "png",
+        include_take: bool = True,
+        include_date: bool = True,
+        include_artist: bool = False,
+        include_client: bool = False,
+        slate_json: str = "",
+        review_frame_info: str = "",
+        contact_sheet_info: str = "",
+        notes_json: str = "{}",
+    ):
+        warnings: List[str] = []
+        slate_data = _json_blob(slate_json, "slate_json", warnings)
+        review_info = _json_blob(review_frame_info, "review_frame_info", warnings)
+        contact_info = _json_blob(contact_sheet_info, "contact_sheet_info", warnings)
+        notes_data: Any
+        try:
+            notes_data = json.loads(str(notes_json or "{}"))
+        except Exception:
+            notes_data = str(notes_json or "")
+            warnings.append("notes_json is not valid JSON")
+
+        project_text = _clean_text(project, slate_data.get("project", "MKRShift Production"))
+        sequence_text = _clean_text(sequence, slate_data.get("sequence", "SEQ_01"))
+        shot_text = _clean_text(shot, slate_data.get("shot", "A001"))
+        take_text = _clean_text(take, slate_data.get("take", "1"))
+        artist_text = _clean_text(artist, slate_data.get("artist", ""))
+        client_text = _clean_text(client, "")
+        date_value = _clean_text(date_text, slate_data.get("date_text", "")) or datetime.now().strftime("%Y-%m-%d")
+        version_text = _normalize_version_tag(version_tag)
+        take_token, take_label = _normalize_take_token(take_text)
+        aspect_text = _aspect_from_sources(slate_data, review_info, contact_info) or "16:9"
+
+        deliverable_meta = _DELIVERABLES.get(deliverable, _DELIVERABLES["Review"])
+        deliverable_folder = deliverable_meta["folder"]
+        deliverable_slug = deliverable_meta["slug"]
+        badge_text = deliverable_meta["badge"]
+
+        project_token = _slug_token(project_text, "mkrshift")
+        sequence_token = _slug_token(sequence_text, "seq_01")
+        shot_token = _slug_token(shot_text, "a001")
+        artist_token = _slug_token(artist_text, "", max_len=24)
+        client_token = _slug_token(client_text, "", max_len=24)
+        department_token = _slug_token(department, "general", max_len=24)
+        date_token = _slug_token(date_value, datetime.now().strftime("%Y_%m_%d"), max_len=24)
+        ext_token = _slug_token(extension, "png", max_len=8) or "png"
+
+        tokens: List[str] = [project_token]
+        if naming_mode != "Client Friendly":
+            tokens.append(sequence_token)
+        tokens.append(shot_token)
+        if bool(include_take) and take_token:
+            tokens.append(take_token)
+        tokens.append(version_text)
+        if naming_mode == "Editorial" and department_token:
+            tokens.append(department_token)
+        tokens.append(deliverable_slug)
+        if bool(include_date):
+            tokens.append(date_token)
+        if bool(include_client) and client_token:
+            tokens.append(client_token)
+        if bool(include_artist) and artist_token:
+            tokens.append(artist_token)
+        filename_prefix = _slug_token("_".join([tok for tok in tokens if tok]), "mkrshift_review", max_len=160)
+
+        subfolder_parts = [project_token, sequence_token, shot_token, deliverable_folder, version_text]
+        subfolder = "/".join(part for part in subfolder_parts if part)
+
+        review_title = f"{project_text} | {sequence_text} | {shot_text} | {version_text}"
+        subtitle_parts = [department.lower(), deliverable.lower()]
+        if bool(include_take) and take_label:
+            subtitle_parts.append(f"take {take_label}")
+        if date_value:
+            subtitle_parts.append(date_value)
+        review_subtitle = " • ".join(part for part in subtitle_parts if part)
+
+        footer_left_parts = [department]
+        if artist_text:
+            footer_left_parts.append(artist_text)
+        footer_left = " • ".join(part for part in footer_left_parts if part)
+
+        footer_right_parts = [version_text, aspect_text]
+        if client_text and naming_mode == "Client Friendly":
+            footer_right_parts.append(client_text)
+        footer_right = " | ".join(part for part in footer_right_parts if part)
+
+        source_counts = {
+            "review_frames": int(review_info.get("count", 0) or 0),
+            "contact_sheet_frames": int(contact_info.get("count", 0) or 0),
+        }
+
+        suggested_files = {
+            "main": f"{filename_prefix}.{ext_token}",
+            "review_frame": f"{filename_prefix}_review.{ext_token}",
+            "contact_sheet": f"{filename_prefix}_contact_sheet.{ext_token}",
+            "slate": f"{filename_prefix}_slate.{ext_token}",
+            "manifest": f"{filename_prefix}_manifest.json",
+        }
+
+        manifest_notes = {
+            "delivery": {
+                "project": project_text,
+                "sequence": sequence_text,
+                "shot": shot_text,
+                "take": take_text,
+                "version_tag": version_text,
+                "deliverable": deliverable,
+                "department": department,
+                "artist": artist_text,
+                "client": client_text,
+                "date_text": date_value,
+                "aspect": aspect_text,
+                "filename_prefix": filename_prefix,
+                "subfolder": subfolder,
+                "extension": ext_token,
+            },
+            "labels": {
+                "review_title": review_title,
+                "review_subtitle": review_subtitle,
+                "badge": badge_text,
+                "footer_left": footer_left,
+                "footer_right": footer_right,
+                "contact_title": f"{project_text} {deliverable}",
+                "contact_subtitle": f"{shot_text} • {version_text}",
+                "contact_label_prefix": shot_text,
+            },
+            "suggested_files": suggested_files,
+            "source_counts": source_counts,
+            "source_metadata": {
+                "slate": slate_data,
+                "review_frame": review_info,
+                "contact_sheet": contact_info,
+            },
+            "notes": notes_data,
+            "warnings": warnings,
+        }
+
+        summary = f"{filename_prefix} -> {subfolder} ({deliverable.lower()} | {version_text})"
+        delivery_plan = {
+            "schema_version": 1,
+            "summary": summary,
+            "filename_prefix": filename_prefix,
+            "subfolder": subfolder,
+            "deliverable": deliverable,
+            "naming_mode": naming_mode,
+            "manifest_notes": manifest_notes,
+        }
+        return (
+            filename_prefix,
+            subfolder,
+            review_title,
+            json.dumps(manifest_notes, ensure_ascii=False),
+            json.dumps(delivery_plan, ensure_ascii=False),
+        )
+
+
+class MKRStudioReviewBurnIn:
+    SEARCH_ALIASES = ["review burn in", "studio overlay", "version stamp", "dailies burnin"]
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "title": ("STRING", {"default": ""}),
+                "subtitle": ("STRING", {"default": ""}),
+                "badge": ("STRING", {"default": ""}),
+                "theme": (list(_THEMES.keys()), {"default": "Carbon"}),
+                "footer_left": ("STRING", {"default": ""}),
+                "footer_right": ("STRING", {"default": ""}),
+                "inset_px": ("INT", {"default": 28, "min": 0, "max": 512, "step": 2}),
+                "band_height_px": ("INT", {"default": 96, "min": 40, "max": 320, "step": 2}),
+                "accent_width_px": ("INT", {"default": 12, "min": 2, "max": 64, "step": 1}),
+                "opacity": ("FLOAT", {"default": 0.9, "min": 0.1, "max": 1.0, "step": 0.01}),
+                "show_frame_index": ("BOOLEAN", {"default": True}),
+            },
+            "optional": {
+                "delivery_plan_json": ("STRING", {"default": "", "multiline": True}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "burnin_info")
+    FUNCTION = "burn_in"
+    CATEGORY = STUDIO_REVIEW
+
+    def burn_in(
+        self,
+        image: torch.Tensor,
+        title: str = "",
+        subtitle: str = "",
+        badge: str = "",
+        theme: str = "Carbon",
+        footer_left: str = "",
+        footer_right: str = "",
+        inset_px: int = 28,
+        band_height_px: int = 96,
+        accent_width_px: int = 12,
+        opacity: float = 0.9,
+        show_frame_index: bool = True,
+        delivery_plan_json: str = "",
+    ):
+        warnings: List[str] = []
+        labels = _labels_from_delivery_plan(delivery_plan_json, warnings)
+        title_text = _clean_text(title, labels.get("review_title", "")) or "Client Review"
+        subtitle_text = _clean_text(subtitle, labels.get("review_subtitle", ""))
+        badge_text = _clean_text(badge, labels.get("badge", ""))
+        footer_left_text = _clean_text(footer_left, labels.get("footer_left", "")) or "MKRShift Nodes"
+        footer_right_text = _clean_text(footer_right, labels.get("footer_right", ""))
+
+        batch = _to_image_batch(image)
+        palette = _theme(theme)
+        out_frames: List[Image.Image] = []
+
+        inset = max(0, int(inset_px))
+        band_h = max(40, int(band_height_px))
+        accent_w = max(2, int(accent_width_px))
+        alpha_fill = int(255 * float(np.clip(opacity, 0.1, 1.0)))
+
+        for idx in range(int(batch.shape[0])):
+            src = Image.fromarray(np.round(batch[idx, ..., :3].cpu().numpy() * 255.0).astype(np.uint8), mode="RGB")
+            base = src.convert("RGBA")
+            draw = ImageDraw.Draw(base)
+            w, h = base.size
+
+            band_x0 = inset
+            band_y0 = max(0, h - inset - band_h)
+            band_x1 = max(band_x0 + 1, w - inset)
+            band_y1 = min(h, band_y0 + band_h)
+            band_box = (band_x0, band_y0, band_x1, band_y1)
+
+            overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_draw.rounded_rectangle(band_box, radius=max(14, band_h // 5), fill=palette["panel"] + (alpha_fill,))
+            overlay_draw.rectangle((band_x0, band_y0, min(band_x1, band_x0 + accent_w), band_y1), fill=palette["accent"] + (255,))
+
+            if badge_text:
+                badge_font = _load_font(max(12, int(band_h * 0.16)), bold=True)
+                badge_w, badge_h = _text_size(overlay_draw, badge_text, badge_font)
+                badge_box = (
+                    band_x0 + accent_w + max(10, band_h // 10),
+                    max(0, band_y0 - badge_h - max(10, band_h // 8)),
+                    band_x0 + accent_w + max(10, band_h // 10) + badge_w + max(16, band_h // 5),
+                    band_y0 - max(2, band_h // 18),
+                )
+                overlay_draw.rounded_rectangle(badge_box, radius=14, fill=palette["panel_alt"] + (alpha_fill,))
+                overlay_draw.text((badge_box[0] + max(8, band_h // 10), badge_box[1] + max(4, band_h // 12)), badge_text, font=badge_font, fill=palette["accent"] + (255,))
+
+            base.alpha_composite(overlay)
+            draw = ImageDraw.Draw(base)
+
+            title_font = _load_font(max(16, int(band_h * 0.24)), bold=True)
+            subtitle_font = _load_font(max(12, int(band_h * 0.15)))
+            footer_font = _load_font(max(12, int(band_h * 0.16)))
+            index_font = _load_font(max(12, int(band_h * 0.17)), bold=True)
+
+            text_x = band_x0 + accent_w + max(14, band_h // 8)
+            title_y = band_y0 + max(8, band_h // 9)
+            draw.text((text_x, title_y), title_text, font=title_font, fill=palette["text"])
+
+            if subtitle_text:
+                subtitle_lines = _wrap_text(draw, subtitle_text, subtitle_font, max(40, band_x1 - text_x - max(120, band_h * 2)), 2)
+                subtitle_y = title_y + max(18, band_h // 3)
+                for line in subtitle_lines:
+                    draw.text((text_x, subtitle_y), line, font=subtitle_font, fill=palette["muted"])
+                    subtitle_y += max(14, int(band_h * 0.16))
+
+            footer_y = band_y1 - max(22, band_h // 4)
+            draw.text((text_x, footer_y), footer_left_text, font=footer_font, fill=palette["muted"])
+
+            right_chunks: List[str] = []
+            if footer_right_text:
+                right_chunks.append(footer_right_text)
+            if bool(show_frame_index):
+                right_chunks.append(f"FRAME {idx + 1:02d}")
+            right_text = " | ".join(chunk for chunk in right_chunks if chunk)
+            if right_text:
+                right_w, _ = _text_size(draw, right_text, index_font)
+                draw.text((band_x1 - right_w - max(14, band_h // 8), footer_y), right_text, font=index_font, fill=palette["accent"])
+
+            out_frames.append(base.convert("RGB"))
+
+        info = {
+            "theme": theme,
+            "count": int(batch.shape[0]),
+            "labels": {
+                "title": title_text,
+                "subtitle": subtitle_text,
+                "badge": badge_text,
+                "footer_left": footer_left_text,
+                "footer_right": footer_right_text,
+            },
+            "layout": {
+                "inset_px": inset,
+                "band_height_px": band_h,
+                "accent_width_px": accent_w,
+                "show_frame_index": bool(show_frame_index),
+            },
+            "warnings": warnings,
+        }
+        return (_pil_to_batch(out_frames), json.dumps(info, ensure_ascii=False))
+
+
+class MKRStudioCompareBoard:
+    SEARCH_ALIASES = ["ab board", "before after board", "studio compare", "review compare"]
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image_a": ("IMAGE",),
+                "image_b": ("IMAGE",),
+                "title": ("STRING", {"default": ""}),
+                "subtitle": ("STRING", {"default": ""}),
+                "label_a": ("STRING", {"default": "A"}),
+                "label_b": ("STRING", {"default": "B"}),
+                "theme": (list(_THEMES.keys()), {"default": "Carbon"}),
+                "orientation": (["Horizontal", "Vertical"], {"default": "Horizontal"}),
+                "footer_left": ("STRING", {"default": ""}),
+                "footer_right": ("STRING", {"default": ""}),
+                "margin_px": ("INT", {"default": 24, "min": 8, "max": 256, "step": 2}),
+                "gutter_px": ("INT", {"default": 16, "min": 0, "max": 128, "step": 2}),
+                "header_px": ("INT", {"default": 56, "min": 24, "max": 240, "step": 2}),
+                "footer_px": ("INT", {"default": 32, "min": 16, "max": 160, "step": 2}),
+                "shadow_strength": ("FLOAT", {"default": 0.24, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "show_index": ("BOOLEAN", {"default": True}),
+            },
+            "optional": {
+                "delivery_plan_json": ("STRING", {"default": "", "multiline": True}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "compare_info")
+    FUNCTION = "board"
+    CATEGORY = STUDIO_REVIEW
+
+    def board(
+        self,
+        image_a: torch.Tensor,
+        image_b: torch.Tensor,
+        title: str = "",
+        subtitle: str = "",
+        label_a: str = "A",
+        label_b: str = "B",
+        theme: str = "Carbon",
+        orientation: str = "Horizontal",
+        footer_left: str = "",
+        footer_right: str = "",
+        margin_px: int = 24,
+        gutter_px: int = 16,
+        header_px: int = 56,
+        footer_px: int = 32,
+        shadow_strength: float = 0.24,
+        show_index: bool = True,
+        delivery_plan_json: str = "",
+    ):
+        warnings: List[str] = []
+        labels = _labels_from_delivery_plan(delivery_plan_json, warnings)
+        title_text = _clean_text(title, labels.get("review_title", "")) or "A/B Compare"
+        subtitle_text = _clean_text(subtitle, labels.get("review_subtitle", ""))
+        footer_left_text = _clean_text(footer_left, labels.get("footer_left", "")) or "MKRShift Nodes"
+        footer_right_text = _clean_text(footer_right, labels.get("footer_right", ""))
+        batch_a = _to_image_batch(image_a)
+        batch_b = _to_image_batch(image_b)
+        count = min(int(batch_a.shape[0]), int(batch_b.shape[0]))
+        if int(batch_a.shape[0]) != int(batch_b.shape[0]):
+            warnings.append("image_a and image_b batch counts differ; using shortest batch")
+
+        palette = _theme(theme)
+        horizontal = str(orientation or "Horizontal").strip().lower() != "vertical"
+        framed: List[Image.Image] = []
+        rows: List[Dict[str, Any]] = []
+
+        margin = max(8, int(margin_px))
+        gutter = max(0, int(gutter_px))
+        header_h = max(24, int(header_px))
+        footer_h = max(16, int(footer_px))
+
+        for idx in range(count):
+            src_a = Image.fromarray(np.round(batch_a[idx, ..., :3].cpu().numpy() * 255.0).astype(np.uint8), mode="RGB")
+            src_b = Image.fromarray(np.round(batch_b[idx, ..., :3].cpu().numpy() * 255.0).astype(np.uint8), mode="RGB")
+            slot_w = max(src_a.width, src_b.width)
+            slot_h = max(src_a.height, src_b.height)
+
+            if horizontal:
+                out_w = (margin * 2) + (slot_w * 2) + gutter
+                out_h = (margin * 2) + header_h + footer_h + slot_h
+                box_a = (margin, margin + header_h, margin + slot_w, margin + header_h + slot_h)
+                box_b = (box_a[2] + gutter, box_a[1], box_a[2] + gutter + slot_w, box_a[3])
+            else:
+                out_w = (margin * 2) + slot_w
+                out_h = (margin * 2) + header_h + footer_h + (slot_h * 2) + gutter
+                box_a = (margin, margin + header_h, margin + slot_w, margin + header_h + slot_h)
+                box_b = (margin, box_a[3] + gutter, margin + slot_w, box_a[3] + gutter + slot_h)
+
+            base = Image.new("RGBA", (out_w, out_h), palette["bg"] + (255,))
+            _render_theme_background(base, theme, palette)
+            draw = ImageDraw.Draw(base)
+
+            title_font = _load_font(max(14, int(header_h * 0.3)), bold=True)
+            subtitle_font = _load_font(max(12, int(header_h * 0.16)))
+            footer_font = _load_font(max(12, int(footer_h * 0.4)))
+            chip_font = _load_font(max(12, int(min(slot_w, slot_h) * 0.06)), bold=True)
+
+            shadow_alpha = int(160 * float(np.clip(shadow_strength, 0.0, 1.0)))
+            for box in (box_a, box_b):
+                shadow = Image.new("RGBA", base.size, (0, 0, 0, 0))
+                shadow_draw = ImageDraw.Draw(shadow)
+                shadow_draw.rounded_rectangle(
+                    (box[0] + 10, box[1] + 12, box[2] + 10, box[3] + 12),
+                    radius=22,
+                    fill=(0, 0, 0, shadow_alpha),
+                )
+                base.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=max(6, margin // 3))))
+                draw.rounded_rectangle(box, radius=20, fill=palette["panel"], outline=palette["line"], width=2)
+
+            fit_a = _fit_contain(src_a, (slot_w, slot_h), palette["panel_alt"]).convert("RGBA")
+            fit_b = _fit_contain(src_b, (slot_w, slot_h), palette["panel_alt"]).convert("RGBA")
+            base.alpha_composite(fit_a, dest=(box_a[0], box_a[1]))
+            base.alpha_composite(fit_b, dest=(box_b[0], box_b[1]))
+            draw.rounded_rectangle(box_a, radius=20, outline=palette["line"], width=2)
+            draw.rounded_rectangle(box_b, radius=20, outline=palette["line"], width=2)
+
+            draw.rectangle((0, 0, out_w, max(8, margin // 4)), fill=palette["accent"])
+            draw.text((margin, margin), title_text, font=title_font, fill=palette["text"])
+            if subtitle_text:
+                draw.text((margin, margin + max(16, header_h // 2)), subtitle_text, font=subtitle_font, fill=palette["muted"])
+
+            def draw_chip(box: Tuple[int, int, int, int], text: str) -> None:
+                chip_w, chip_h = _text_size(draw, text, chip_font)
+                chip_box = (
+                    box[0] + max(10, margin // 2),
+                    box[1] + max(10, margin // 2),
+                    box[0] + max(10, margin // 2) + chip_w + max(18, margin // 2),
+                    box[1] + max(10, margin // 2) + chip_h + max(12, margin // 3),
+                )
+                draw.rounded_rectangle(chip_box, radius=14, fill=palette["panel_alt"])
+                draw.text((chip_box[0] + max(8, margin // 3), chip_box[1] + max(4, margin // 4)), text, font=chip_font, fill=palette["accent"])
+
+            draw_chip(box_a, _clean_text(label_a, "A"))
+            draw_chip(box_b, _clean_text(label_b, "B"))
+
+            footer_y = out_h - margin - max(16, footer_h // 2)
+            draw.text((margin, footer_y), footer_left_text, font=footer_font, fill=palette["muted"])
+
+            right_parts: List[str] = []
+            if footer_right_text:
+                right_parts.append(footer_right_text)
+            if bool(show_index):
+                right_parts.append(f"PAIR {idx + 1:02d}")
+            right_text = " | ".join(part for part in right_parts if part)
+            if right_text:
+                right_w, _ = _text_size(draw, right_text, footer_font)
+                draw.text((out_w - margin - right_w, footer_y), right_text, font=footer_font, fill=palette["muted"])
+
+            framed.append(base.convert("RGB"))
+            rows.append(
+                {
+                    "index": idx + 1,
+                    "orientation": "horizontal" if horizontal else "vertical",
+                    "output_size": [out_w, out_h],
+                    "slot_size": [slot_w, slot_h],
+                    "label_a": _clean_text(label_a, "A"),
+                    "label_b": _clean_text(label_b, "B"),
+                }
+            )
+
+        info = {
+            "theme": theme,
+            "count": count,
+            "orientation": "horizontal" if horizontal else "vertical",
+            "title": title_text,
+            "subtitle": subtitle_text,
+            "footer_left": footer_left_text,
+            "footer_right": footer_right_text,
+            "rows": rows,
+            "warnings": warnings,
+        }
+        return (_pil_to_batch(framed), json.dumps(info, ensure_ascii=False))

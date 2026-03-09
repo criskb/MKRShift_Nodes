@@ -6,7 +6,14 @@ from .social_nodes import (
     MKRshiftSocialPackCatalog,
     MKRshiftSocialPromptAtIndex,
 )
-from .studio_nodes import MKRStudioContactSheet, MKRStudioReviewFrame, MKRStudioSlate
+from .studio_nodes import (
+    MKRStudioCompareBoard,
+    MKRStudioContactSheet,
+    MKRStudioDeliveryPlan,
+    MKRStudioReviewBurnIn,
+    MKRStudioReviewFrame,
+    MKRStudioSlate,
+)
 from .xlut import xLUT, xLUTOutput
 from .xcolor import (
     x1ColorBalance,
@@ -157,6 +164,9 @@ NODE_CLASS_MAPPINGS = {
     "MKRStudioSlate": MKRStudioSlate,
     "MKRStudioReviewFrame": MKRStudioReviewFrame,
     "MKRStudioContactSheet": MKRStudioContactSheet,
+    "MKRStudioDeliveryPlan": MKRStudioDeliveryPlan,
+    "MKRStudioReviewBurnIn": MKRStudioReviewBurnIn,
+    "MKRStudioCompareBoard": MKRStudioCompareBoard,
     "MKRBatchCollagePreview": MKRBatchCollagePreview,
     "MKRshiftSocialPackBuilder": MKRshiftSocialPackBuilder,
     "MKRshiftSocialPackAssets": MKRshiftSocialPackAssets,
@@ -295,6 +305,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRStudioSlate": "Studio Slate • MKRShift Nodes",
     "MKRStudioReviewFrame": "Studio Review Frame • MKRShift Nodes",
     "MKRStudioContactSheet": "Studio Contact Sheet • MKRShift Nodes",
+    "MKRStudioDeliveryPlan": "Studio Delivery Plan • MKRShift Nodes",
+    "MKRStudioReviewBurnIn": "Studio Review Burn-In • MKRShift Nodes",
+    "MKRStudioCompareBoard": "Studio Compare Board • MKRShift Nodes",
     "MKRBatchCollagePreview": "XY:PRE • MKRShift Nodes",
     "MKRshiftSocialPackBuilder": "Social Pack Builder • MKRShift Nodes",
     "MKRshiftSocialPackAssets": "Social Assets Extract • MKRShift Nodes",

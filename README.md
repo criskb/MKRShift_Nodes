@@ -24,7 +24,7 @@ MKRShift Nodes is a broad ComfyUI node pack focused on image craft and workflow 
 | Mask + Utility | `x1MaskGen`, `AdvResize`, `xShader`, `x1DenoiseDetail` | Mask generation, resize work, shader utilities, and cleanup |
 | PreSave + Media | `MKRPreSave`, `MKRPresaveVideo`, `MKRPresaveAudio`, `MKRMuxVideoAudio`, `MKRTrimVideoByTime` | Preview-first export helpers plus audio/video utility work |
 | Social Planning | `MKRshiftSocialPackBuilder`, `MKRshiftSocialPackAssets`, `MKRshiftSocialPromptAtIndex`, `MKRshiftSocialPackCatalog` | Pack-driven captions, prompts, scheduling, and social asset planning |
-| Studio Review | `MKRStudioSlate`, `MKRStudioReviewFrame`, `MKRStudioContactSheet` | Branded slates, review frames, and labeled contact sheets for internal or client-facing review |
+| Studio Review + Delivery | `MKRStudioSlate`, `MKRStudioReviewFrame`, `MKRStudioReviewBurnIn`, `MKRStudioCompareBoard`, `MKRStudioContactSheet`, `MKRStudioDeliveryPlan` | Branded slates, quick burn-ins, compare boards, review frames, contact sheets, and naming/handoff planning for internal or client-facing review |
 
 ## Frontend Extensions
 
