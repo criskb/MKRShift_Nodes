@@ -24,6 +24,7 @@ MKRShift Nodes is a broad ComfyUI node pack focused on image craft and workflow 
 | Mask + Utility | `x1MaskGen`, `AdvResize`, `xShader`, `x1DenoiseDetail` | Mask generation, resize work, shader utilities, and cleanup |
 | PreSave + Media | `MKRPreSave`, `MKRPresaveVideo`, `MKRPresaveAudio`, `MKRMuxVideoAudio`, `MKRTrimVideoByTime` | Preview-first export helpers plus audio/video utility work |
 | Social Planning | `MKRshiftSocialPackBuilder`, `MKRshiftSocialPackAssets`, `MKRshiftSocialPromptAtIndex`, `MKRshiftSocialPackCatalog` | Pack-driven captions, prompts, scheduling, and social asset planning |
+| G-code | `MKRGCodePrinterProfile`, `MKRGCodeOrcaProfileLoader`, `MKRGCodeLoadMeshModel`, `MKRGCodeHeightmapPlate`, `MKRGCodeSpiralVase`, `MKRGCodePlanAnalyzer`, `MKRGCodeBedMeshCompensate`, `MKRGCodeCalibrationTower`, `MKRGCodeConditionalInjector`, `MKRGCodePreview`, `MKRGCodeExternalSlicer`, `MKRGCodeExport` | 3D-print printer profiles, Orca preset import, mesh/model loading, generators, plan analysis, bed compensation, calibration macros, preview, external slicing, and direct `.gcode` export |
 | Studio Review + Delivery | `MKRStudioSlate`, `MKRStudioReviewFrame`, `MKRStudioReviewBurnIn`, `MKRStudioCompareBoard`, `MKRStudioContactSheet`, `MKRStudioDeliveryPlan` | Branded slates, quick burn-ins, compare boards, review frames, contact sheets, and naming/handoff planning for internal or client-facing review |
 
 ## Frontend Extensions
@@ -47,6 +48,7 @@ Markdown help pages for these nodes live in `web/docs/`.
 1. Clone or copy this folder into `ComfyUI/custom_nodes/`.
 2. Restart ComfyUI.
 3. Install `ffmpeg` if you plan to use the video/audio export and muxing nodes.
+4. Install `OrcaSlicer`, `PrusaSlicer`, or `CuraEngine` if you plan to use the external G-code slicer node.
 
 ## Notes
 
@@ -54,7 +56,10 @@ Markdown help pages for these nodes live in `web/docs/`.
 - Repository URL, license, and `PublisherId` are intentionally still unset until real publishing details exist.
 - The code uses relative imports and does not rely on the install folder matching the repo name.
 - Package internals are split by concern under `nodes/` and `lib/`, with legacy root import aliases preserved for backward compatibility.
+- The `G-code` category is inspired by the earlier `G-code-Studio` experiment, but implemented here as ComfyUI-native nodes.
+- The external slicer node can run in `dry_run` mode to validate commands/config text even when a slicer CLI is not installed yet.
 - Social pack presets are loaded from `packs/`.
+- G-code post-processing nodes expect exported layer comments for the strongest results, so keep `include_comments` enabled on `MKRGCodeExport` when you plan to inject calibration or conditional macros later in the graph.
 
 ## Verification
 

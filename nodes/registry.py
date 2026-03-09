@@ -6,6 +6,12 @@ from .social_nodes import (
     MKRshiftSocialPackCatalog,
     MKRshiftSocialPromptAtIndex,
 )
+from .gcode_analysis_nodes import MKRGCodePlanAnalyzer
+from .gcode_input_nodes import MKRGCodeLoadMeshModel, MKRGCodeOrcaProfileLoader
+from .gcode_modify_nodes import MKRGCodeBedMeshCompensate, MKRGCodeCalibrationTower, MKRGCodeConditionalInjector
+from .gcode_nodes import MKRGCodeExport, MKRGCodeHeightmapPlate, MKRGCodePrinterProfile, MKRGCodeSpiralVase
+from .gcode_preview_nodes import MKRGCodePreview
+from .gcode_slicer_nodes import MKRGCodeExternalSlicer
 from .studio_nodes import (
     MKRStudioCompareBoard,
     MKRStudioContactSheet,
@@ -161,6 +167,18 @@ NODE_CLASS_MAPPINGS = {
     "Aspect1XBatch": Aspect1XBatch,
     "AxBCompare": AxBCompare,
     "MKRThemeDebugger": MKRThemeDebugger,
+    "MKRGCodePrinterProfile": MKRGCodePrinterProfile,
+    "MKRGCodeOrcaProfileLoader": MKRGCodeOrcaProfileLoader,
+    "MKRGCodeLoadMeshModel": MKRGCodeLoadMeshModel,
+    "MKRGCodeHeightmapPlate": MKRGCodeHeightmapPlate,
+    "MKRGCodeSpiralVase": MKRGCodeSpiralVase,
+    "MKRGCodePlanAnalyzer": MKRGCodePlanAnalyzer,
+    "MKRGCodeBedMeshCompensate": MKRGCodeBedMeshCompensate,
+    "MKRGCodeCalibrationTower": MKRGCodeCalibrationTower,
+    "MKRGCodeConditionalInjector": MKRGCodeConditionalInjector,
+    "MKRGCodePreview": MKRGCodePreview,
+    "MKRGCodeExternalSlicer": MKRGCodeExternalSlicer,
+    "MKRGCodeExport": MKRGCodeExport,
     "MKRStudioSlate": MKRStudioSlate,
     "MKRStudioReviewFrame": MKRStudioReviewFrame,
     "MKRStudioContactSheet": MKRStudioContactSheet,
@@ -302,6 +320,18 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Aspect1XBatch": "Aspect 1xBatch • MKRShift Nodes",
     "AxBCompare": "AxB Compare • MKRShift Nodes",
     "MKRThemeDebugger": "Theme Debugger • MKRShift Nodes",
+    "MKRGCodePrinterProfile": "G-code Printer Profile • MKRShift Nodes",
+    "MKRGCodeOrcaProfileLoader": "G-code Orca Profile Loader • MKRShift Nodes",
+    "MKRGCodeLoadMeshModel": "G-code Load Mesh Model • MKRShift Nodes",
+    "MKRGCodeHeightmapPlate": "G-code Heightmap Plate • MKRShift Nodes",
+    "MKRGCodeSpiralVase": "G-code Spiral Vase • MKRShift Nodes",
+    "MKRGCodePlanAnalyzer": "G-code Plan Analyzer • MKRShift Nodes",
+    "MKRGCodeBedMeshCompensate": "G-code Bed Mesh Compensate • MKRShift Nodes",
+    "MKRGCodeCalibrationTower": "G-code Calibration Tower • MKRShift Nodes",
+    "MKRGCodeConditionalInjector": "G-code Conditional Injector • MKRShift Nodes",
+    "MKRGCodePreview": "G-code Preview • MKRShift Nodes",
+    "MKRGCodeExternalSlicer": "G-code External Slicer • MKRShift Nodes",
+    "MKRGCodeExport": "G-code Export • MKRShift Nodes",
     "MKRStudioSlate": "Studio Slate • MKRShift Nodes",
     "MKRStudioReviewFrame": "Studio Review Frame • MKRShift Nodes",
     "MKRStudioContactSheet": "Studio Contact Sheet • MKRShift Nodes",

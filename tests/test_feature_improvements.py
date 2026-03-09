@@ -2,6 +2,7 @@ import importlib
 import json
 import sys
 import unittest
+import zipfile
 from pathlib import Path
 
 import torch
@@ -16,6 +17,21 @@ if str(PACKAGE_PARENT) not in sys.path:
 from MKRShift_Nodes.nodes.mask_nodes import x1MaskGen  # noqa: E402
 from MKRShift_Nodes.nodes.presave_media_nodes import MKRPresaveVideo  # noqa: E402
 from MKRShift_Nodes.nodes.social_nodes import MKRshiftSocialPackBuilder  # noqa: E402
+from MKRShift_Nodes.nodes.gcode_analysis_nodes import MKRGCodePlanAnalyzer  # noqa: E402
+from MKRShift_Nodes.nodes.gcode_input_nodes import MKRGCodeLoadMeshModel, MKRGCodeOrcaProfileLoader  # noqa: E402
+from MKRShift_Nodes.nodes.gcode_modify_nodes import (  # noqa: E402
+    MKRGCodeBedMeshCompensate,
+    MKRGCodeCalibrationTower,
+    MKRGCodeConditionalInjector,
+)
+from MKRShift_Nodes.nodes.gcode_nodes import (  # noqa: E402
+    MKRGCodeExport,
+    MKRGCodeHeightmapPlate,
+    MKRGCodePrinterProfile,
+    MKRGCodeSpiralVase,
+)
+from MKRShift_Nodes.nodes.gcode_preview_nodes import MKRGCodePreview  # noqa: E402
+from MKRShift_Nodes.nodes.gcode_slicer_nodes import MKRGCodeExternalSlicer  # noqa: E402
 from MKRShift_Nodes.nodes.studio_nodes import (  # noqa: E402
     MKRStudioCompareBoard,
     MKRStudioContactSheet,
@@ -41,6 +57,49 @@ class FeatureImprovementTests(unittest.TestCase):
                 path.unlink()
             except FileNotFoundError:
                 continue
+
+    def _write_temp_text(self, name: str, text: str) -> Path:
+        self._temp_dir.mkdir(parents=True, exist_ok=True)
+        path = self._temp_dir / name
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def _write_temp_orca_bundle(self, name: str = "orca_bundle.zip") -> Path:
+        self._temp_dir.mkdir(parents=True, exist_ok=True)
+        path = self._temp_dir / name
+        machine = {
+            "id": "printer_alpha",
+            "name": "Printer Alpha",
+            "type": "machine",
+            "printable_area": [[0, 0], [220, 0], [220, 220], [0, 220]],
+            "printable_height": 250,
+            "nozzle_diameter": 0.4,
+            "machine_start_gcode": "G28",
+            "machine_end_gcode": "M84",
+        }
+        filament = {
+            "id": "pla_std",
+            "name": "PLA Standard",
+            "type": "filament",
+            "filament_diameter": 1.75,
+            "temperature": 215,
+            "bed_temperature": 60,
+        }
+        process = {
+            "id": "draft_028",
+            "name": "Draft 0.28",
+            "type": "process",
+            "layer_height": 0.28,
+            "print_speed": 60,
+            "travel_speed": 180,
+            "retraction_length": 0.8,
+            "retraction_speed": 35,
+        }
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("machine.orca_printer", json.dumps(machine))
+            archive.writestr("filament.orca_filament", json.dumps(filament))
+            archive.writestr("process.json", json.dumps(process))
+        return path
 
     def test_social_pack_mixed_mode_cycles_pack_ratios(self) -> None:
         node = MKRshiftSocialPackBuilder()
@@ -338,6 +397,399 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertEqual(info["rows"][0]["label_a"], "Before")
         self.assertEqual(info["rows"][0]["output_size"], [244, 184])
         self.assertTrue(float(image.mean()) > 0.05)
+
+    def test_gcode_printer_profile_uses_gcode_studio_style_fields(self) -> None:
+        node = MKRGCodePrinterProfile()
+        profile, profile_json, summary = node.build(
+            printer_name="Ender Test",
+            bed_width_mm=235,
+            bed_depth_mm=235,
+            nozzle_diameter_mm=0.4,
+            line_width_mm=0.48,
+            layer_height_mm=0.24,
+            filament_diameter_mm=1.75,
+            print_speed_mm_s=35,
+            travel_speed_mm_s=120,
+        )
+
+        payload = json.loads(profile_json)
+        self.assertEqual(profile["name"], "Ender Test")
+        self.assertEqual(payload["bedW"], 235.0)
+        self.assertEqual(payload["lineWidth"], 0.48)
+        self.assertEqual(payload["speedPrint"], 2100.0)
+        self.assertIn("Ender Test", summary)
+
+    def test_gcode_orca_profile_loader_maps_exported_presets(self) -> None:
+        bundle_path = self._write_temp_orca_bundle()
+        node = MKRGCodeOrcaProfileLoader()
+
+        profile, slicer_settings, bundle_json, summary = node.load(
+            source_path=str(bundle_path),
+            printer_match="Printer Alpha",
+            filament_match="PLA Standard",
+            process_match="Draft 0.28",
+            selection_mode="auto",
+            recursive=True,
+        )
+
+        payload = json.loads(bundle_json)
+        self.assertEqual(profile["name"], "Printer Alpha")
+        self.assertEqual(profile["bedW"], 220.0)
+        self.assertEqual(profile["layerHeight"], 0.28)
+        self.assertEqual(profile["tempNozzle"], 215)
+        self.assertEqual(slicer_settings["config"]["layer_height"], 0.28)
+        self.assertEqual(payload["counts"]["printers"], 1)
+        self.assertIn("Orca loader", summary)
+
+    def test_gcode_load_mesh_model_reads_stl_and_renders_preview(self) -> None:
+        stl_path = self._write_temp_text(
+            "triangle.stl",
+            "\n".join(
+                [
+                    "solid tri",
+                    "facet normal 0 0 0",
+                    "outer loop",
+                    "vertex 0 0 2",
+                    "vertex 20 0 2",
+                    "vertex 0 20 2",
+                    "endloop",
+                    "endfacet",
+                    "endsolid tri",
+                ]
+            ),
+        )
+        node = MKRGCodeLoadMeshModel()
+
+        mesh, preview, mesh_info_json, summary = node.load(
+            model_path=str(stl_path),
+            center_xy=False,
+            bed_align=True,
+            scale=1.0,
+            rotate_x_deg=0.0,
+            rotate_y_deg=0.0,
+            rotate_z_deg=0.0,
+            translate_x_mm=0.0,
+            translate_y_mm=0.0,
+            translate_z_mm=0.0,
+            preview_view="isometric",
+            preview_size=256,
+        )
+
+        info = json.loads(mesh_info_json)
+        self.assertEqual(mesh["tri_count"], 1)
+        self.assertEqual(tuple(preview.shape), (1, 256, 256, 3))
+        self.assertEqual(info["bounds"]["min_z"], 0.0)
+        self.assertIn("triangle.stl", summary)
+
+    def test_gcode_heightmap_plate_generates_plan_and_preview(self) -> None:
+        node = MKRGCodeHeightmapPlate()
+        image = torch.tensor(
+            [[
+                [[0.0, 0.0, 0.0], [0.33, 0.33, 0.33], [0.66, 0.66, 0.66], [1.0, 1.0, 1.0]],
+                [[0.0, 0.0, 0.0], [0.33, 0.33, 0.33], [0.66, 0.66, 0.66], [1.0, 1.0, 1.0]],
+                [[0.0, 0.0, 0.0], [0.33, 0.33, 0.33], [0.66, 0.66, 0.66], [1.0, 1.0, 1.0]],
+                [[0.0, 0.0, 0.0], [0.33, 0.33, 0.33], [0.66, 0.66, 0.66], [1.0, 1.0, 1.0]],
+            ]],
+            dtype=torch.float32,
+        )
+
+        plan, preview, info_json, summary = node.build(
+            image=image,
+            width_mm=24.0,
+            height_mm=24.0,
+            base_layers=2,
+            relief_height_mm=0.8,
+            layer_height_mm=0.2,
+            line_width_mm=0.8,
+            fill_mode="alternate_xy",
+            invert_heightmap=False,
+            print_speed_mm_s=20.0,
+            travel_speed_mm_s=80.0,
+        )
+
+        info = json.loads(info_json)
+        self.assertEqual(plan["mode"], "heightmap_plate")
+        self.assertGreater(plan["stats"]["print_moves"], 10)
+        self.assertEqual(tuple(preview.shape), (1, 768, 768, 3))
+        self.assertEqual(info["meta"]["base_layers"], 2)
+        self.assertIn("Heightmap plate", summary)
+
+    def test_gcode_spiral_vase_exports_printable_gcode(self) -> None:
+        profile_node = MKRGCodePrinterProfile()
+        plan_node = MKRGCodeSpiralVase()
+        export_node = MKRGCodeExport()
+
+        profile, _, _ = profile_node.build(printer_name="Vase Rig", print_speed_mm_s=22.0, travel_speed_mm_s=120.0)
+        plan, _, info_json, _ = plan_node.build(
+            height_mm=30.0,
+            base_radius_mm=10.0,
+            top_radius_mm=8.0,
+            bottom_layers=2,
+            layer_height_mm=0.2,
+            line_width_mm=0.45,
+            segments_per_turn=24,
+            wave_amplitude_mm=1.0,
+            wave_frequency=3.0,
+            print_speed_mm_s=18.0,
+            travel_speed_mm_s=100.0,
+        )
+
+        gcode_text, output_path, summary_json = export_node.run(
+            plan=plan,
+            profile=profile,
+            filename_prefix="test_vase",
+            subfolder="",
+            save_file=False,
+            overwrite=False,
+            include_comments=True,
+        )
+
+        summary = json.loads(summary_json)
+        info = json.loads(info_json)
+        self.assertEqual(plan["mode"], "spiral_vase")
+        self.assertIn("G21", gcode_text)
+        self.assertIn("M82", gcode_text)
+        self.assertIn("; LAYER:", gcode_text)
+        self.assertIn("G1 X", gcode_text)
+        self.assertEqual(output_path, "")
+        self.assertGreater(summary["line_count"], 20)
+        self.assertGreater(info["stats"]["print_length_mm"], 50.0)
+
+    def test_gcode_preview_parses_raw_gcode_into_plan(self) -> None:
+        node = MKRGCodePreview()
+        gcode_text = "\n".join(
+            [
+                "G21",
+                "G90",
+                "M82",
+                "; LAYER:0",
+                "G0 X0 Y0 Z0.2 F6000",
+                "G1 X10 Y0 Z0.2 E0.500 F1800",
+                "; LAYER:1",
+                "G1 X10 Y10 Z0.4 E1.000 F1800",
+            ]
+        )
+
+        preview, info_json, summary, plan = node.run(
+            view_mode="auto",
+            preview_size=256,
+            gcode_text=gcode_text,
+        )
+
+        info = json.loads(info_json)
+        self.assertEqual(tuple(preview.shape), (1, 256, 256, 3))
+        self.assertEqual(plan["mode"], "imported_gcode")
+        self.assertTrue(info["gcode_loaded"])
+        self.assertGreater(plan["stats"]["print_moves"], 0)
+        self.assertIn("G-code preview", summary)
+
+    def test_gcode_plan_analyzer_reports_costs_and_risks(self) -> None:
+        profile_node = MKRGCodePrinterProfile()
+        plan_node = MKRGCodeHeightmapPlate()
+        analyzer_node = MKRGCodePlanAnalyzer()
+
+        profile, _, _ = profile_node.build(
+            printer_name="Mini Bed",
+            bed_width_mm=50.0,
+            bed_depth_mm=50.0,
+            bed_height_mm=10.0,
+            print_speed_mm_s=40.0,
+        )
+        image = torch.linspace(0.0, 1.0, 16, dtype=torch.float32).reshape(1, 4, 4, 1).repeat(1, 1, 1, 3)
+        plan, _, _, _ = plan_node.build(
+            image=image,
+            width_mm=64.0,
+            height_mm=64.0,
+            base_layers=2,
+            relief_height_mm=1.0,
+            layer_height_mm=0.2,
+            line_width_mm=0.4,
+            print_speed_mm_s=40.0,
+            travel_speed_mm_s=120.0,
+        )
+
+        _, analysis_json, warnings_json, summary = analyzer_node.analyze(
+            plan=plan,
+            max_volumetric_flow_mm3_s=2.0,
+            min_feature_mm=5.0,
+            min_layer_time_s=30.0,
+            warn_travel_ratio_percent=5.0,
+            filament_price_per_kg=28.0,
+            material_density_g_cm3=1.24,
+            printer_wattage_w=150.0,
+            electricity_price_per_kwh=0.25,
+            profile=profile,
+        )
+
+        analysis = json.loads(analysis_json)
+        warnings = json.loads(warnings_json)["warnings"]
+        self.assertGreater(analysis["material_estimate"]["mass_g"], 0.0)
+        self.assertGreater(analysis["cost_estimate"]["total_cost"], 0.0)
+        self.assertFalse(analysis["bed_fit"]["fits_xy"])
+        self.assertGreaterEqual(len(warnings), 2)
+        self.assertIn("warnings", analysis)
+        self.assertIn("Analyzer", summary)
+
+    def test_gcode_bed_mesh_compensation_offsets_plan_z_values(self) -> None:
+        profile_node = MKRGCodePrinterProfile()
+        plan_node = MKRGCodeSpiralVase()
+        mesh_node = MKRGCodeBedMeshCompensate()
+
+        profile, _, _ = profile_node.build(printer_name="Mesh Rig")
+        plan, _, _, _ = plan_node.build(
+            height_mm=12.0,
+            base_radius_mm=8.0,
+            top_radius_mm=8.0,
+            bottom_layers=1,
+            layer_height_mm=0.2,
+            line_width_mm=0.45,
+            segments_per_turn=16,
+            print_speed_mm_s=18.0,
+            travel_speed_mm_s=100.0,
+        )
+        original_first_z = plan["moves"][0]["z"]
+
+        adjusted_plan, report_json, summary = mesh_node.apply(
+            plan=plan,
+            mesh_json='{"bed_width_mm":220,"bed_depth_mm":220,"offsets":[[0.12,0.12],[0.12,0.12]]}',
+            max_compensation_mm=0.2,
+            warn_if_over_mm=0.05,
+            fade_height_mm=10.0,
+            use_profile_bed_size=True,
+            profile=profile,
+        )
+
+        report = json.loads(report_json)
+        adjusted_first_z = adjusted_plan["moves"][0]["z"]
+        self.assertGreater(adjusted_first_z, original_first_z)
+        self.assertGreater(report["max_applied_compensation_mm"], 0.0)
+        self.assertIn("bed_mesh_compensation", adjusted_plan["meta"])
+        self.assertIn("Bed mesh", summary)
+
+    def test_gcode_calibration_tower_injects_layer_commands(self) -> None:
+        profile_node = MKRGCodePrinterProfile()
+        plan_node = MKRGCodeSpiralVase()
+        export_node = MKRGCodeExport()
+        calibration_node = MKRGCodeCalibrationTower()
+
+        profile, _, _ = profile_node.build(printer_name="Tower Rig")
+        plan, _, _, _ = plan_node.build(
+            height_mm=12.0,
+            base_radius_mm=9.0,
+            top_radius_mm=8.0,
+            bottom_layers=1,
+            layer_height_mm=0.2,
+            line_width_mm=0.45,
+            segments_per_turn=16,
+            print_speed_mm_s=18.0,
+            travel_speed_mm_s=100.0,
+        )
+        gcode_text, _, _ = export_node.run(
+            plan=plan,
+            profile=profile,
+            filename_prefix="tower_test",
+            save_file=False,
+            include_comments=True,
+        )
+
+        calibrated_text, steps_json, summary = calibration_node.apply(
+            plan=plan,
+            gcode_text=gcode_text,
+            axis="layer_index",
+            target="temp",
+            start_value=220.0,
+            step_value=-5.0,
+            every=1.0,
+            clamp_min=190.0,
+            clamp_max=240.0,
+            only_on_change=True,
+        )
+
+        steps = json.loads(steps_json)
+        self.assertIn("M104 S220", calibrated_text)
+        self.assertIn("M104 S210", calibrated_text)
+        self.assertGreaterEqual(steps["step_count"], 2)
+        self.assertIn("Calibration tower", summary)
+
+    def test_gcode_conditional_injector_applies_start_layer_and_end_rules(self) -> None:
+        profile_node = MKRGCodePrinterProfile()
+        plan_node = MKRGCodeSpiralVase()
+        export_node = MKRGCodeExport()
+        injector_node = MKRGCodeConditionalInjector()
+
+        profile, _, _ = profile_node.build(printer_name="Inject Rig")
+        plan, _, _, _ = plan_node.build(
+            height_mm=12.0,
+            base_radius_mm=9.0,
+            top_radius_mm=8.0,
+            bottom_layers=1,
+            layer_height_mm=0.2,
+            line_width_mm=0.45,
+            segments_per_turn=16,
+            print_speed_mm_s=18.0,
+            travel_speed_mm_s=100.0,
+        )
+        gcode_text, _, _ = export_node.run(
+            plan=plan,
+            profile=profile,
+            filename_prefix="inject_test",
+            save_file=False,
+            include_comments=True,
+        )
+
+        injected_text, applied_json, summary = injector_node.apply(
+            plan=plan,
+            gcode_text=gcode_text,
+            rules_json='[{"label":"announce-start","when":"start","inject":"M117 START {mode}"},{"label":"note-layer","when":"layer_change","layer":2,"inject":"M117 LAYER {layer} Z{z:.2f}"},{"label":"announce-end","when":"end","inject":"M118 DONE {mode}"}]',
+        )
+
+        applied = json.loads(applied_json)
+        self.assertIn("M117 START spiral_vase", injected_text)
+        self.assertIn("M117 LAYER 2 Z", injected_text)
+        self.assertIn("M118 DONE spiral_vase", injected_text)
+        self.assertEqual(applied["applied_count"], 3)
+        self.assertIn("Conditional injector", summary)
+
+    def test_gcode_external_slicer_builds_orca_dry_run_command(self) -> None:
+        node = MKRGCodeExternalSlicer()
+        mesh = {
+            "schema": "mkr_gcode_mesh_v1",
+            "format": "tris",
+            "tris": [0.0, 0.0, 0.0, 20.0, 0.0, 0.0, 0.0, 20.0, 0.0],
+            "tri_count": 1,
+            "bounds": {"min_x": 0.0, "max_x": 20.0, "min_y": 0.0, "max_y": 20.0, "min_z": 0.0, "max_z": 0.0},
+            "meta": {},
+        }
+        slicer_settings = {
+            "schema": "mkr_gcode_slicer_settings_v1",
+            "source": "orca",
+            "engine_family": "prusa_orca",
+            "config": {"layer_height": 0.28, "perimeter_speed": 55},
+        }
+
+        gcode_text, plan, output_path, summary_json = node.run(
+            mesh=mesh,
+            engine="orca",
+            engine_path="",
+            engine_args_text="",
+            filename_prefix="dry_run",
+            subfolder="",
+            save_file=False,
+            overwrite=False,
+            dry_run=True,
+            profile=None,
+            slicer_settings=slicer_settings,
+            settings_json='{"fill_density":15}',
+        )
+
+        summary = json.loads(summary_json)
+        self.assertEqual(gcode_text, "")
+        self.assertEqual(plan, {})
+        self.assertEqual(output_path, "")
+        self.assertIn("--export-gcode", summary["command"])
+        self.assertIn("layer_height = 0.28", summary["config_text"])
+        self.assertIn("fill_density = 15", summary["config_text"])
+        self.assertTrue(any("dry_run" in warning for warning in summary["warnings"]))
 
 
 if __name__ == "__main__":
