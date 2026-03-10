@@ -14,3 +14,4 @@
 
 - This is an output-style inspection node and does not emit downstream data.
 - Use it when tuning masks, LUTs, or look variants and you want a larger comparison surface than the stock preview.
+- The viewer is resolution-aware: it does not upscale the smaller input to fake equal definition, so upscale comparisons keep their true relative detail footprint.

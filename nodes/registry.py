@@ -1,4 +1,5 @@
 from . import MKRCharacterCustomizer, AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRThemeDebugger
+from .image_layout_nodes import MKRImageCombineGrid, MKRImageSplitGrid
 from .preview_nodes import MKRBatchCollagePreview
 from .social_nodes import (
     MKRshiftSocialPackAssets,
@@ -167,6 +168,8 @@ NODE_CLASS_MAPPINGS = {
     "Aspect1XBatch": Aspect1XBatch,
     "AxBCompare": AxBCompare,
     "MKRThemeDebugger": MKRThemeDebugger,
+    "MKRImageSplitGrid": MKRImageSplitGrid,
+    "MKRImageCombineGrid": MKRImageCombineGrid,
     "MKRGCodePrinterProfile": MKRGCodePrinterProfile,
     "MKRGCodeOrcaProfileLoader": MKRGCodeOrcaProfileLoader,
     "MKRGCodeLoadMeshModel": MKRGCodeLoadMeshModel,
@@ -320,6 +323,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Aspect1XBatch": "Aspect 1xBatch • MKRShift Nodes",
     "AxBCompare": "AxB Compare • MKRShift Nodes",
     "MKRThemeDebugger": "Theme Debugger • MKRShift Nodes",
+    "MKRImageSplitGrid": "Image Split Grid • MKRShift Nodes",
+    "MKRImageCombineGrid": "Image Combine Grid • MKRShift Nodes",
     "MKRGCodePrinterProfile": "G-code Printer Profile • MKRShift Nodes",
     "MKRGCodeOrcaProfileLoader": "G-code Orca Profile Loader • MKRShift Nodes",
     "MKRGCodeLoadMeshModel": "G-code Load Mesh Model • MKRShift Nodes",

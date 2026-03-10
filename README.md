@@ -21,7 +21,7 @@ MKRShift Nodes is a broad ComfyUI node pack focused on image craft and workflow 
 | Direction | `MKRCharacterCustomizer`, `AngleShift`, `Aspect1X`, `AxBCompare` | Character setup, angle exploration, compare views, and framing |
 | Color + Lookdev | `xLUT`, `xLUTOutput`, `x1ColorWheels`, `x1Curves`, `x1PaletteMap` | LUT authoring, grading, color matching, and look building |
 | Image Processing | `x1Bloom`, `x1Film`, `x1Stylize`, `x1LocalContrast`, `x1SharpenPro` | Finishing, texture, stylization, and polish |
-| Mask + Utility | `x1MaskGen`, `AdvResize`, `xShader`, `x1DenoiseDetail` | Mask generation, resize work, shader utilities, and cleanup |
+| Mask + Utility | `x1MaskGen`, `AdvResize`, `MKRImageSplitGrid`, `MKRImageCombineGrid`, `xShader`, `x1DenoiseDetail` | Mask generation, resize work, tiled image workflows, shader utilities, and cleanup |
 | PreSave + Media | `MKRPreSave`, `MKRPresaveVideo`, `MKRPresaveAudio`, `MKRMuxVideoAudio`, `MKRTrimVideoByTime` | Preview-first export helpers plus audio/video utility work |
 | Social Planning | `MKRshiftSocialPackBuilder`, `MKRshiftSocialPackAssets`, `MKRshiftSocialPromptAtIndex`, `MKRshiftSocialPackCatalog` | Pack-driven captions, prompts, scheduling, and social asset planning |
 | G-code | `MKRGCodePrinterProfile`, `MKRGCodeOrcaProfileLoader`, `MKRGCodeLoadMeshModel`, `MKRGCodeHeightmapPlate`, `MKRGCodeSpiralVase`, `MKRGCodePlanAnalyzer`, `MKRGCodeBedMeshCompensate`, `MKRGCodeCalibrationTower`, `MKRGCodeConditionalInjector`, `MKRGCodePreview`, `MKRGCodeExternalSlicer`, `MKRGCodeExport` | 3D-print printer profiles, Orca preset import, mesh/model loading, generators, plan analysis, bed compensation, calibration macros, preview, external slicing, and direct `.gcode` export |

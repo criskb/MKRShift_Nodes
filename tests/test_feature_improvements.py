@@ -15,6 +15,7 @@ if str(PACKAGE_PARENT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_PARENT))
 
 from MKRShift_Nodes.nodes.mask_nodes import x1MaskGen  # noqa: E402
+from MKRShift_Nodes.nodes.core_nodes import AxBCompare  # noqa: E402
 from MKRShift_Nodes.nodes.presave_media_nodes import MKRPresaveVideo  # noqa: E402
 from MKRShift_Nodes.nodes.social_nodes import MKRshiftSocialPackBuilder  # noqa: E402
 from MKRShift_Nodes.nodes.gcode_analysis_nodes import MKRGCodePlanAnalyzer  # noqa: E402
@@ -32,6 +33,7 @@ from MKRShift_Nodes.nodes.gcode_nodes import (  # noqa: E402
 )
 from MKRShift_Nodes.nodes.gcode_preview_nodes import MKRGCodePreview  # noqa: E402
 from MKRShift_Nodes.nodes.gcode_slicer_nodes import MKRGCodeExternalSlicer  # noqa: E402
+from MKRShift_Nodes.nodes.image_layout_nodes import MKRImageCombineGrid, MKRImageSplitGrid  # noqa: E402
 from MKRShift_Nodes.nodes.studio_nodes import (  # noqa: E402
     MKRStudioCompareBoard,
     MKRStudioContactSheet,
@@ -166,6 +168,98 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertEqual(state["preview_media_kind"], "image")
         self.assertEqual(preview["media_kind"], "image")
         self.assertEqual(preview["format"], "webp")
+
+    def test_axb_compare_preserves_definition_aware_preview_metadata(self) -> None:
+        node = AxBCompare()
+        image_a = torch.zeros((1, 800, 1200, 3), dtype=torch.float32)
+        image_b = torch.zeros((1, 400, 600, 3), dtype=torch.float32)
+
+        result = node.run(image_a=image_a, image_b=image_b, orientation="horizontal")
+        compare_state = result["ui"]["compare_state"][0]
+        preview_a = result["ui"]["a_preview"][0]
+        preview_b = result["ui"]["b_preview"][0]
+
+        self.assertEqual(compare_state["display_mode"], "actual_definition")
+        self.assertEqual(compare_state["preview_max_size"], 4096)
+        self.assertEqual(compare_state["image_a_size"], [1200, 800])
+        self.assertEqual(compare_state["image_b_size"], [600, 400])
+        self.assertEqual(compare_state["compare_canvas_size"], [1200, 800])
+        self.assertEqual(preview_a["width"], 1200)
+        self.assertEqual(preview_a["height"], 800)
+        self.assertFalse(preview_a["downscaled"])
+        self.assertEqual(preview_b["width"], 600)
+        self.assertEqual(preview_b["height"], 400)
+        self.assertFalse(preview_b["downscaled"])
+
+    def test_image_split_grid_returns_equal_tiles_and_metadata(self) -> None:
+        split_node = MKRImageSplitGrid()
+        image = torch.linspace(0.0, 1.0, 1 * 5 * 7 * 3, dtype=torch.float32).reshape(1, 5, 7, 3)
+
+        tiles, split_info_json, summary = split_node.split(
+            image=image,
+            columns=3,
+            rows=2,
+            size_mode="pad",
+            anchor="center",
+            overlap_px=1,
+            pad_mode="edge",
+            pad_value=0.0,
+        )
+
+        info = json.loads(split_info_json)
+        self.assertEqual(tuple(tiles.shape), (6, 5, 5, 3))
+        self.assertEqual(info["columns"], 3)
+        self.assertEqual(info["rows"], 2)
+        self.assertEqual(info["tile_width"], 3)
+        self.assertEqual(info["tile_height"], 3)
+        self.assertEqual(info["tile_full_width"], 5)
+        self.assertEqual(info["tile_full_height"], 5)
+        self.assertEqual(info["canvas_width"], 9)
+        self.assertEqual(info["canvas_height"], 6)
+        self.assertEqual(info["source_window"], [0, 0, 7, 5])
+        self.assertIn("equal tiles", summary)
+
+    def test_image_split_and_combine_roundtrip_with_overlap(self) -> None:
+        split_node = MKRImageSplitGrid()
+        combine_node = MKRImageCombineGrid()
+
+        y = torch.linspace(0.0, 1.0, 5, dtype=torch.float32).view(5, 1).expand(5, 7)
+        x = torch.linspace(0.0, 1.0, 7, dtype=torch.float32).view(1, 7).expand(5, 7)
+        image = torch.stack((x, y, (x + y) * 0.5), dim=-1).unsqueeze(0)
+
+        tiles, split_info_json, _ = split_node.split(
+            image=image,
+            columns=3,
+            rows=2,
+            size_mode="pad",
+            anchor="center",
+            overlap_px=1,
+            pad_mode="edge",
+            pad_value=0.0,
+        )
+        combined, combine_info_json, summary = combine_node.combine(
+            tiles=tiles,
+            split_info_json=split_info_json,
+            columns=3,
+            rows=2,
+            size_mode="pad",
+            overlap_px=1,
+            canvas_width=0,
+            canvas_height=0,
+            original_width=0,
+            original_height=0,
+            content_x=0,
+            content_y=0,
+            blend_mode="feather",
+        )
+
+        info = json.loads(combine_info_json)
+        self.assertEqual(tuple(combined.shape), tuple(image.shape))
+        self.assertTrue(torch.allclose(combined, image, atol=1e-6))
+        self.assertEqual(info["output_width"], 7)
+        self.assertEqual(info["output_height"], 5)
+        self.assertEqual(info["blend_mode"], "feather")
+        self.assertIn("Combined", summary)
 
     def test_legacy_module_aliases_resolve_to_new_package_paths(self) -> None:
         expected = {

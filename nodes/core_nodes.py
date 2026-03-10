@@ -488,15 +488,13 @@ def _temp_dir() -> str:
     return fallback
 
 
-def _make_preview_image(image: Any) -> Optional[Image.Image]:
+def _coerce_preview_source_image(image: Any) -> Optional[Image.Image]:
     if image is None:
         return None
 
     try:
         if isinstance(image, Image.Image):
-            preview = image.convert("RGB")
-            preview.thumbnail((1024, 1024), resample=Image.Resampling.LANCZOS)
-            return preview
+            return image.convert("RGB")
 
         array = image
         if hasattr(array, "detach"):
@@ -523,24 +521,53 @@ def _make_preview_image(image: Any) -> Optional[Image.Image]:
             array = np.clip(array, 0.0, 1.0)
             array = (array * 255.0).round().astype(np.uint8)
 
-        image_pil = Image.fromarray(array)
-        image_pil.thumbnail((1024, 1024), resample=Image.Resampling.LANCZOS)
-        return image_pil.convert("RGB")
+        return Image.fromarray(array).convert("RGB")
     except Exception:
         return None
 
 
-def _save_temp_preview(image: Any, prefix: str = "mkrshift_axb") -> Optional[Dict[str, str]]:
-    preview = _make_preview_image(image)
+def _make_preview_image(image: Any, max_size: Optional[int] = 1024) -> Optional[Image.Image]:
+    preview = _coerce_preview_source_image(image)
     if preview is None:
         return None
+
+    max_dim = int(max_size) if max_size is not None else 0
+    if max_dim > 0:
+        preview = preview.copy()
+        preview.thumbnail((max_dim, max_dim), resample=Image.Resampling.LANCZOS)
+    return preview
+
+
+def _save_temp_preview(
+    image: Any,
+    prefix: str = "mkrshift_axb",
+    max_size: Optional[int] = 1024,
+) -> Optional[Dict[str, Any]]:
+    source = _coerce_preview_source_image(image)
+    if source is None:
+        return None
+    preview = _make_preview_image(source, max_size=max_size)
+    if preview is None:
+        return None
+
+    source_width, source_height = source.size
+    preview_width, preview_height = preview.size
 
     output_dir = _temp_dir()
     os.makedirs(output_dir, exist_ok=True)
     filename = f"{prefix}_{uuid.uuid4().hex[:10]}.png"
     target = os.path.join(output_dir, filename)
     preview.save(target, format="PNG", compress_level=1)
-    return {"filename": filename, "subfolder": "", "type": "temp"}
+    return {
+        "filename": filename,
+        "subfolder": "",
+        "type": "temp",
+        "width": int(preview_width),
+        "height": int(preview_height),
+        "source_width": int(source_width),
+        "source_height": int(source_height),
+        "downscaled": bool((preview_width, preview_height) != (source_width, source_height)),
+    }
 
 
 def _load_fonts() -> Tuple[ImageFont.ImageFont, ImageFont.ImageFont, ImageFont.ImageFont]:
@@ -2006,6 +2033,7 @@ class AxBCompare:
         split_percent = float(kwargs.get("split_percent", 0.5))
         fit_mode = str(kwargs.get("fit_mode", "contain"))
         swap_inputs = bool(kwargs.get("swap_inputs", False))
+        preview_max_size = max(512, min(8192, int(kwargs.get("preview_max_size", 4096))))
         a_batch = _comfy_batch_to_pil_list(image_a)
         b_batch = _comfy_batch_to_pil_list(image_b)
         if not a_batch:
@@ -2016,8 +2044,8 @@ class AxBCompare:
         if swap_inputs:
             a_batch, b_batch = b_batch, a_batch
 
-        preview_a = _save_temp_preview(a_batch[0], prefix="mkrshift_axb_a")
-        preview_b = _save_temp_preview(b_batch[0], prefix="mkrshift_axb_b")
+        preview_a = _save_temp_preview(a_batch[0], prefix="mkrshift_axb_a", max_size=preview_max_size)
+        preview_b = _save_temp_preview(b_batch[0], prefix="mkrshift_axb_b", max_size=preview_max_size)
 
         orientation_norm = str(orientation or "horizontal").strip().lower()
         if orientation_norm not in {"vertical", "horizontal"}:
@@ -2034,7 +2062,15 @@ class AxBCompare:
                     "orientation": orientation_norm,
                     "split_percent": split_norm,
                     "fit_mode": fit_norm,
+                    "display_mode": "actual_definition",
                     "swap_inputs": bool(swap_inputs),
+                    "preview_max_size": int(preview_max_size),
+                    "image_a_size": [int(a_batch[0].width), int(a_batch[0].height)],
+                    "image_b_size": [int(b_batch[0].width), int(b_batch[0].height)],
+                    "compare_canvas_size": [
+                        int(max(a_batch[0].width, b_batch[0].width)),
+                        int(max(a_batch[0].height, b_batch[0].height)),
+                    ],
                 }
             ]
         }

@@ -25,6 +25,7 @@ FX_PLAY = f"{ROOT}/FX/Play"
 # Utility nodes.
 UTILITY_MASK = f"{ROOT}/Utility/Mask"
 UTILITY_RESIZE = f"{ROOT}/Utility/Resize"
+UTILITY_LAYOUT = f"{ROOT}/Utility/Layout"
 UTILITY_SHADER = f"{ROOT}/Utility/Shader"
 UTILITY_PHOTO = f"{ROOT}/Utility/Photo"
 

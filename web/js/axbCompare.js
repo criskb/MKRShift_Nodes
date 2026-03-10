@@ -11,7 +11,7 @@ const INTERNAL_SPLIT_PROP = "mkr_axb_split";
 const MKR_BADGE_BG = "#1F1F1F";
 const MKR_BADGE_FG = ACCENT_LIME;
 const LEGACY_CANVAS_SUFFIX = " [Canvas]";
-const AXB_RUNTIME_VERSION = "node2-2026-02-28s";
+const AXB_RUNTIME_VERSION = "node2-2026-03-10a";
 const ACCENT_STYLE_ID = "mkrshift-accent-style";
 const ACCENT_STYLE_CSS = `
 :root {
@@ -502,6 +502,10 @@ function hideLegacyAxBControls(node) {
     node.properties.fit_mode = "contain";
     changed = true;
   }
+  if (node.properties.display_mode === undefined) {
+    node.properties.display_mode = "actual_definition";
+    changed = true;
+  }
   if (node.properties.swap_inputs === undefined) {
     node.properties.swap_inputs = false;
     changed = true;
@@ -509,6 +513,7 @@ function hideLegacyAxBControls(node) {
 
   node.properties.split_percent = clamp(numberValue(node.properties.split_percent, 0.5), 0, 1);
   node.properties.fit_mode = "contain";
+  node.properties.display_mode = "actual_definition";
   node.properties.swap_inputs = boolValue(node.properties.swap_inputs, false);
 
   if (Array.isArray(node.widgets) && node.widgets.length) {
@@ -545,12 +550,16 @@ function hideLegacyAxBControls(node) {
 
 function readViewState(node, state) {
   const orientationRaw = String(readWidgetOrProperty(node, "orientation", "horizontal")).toLowerCase();
+  const displayModeRaw = String(node?.properties?.display_mode || "actual_definition").toLowerCase();
+  const fitModeRaw = String(node?.properties?.fit_mode || "contain").toLowerCase();
+  const fitMode = ["contain", "cover", "stretch"].includes(fitModeRaw) ? fitModeRaw : "contain";
 
   return {
     orientation: orientationRaw === "horizontal" ? "horizontal" : "vertical",
     split: readSplitValue(node, state),
-    fitMode: "contain",
-    swap: false,
+    fitMode,
+    displayMode: displayModeRaw === "fit_view" ? "fit_view" : "actual_definition",
+    swap: boolValue(node?.properties?.swap_inputs, false),
   };
 }
 
@@ -599,6 +608,8 @@ function loadPreviewIntoState(node, state, slot, info) {
 
   const src = `${url}&_ts=${Date.now()}`;
   state.previewSrc[slot] = src;
+  state.previewInfo = state.previewInfo || { a: null, b: null };
+  state.previewInfo[slot] = info && typeof info === "object" ? { ...info } : null;
 
   const image = new Image();
   image.onload = () => {
@@ -608,6 +619,7 @@ function loadPreviewIntoState(node, state, slot, info) {
   };
   image.onerror = () => {
     state.images[slot] = null;
+    state.previewInfo[slot] = null;
     updateDomVisuals(node, state);
     queueRedraw(node);
   };
@@ -616,6 +628,81 @@ function loadPreviewIntoState(node, state, slot, info) {
 
 function isDrawableImage(image) {
   return !!(image && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
+}
+
+function getImageDimensions(image) {
+  if (!isDrawableImage(image)) return null;
+  return {
+    w: image.naturalWidth || image.width || 0,
+    h: image.naturalHeight || image.height || 0,
+  };
+}
+
+function getPreferredDimensions(image, previewInfo) {
+  const sourceWidth = Number(previewInfo?.source_width);
+  const sourceHeight = Number(previewInfo?.source_height);
+  if (Number.isFinite(sourceWidth) && Number.isFinite(sourceHeight) && sourceWidth > 0 && sourceHeight > 0) {
+    return { w: sourceWidth, h: sourceHeight };
+  }
+  return getImageDimensions(image);
+}
+
+function computePlacedRect(containerRect, sourceSize, scale, anchorX = 0.5, anchorY = 0.5) {
+  if (!sourceSize || !sourceSize.w || !sourceSize.h || !Number.isFinite(scale) || scale <= 0) {
+    return null;
+  }
+
+  const width = Math.max(1, Math.round(sourceSize.w * scale));
+  const height = Math.max(1, Math.round(sourceSize.h * scale));
+  const x = containerRect.x + Math.round((containerRect.w - width) * anchorX);
+  const y = containerRect.y + Math.round((containerRect.h - height) * anchorY);
+  return { x, y, w: width, h: height };
+}
+
+function resolveCompareLayout(containerRect, imageA, imageB, previewInfoA, previewInfoB, compareState, displayMode, fitMode) {
+  const dimsA = getPreferredDimensions(imageA, previewInfoA);
+  const dimsB = getPreferredDimensions(imageB, previewInfoB);
+  const allDims = [dimsA, dimsB].filter(Boolean);
+  if (!allDims.length) {
+    return { frame: containerRect, a: null, b: null };
+  }
+
+  const metaCanvas = Array.isArray(compareState?.compare_canvas_size) ? compareState.compare_canvas_size : null;
+  const compareCanvas = {
+    w:
+      metaCanvas && Number.isFinite(Number(metaCanvas[0])) && Number(metaCanvas[0]) > 0
+        ? Number(metaCanvas[0])
+        : Math.max(...allDims.map((dims) => dims.w)),
+    h:
+      metaCanvas && Number.isFinite(Number(metaCanvas[1])) && Number(metaCanvas[1]) > 0
+        ? Number(metaCanvas[1])
+        : Math.max(...allDims.map((dims) => dims.h)),
+  };
+  const mode = String(displayMode || "actual_definition").toLowerCase();
+  if (mode === "fit_view") {
+    return {
+      frame: containerRect,
+      a: dimsA ? { x: containerRect.x, y: containerRect.y, w: containerRect.w, h: containerRect.h, fitMode } : null,
+      b: dimsB ? { x: containerRect.x, y: containerRect.y, w: containerRect.w, h: containerRect.h, fitMode } : null,
+    };
+  }
+
+  const scale = Math.min(1, containerRect.w / compareCanvas.w, containerRect.h / compareCanvas.h);
+  const frame = computePlacedRect(containerRect, compareCanvas, scale, 0.5, 0.5) || containerRect;
+  return {
+    frame,
+    a: dimsA ? { x: frame.x, y: frame.y, w: frame.w, h: frame.h, fitMode } : null,
+    b: dimsB ? { x: frame.x, y: frame.y, w: frame.w, h: frame.h, fitMode } : null,
+  };
+}
+
+function drawImagePlaced(ctx, image, placement, fitMode) {
+  if (!placement) return;
+  if (placement.fitMode) {
+    drawImageFitted(ctx, image, placement, fitMode);
+    return;
+  }
+  ctx.drawImage(image, placement.x, placement.y, placement.w, placement.h);
 }
 
 function resolveLinkedNodeImageSrc(node, inputName) {
@@ -728,6 +815,22 @@ function pointInRect(point, rect) {
   return point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h;
 }
 
+function getDomLocalPoint(root, event) {
+  if (!root || !event) return null;
+  const rect = root.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+
+  const localWidth = Math.max(1, root.clientWidth || rect.width);
+  const localHeight = Math.max(1, root.clientHeight || rect.height);
+  const scaleX = localWidth / rect.width;
+  const scaleY = localHeight / rect.height;
+  return {
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
+    rect,
+  };
+}
+
 function updateSplitFromPos(node, state, point) {
   const rect = state.compareRect;
   if (!rect) return;
@@ -759,7 +862,6 @@ function previewRectForNode(node) {
 
 function drawCompareCanvas(node, ctx, state) {
   const rect = previewRectForNode(node);
-  state.compareRect = rect;
 
   drawRoundedFill(ctx, rect.x, rect.y, rect.w, rect.h, 10, "rgba(31,31,31,0.98)");
   drawRoundedStroke(ctx, rect.x, rect.y, rect.w, rect.h, 10, "rgba(88,88,88,0.45)", 1);
@@ -781,33 +883,47 @@ function drawCompareCanvas(node, ctx, state) {
   const viewState = readViewState(node, state);
   const sourceA = viewState.swap ? state.images.b : state.images.a;
   const sourceB = viewState.swap ? state.images.a : state.images.b;
+  const infoA = viewState.swap ? state.previewInfo?.b : state.previewInfo?.a;
+  const infoB = viewState.swap ? state.previewInfo?.a : state.previewInfo?.b;
 
   const hasA = isDrawableImage(sourceA);
   const hasB = isDrawableImage(sourceB);
+  const layout = resolveCompareLayout(
+    rect,
+    sourceA,
+    sourceB,
+    infoA,
+    infoB,
+    state.compareState,
+    viewState.displayMode,
+    viewState.fitMode,
+  );
+  const frame = layout.frame || rect;
+  state.compareRect = frame;
 
   ctx.save();
-  roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 10);
+  roundRectPath(ctx, frame.x, frame.y, frame.w, frame.h, 10);
   ctx.clip();
 
-  drawChecker(ctx, rect);
+  drawChecker(ctx, frame);
 
-  if (hasB) {
-    drawImageFitted(ctx, sourceB, rect, viewState.fitMode);
+  if (hasB && layout.b) {
+    drawImagePlaced(ctx, sourceB, layout.b, viewState.fitMode);
   }
 
-  if (hasA) {
+  if (hasA && layout.a) {
     const split = clamp(viewState.split, 0, 1);
     ctx.save();
     if (viewState.orientation === "horizontal") {
       ctx.beginPath();
-      ctx.rect(rect.x, rect.y, rect.w * split, rect.h);
+      ctx.rect(frame.x, frame.y, frame.w * split, frame.h);
       ctx.clip();
     } else {
       ctx.beginPath();
-      ctx.rect(rect.x, rect.y, rect.w, rect.h * split);
+      ctx.rect(frame.x, frame.y, frame.w, frame.h * split);
       ctx.clip();
     }
-    drawImageFitted(ctx, sourceA, rect, viewState.fitMode);
+    drawImagePlaced(ctx, sourceA, layout.a, viewState.fitMode);
     ctx.restore();
   }
 
@@ -815,30 +931,30 @@ function drawCompareCanvas(node, ctx, state) {
 
   const split = clamp(viewState.split, 0, 1);
   if (viewState.orientation === "horizontal") {
-    const x = rect.x + rect.w * split;
+    const x = frame.x + frame.w * split;
     ctx.strokeStyle = "rgba(255,255,255,0.95)";
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(x, rect.y);
-    ctx.lineTo(x, rect.y + rect.h);
+    ctx.moveTo(x, frame.y);
+    ctx.lineTo(x, frame.y + frame.h);
     ctx.stroke();
 
     ctx.fillStyle = ACCENT_LIME;
     ctx.beginPath();
-    ctx.arc(x, rect.y + rect.h * 0.5, 6, 0, Math.PI * 2);
+    ctx.arc(x, frame.y + frame.h * 0.5, 6, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    const y = rect.y + rect.h * split;
+    const y = frame.y + frame.h * split;
     ctx.strokeStyle = "rgba(255,255,255,0.95)";
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(rect.x, y);
-    ctx.lineTo(rect.x + rect.w, y);
+    ctx.moveTo(frame.x, y);
+    ctx.lineTo(frame.x + frame.w, y);
     ctx.stroke();
 
     ctx.fillStyle = ACCENT_LIME;
     ctx.beginPath();
-    ctx.arc(rect.x + rect.w * 0.5, y, 6, 0, Math.PI * 2);
+    ctx.arc(frame.x + frame.w * 0.5, y, 6, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -891,10 +1007,11 @@ function createDomState(node, state) {
   imageB.draggable = false;
   imageB.style.cssText = [
     "position:absolute",
-    "inset:0",
-    "width:100%",
-    "height:100%",
-    "object-fit:cover",
+    "left:0",
+    "top:0",
+    "width:1px",
+    "height:1px",
+    "object-fit:fill",
     "display:none",
     "pointer-events:none",
   ].join(";");
@@ -912,10 +1029,11 @@ function createDomState(node, state) {
   imageA.draggable = false;
   imageA.style.cssText = [
     "position:absolute",
-    "inset:0",
-    "width:100%",
-    "height:100%",
-    "object-fit:cover",
+    "left:0",
+    "top:0",
+    "width:1px",
+    "height:1px",
+    "object-fit:fill",
     "display:none",
     "pointer-events:none",
   ].join(";");
@@ -1019,16 +1137,24 @@ function createDomState(node, state) {
     status,
   };
 
+  const requestLayoutRefresh = () => {
+    updateDomVisuals(node, state);
+    queueRedraw(node);
+  };
+  imageA.addEventListener("load", requestLayoutRefresh);
+  imageB.addEventListener("load", requestLayoutRefresh);
+
   const splitFromEvent = (event) => {
-    const rect = root.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
+    const point = getDomLocalPoint(root, event);
+    if (!point) return;
+    const frame = state.compareRect || { x: 0, y: 0, w: Math.max(1, root.clientWidth), h: Math.max(1, root.clientHeight) };
     const viewState = readViewState(node, state);
 
     let split = 0.5;
     if (viewState.orientation === "horizontal") {
-      split = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+      split = clamp((point.x - frame.x) / Math.max(1, frame.w), 0, 1);
     } else {
-      split = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+      split = clamp((point.y - frame.y) / Math.max(1, frame.h), 0, 1);
     }
 
     setSplitValue(node, state, Number(split.toFixed(3)));
@@ -1178,6 +1304,8 @@ function updateDomVisuals(node, state) {
   if (!dom) return;
 
   const { viewState, srcA, srcB, hasA, hasB } = chooseDisplayedSources(node, state);
+  const infoA = viewState.swap ? state.previewInfo?.b : state.previewInfo?.a;
+  const infoB = viewState.swap ? state.previewInfo?.a : state.previewInfo?.b;
 
   if (srcA) {
     if (dom.imageA.src !== srcA) dom.imageA.src = srcA;
@@ -1194,53 +1322,98 @@ function updateDomVisuals(node, state) {
     dom.imageB.style.display = "none";
   }
 
-  dom.imageA.style.objectFit = "contain";
-  dom.imageB.style.objectFit = "contain";
+  const rootWidth = Math.max(1, Math.round(dom.root.clientWidth || 0));
+  const rootHeight = Math.max(1, Math.round(dom.root.clientHeight || 0));
+  const layout = resolveCompareLayout(
+    { x: 0, y: 0, w: rootWidth, h: rootHeight },
+    dom.imageA,
+    dom.imageB,
+    infoA,
+    infoB,
+    state.compareState,
+    viewState.displayMode,
+    viewState.fitMode,
+  );
+  const frame = layout.frame || { x: 0, y: 0, w: rootWidth, h: rootHeight };
 
-  const splitPercent = clamp(viewState.split, 0, 1) * 100;
+  const applyPlacement = (element, placement) => {
+    if (!element) return;
+    if (!placement) {
+      element.style.left = "0px";
+      element.style.top = "0px";
+      element.style.width = "1px";
+      element.style.height = "1px";
+      element.style.objectFit = "fill";
+      return;
+    }
+    element.style.left = `${placement.x}px`;
+    element.style.top = `${placement.y}px`;
+    element.style.width = `${placement.w}px`;
+    element.style.height = `${placement.h}px`;
+    element.style.objectFit = placement.fitMode === "cover" ? "cover" : placement.fitMode === "stretch" ? "fill" : "contain";
+  };
+
+  applyPlacement(dom.imageB, layout.b);
+  dom.clip.style.left = `${frame.x}px`;
+  dom.clip.style.top = `${frame.y}px`;
+  dom.clip.style.right = "auto";
+  dom.clip.style.bottom = "auto";
+  dom.clip.style.width = `${frame.w}px`;
+  dom.clip.style.height = `${frame.h}px`;
+  applyPlacement(dom.imageA, layout.a ? {
+    x: layout.a.x - frame.x,
+    y: layout.a.y - frame.y,
+    w: layout.a.w,
+    h: layout.a.h,
+    fitMode: layout.a.fitMode,
+  } : null);
+
+  state.compareRect = frame;
+  const split = clamp(viewState.split, 0, 1);
+  const splitPercent = split * 100;
   const hasBadges = !!dom.badgeA && !!dom.badgeB;
   if (viewState.orientation === "horizontal") {
-    dom.clip.style.clipPath = `inset(0 ${100 - splitPercent}% 0 0)`;
-    dom.line.style.left = `${splitPercent}%`;
-    dom.line.style.top = "0";
-    dom.line.style.bottom = "0";
+    dom.clip.style.clipPath = `inset(0 ${Math.max(0, frame.w - frame.w * split)}px 0 0)`;
+    dom.line.style.left = `${frame.x + frame.w * split}px`;
+    dom.line.style.top = `${frame.y}px`;
+    dom.line.style.bottom = "auto";
     dom.line.style.right = "auto";
     dom.line.style.width = "0.5px";
-    dom.line.style.height = "100%";
+    dom.line.style.height = `${frame.h}px`;
     dom.line.style.transform = "translateX(-0.25px)";
-    dom.handle.style.left = `${splitPercent}%`;
-    dom.handle.style.top = "50%";
+    dom.handle.style.left = `${frame.x + frame.w * split}px`;
+    dom.handle.style.top = `${frame.y + frame.h * 0.5}px`;
     dom.handle.style.background = ACCENT_LIME;
     if (hasBadges) {
-      dom.badgeA.style.top = "8px";
+      dom.badgeA.style.top = `${frame.y + 8}px`;
       dom.badgeA.style.bottom = "auto";
-      dom.badgeA.style.left = "8px";
+      dom.badgeA.style.left = `${frame.x + 8}px`;
       dom.badgeA.style.right = "auto";
-      dom.badgeB.style.top = "8px";
+      dom.badgeB.style.top = `${frame.y + 8}px`;
       dom.badgeB.style.bottom = "auto";
-      dom.badgeB.style.right = "8px";
+      dom.badgeB.style.right = `${Math.max(8, rootWidth - frame.x - frame.w + 8)}px`;
       dom.badgeB.style.left = "auto";
     }
   } else {
-    dom.clip.style.clipPath = `inset(0 0 ${100 - splitPercent}% 0)`;
-    dom.line.style.top = `${splitPercent}%`;
-    dom.line.style.left = "0";
-    dom.line.style.right = "0";
+    dom.clip.style.clipPath = `inset(0 0 ${Math.max(0, frame.h - frame.h * split)}px 0)`;
+    dom.line.style.top = `${frame.y + frame.h * split}px`;
+    dom.line.style.left = `${frame.x}px`;
+    dom.line.style.right = "auto";
     dom.line.style.bottom = "auto";
     dom.line.style.height = "0.5px";
-    dom.line.style.width = "100%";
+    dom.line.style.width = `${frame.w}px`;
     dom.line.style.transform = "translateY(-0.25px)";
-    dom.handle.style.left = "50%";
-    dom.handle.style.top = `${splitPercent}%`;
+    dom.handle.style.left = `${frame.x + frame.w * 0.5}px`;
+    dom.handle.style.top = `${frame.y + frame.h * split}px`;
     dom.handle.style.background = ACCENT_LIME;
     if (hasBadges) {
-      dom.badgeA.style.top = "8px";
+      dom.badgeA.style.top = `${frame.y + 8}px`;
       dom.badgeA.style.bottom = "auto";
-      dom.badgeA.style.left = "8px";
+      dom.badgeA.style.left = `${frame.x + 8}px`;
       dom.badgeA.style.right = "auto";
       dom.badgeB.style.top = "auto";
-      dom.badgeB.style.bottom = "8px";
-      dom.badgeB.style.right = "8px";
+      dom.badgeB.style.bottom = `${Math.max(8, rootHeight - frame.y - frame.h + 8)}px`;
+      dom.badgeB.style.right = `${Math.max(8, rootWidth - frame.x - frame.w + 8)}px`;
       dom.badgeB.style.left = "auto";
     }
   }
@@ -1268,11 +1441,24 @@ function applyOutputMessage(node, state, message) {
 
   const compareState = message?.compare_state?.[0] ?? message?.ui?.compare_state?.[0] ?? null;
   if (compareState && typeof compareState === "object") {
+    state.compareState = { ...compareState };
     if (compareState.orientation !== undefined) {
       setWidgetValue(node, "orientation", String(compareState.orientation));
     }
     if (compareState.split_percent !== undefined) {
       setSplitValue(node, state, numberValue(compareState.split_percent, readSplitValue(node, state)));
+    }
+    if (compareState.fit_mode !== undefined) {
+      node.properties = node.properties || {};
+      node.properties.fit_mode = String(compareState.fit_mode || "contain").toLowerCase();
+    }
+    if (compareState.swap_inputs !== undefined) {
+      node.properties = node.properties || {};
+      node.properties.swap_inputs = boolValue(compareState.swap_inputs, false);
+    }
+    if (compareState.display_mode !== undefined) {
+      node.properties = node.properties || {};
+      node.properties.display_mode = String(compareState.display_mode || "actual_definition");
     }
   }
 
@@ -1400,6 +1586,11 @@ function ensureCompareUI(node) {
       a: null,
       b: null,
     },
+    compareState: null,
+    previewInfo: {
+      a: null,
+      b: null,
+    },
     previewSrc: {
       a: "",
       b: "",
@@ -1440,15 +1631,16 @@ function ensureCompareUI(node) {
     const hasB = this.inputs?.some((entry) => entry.name === "image_b" && entry.link);
     if (!hasA) {
       state.images.a = null;
-      if (!state.previewSrc.a) {
-        state.previewSrc.a = "";
-      }
+      state.previewInfo.a = null;
+      state.previewSrc.a = "";
     }
     if (!hasB) {
       state.images.b = null;
-      if (!state.previewSrc.b) {
-        state.previewSrc.b = "";
-      }
+      state.previewInfo.b = null;
+      state.previewSrc.b = "";
+    }
+    if (!hasA && !hasB) {
+      state.compareState = null;
     }
 
     updateDomVisuals(this, state);
