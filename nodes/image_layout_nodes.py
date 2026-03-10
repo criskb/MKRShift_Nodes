@@ -153,6 +153,25 @@ def _parse_split_info(split_info_json: str) -> Dict[str, Any]:
     return data
 
 
+def _normalize_source_window(value: Any, *, fallback_width: int, fallback_height: int) -> Tuple[int, int, int, int]:
+    if isinstance(value, (list, tuple)) and len(value) >= 4:
+        try:
+            x0 = int(value[0])
+            y0 = int(value[1])
+            x1 = int(value[2])
+            y1 = int(value[3])
+        except (TypeError, ValueError):
+            x0, y0, x1, y1 = 0, 0, int(fallback_width), int(fallback_height)
+    else:
+        x0, y0, x1, y1 = 0, 0, int(fallback_width), int(fallback_height)
+
+    x0 = max(0, x0)
+    y0 = max(0, y0)
+    x1 = max(x0 + 1, x1)
+    y1 = max(y0 + 1, y1)
+    return (int(x0), int(y0), int(x1), int(y1))
+
+
 def _weight_axis(length: int, overlap: int, mode: str) -> np.ndarray:
     axis = np.ones(int(length), dtype=np.float32)
     if int(overlap) <= 0 or str(mode).lower() in {"average", "center_crop"}:
@@ -372,6 +391,11 @@ class MKRImageCombineGrid:
         content_y = int(meta.get("content_y", content_y))
         tile_width = int(meta.get("tile_width", max(1, int(full_width) - overlap * 2)))
         tile_height = int(meta.get("tile_height", max(1, int(full_height) - overlap * 2)))
+        source_window = _normalize_source_window(
+            meta.get("source_window"),
+            fallback_width=int(original_width if original_width > 0 else canvas_width),
+            fallback_height=int(original_height if original_height > 0 else canvas_height),
+        )
         tiles_per_image = int(rows * columns)
 
         if tiles_per_image <= 0:
@@ -472,11 +496,15 @@ class MKRImageCombineGrid:
             "original_height": int(original_height),
             "content_x": int(content_x),
             "content_y": int(content_y),
+            "source_window": [int(source_window[0]), int(source_window[1]), int(source_window[2]), int(source_window[3])],
         }
         summary = (
             f"Combined {int(tile_count)} tiles into {int(source_batch)} image(s) "
             f"| {int(columns)}x{int(rows)} grid | {str(blend_mode)} blend"
         )
         if str(size_mode).lower() == "crop":
-            summary += " | cropped coverage only"
+            summary += (
+                f" | crop window {int(source_window[0])},{int(source_window[1])}"
+                f" -> {int(source_window[2])},{int(source_window[3])}"
+            )
         return (torch.from_numpy(output), _json_text(combine_info), summary)

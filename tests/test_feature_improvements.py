@@ -191,6 +191,27 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertEqual(preview_b["height"], 400)
         self.assertFalse(preview_b["downscaled"])
 
+    def test_axb_compare_reports_downscaled_preview_when_preview_cap_is_smaller(self) -> None:
+        node = AxBCompare()
+        image_a = torch.zeros((1, 1600, 2400, 3), dtype=torch.float32)
+        image_b = torch.zeros((1, 400, 600, 3), dtype=torch.float32)
+
+        result = node.run(
+            image_a=image_a,
+            image_b=image_b,
+            orientation="horizontal",
+            preview_max_size=1024,
+        )
+        preview_a = result["ui"]["a_preview"][0]
+        compare_state = result["ui"]["compare_state"][0]
+
+        self.assertEqual(compare_state["preview_max_size"], 1024)
+        self.assertTrue(preview_a["downscaled"])
+        self.assertEqual(preview_a["source_width"], 2400)
+        self.assertEqual(preview_a["source_height"], 1600)
+        self.assertLessEqual(preview_a["width"], 1024)
+        self.assertLessEqual(preview_a["height"], 1024)
+
     def test_image_split_grid_returns_equal_tiles_and_metadata(self) -> None:
         split_node = MKRImageSplitGrid()
         image = torch.linspace(0.0, 1.0, 1 * 5 * 7 * 3, dtype=torch.float32).reshape(1, 5, 7, 3)
@@ -260,6 +281,83 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertEqual(info["output_height"], 5)
         self.assertEqual(info["blend_mode"], "feather")
         self.assertIn("Combined", summary)
+
+    def test_image_split_and_combine_crop_mode_returns_source_window(self) -> None:
+        split_node = MKRImageSplitGrid()
+        combine_node = MKRImageCombineGrid()
+        image = torch.linspace(0.0, 1.0, 1 * 5 * 7 * 3, dtype=torch.float32).reshape(1, 5, 7, 3)
+
+        tiles, split_info_json, _ = split_node.split(
+            image=image,
+            columns=3,
+            rows=2,
+            size_mode="crop",
+            anchor="center",
+            overlap_px=1,
+            pad_mode="edge",
+            pad_value=0.0,
+        )
+        split_info = json.loads(split_info_json)
+        combined, combine_info_json, summary = combine_node.combine(
+            tiles=tiles,
+            split_info_json=split_info_json,
+            columns=3,
+            rows=2,
+            size_mode="crop",
+            overlap_px=1,
+            canvas_width=0,
+            canvas_height=0,
+            original_width=0,
+            original_height=0,
+            content_x=0,
+            content_y=0,
+            blend_mode="feather",
+        )
+
+        info = json.loads(combine_info_json)
+        x0, y0, x1, y1 = split_info["source_window"]
+        expected = image[:, y0:y1, x0:x1, :]
+        self.assertEqual(tuple(combined.shape), tuple(expected.shape))
+        self.assertTrue(torch.allclose(combined, expected, atol=1e-6))
+        self.assertEqual(info["source_window"], split_info["source_window"])
+        self.assertIn(f"crop window {x0},{y0} -> {x1},{y1}", summary)
+
+    def test_image_combine_supports_manual_restore_without_split_metadata(self) -> None:
+        split_node = MKRImageSplitGrid()
+        combine_node = MKRImageCombineGrid()
+        image = torch.linspace(0.0, 1.0, 1 * 5 * 7 * 3, dtype=torch.float32).reshape(1, 5, 7, 3)
+
+        tiles, split_info_json, _ = split_node.split(
+            image=image,
+            columns=3,
+            rows=2,
+            size_mode="pad",
+            anchor="center",
+            overlap_px=1,
+            pad_mode="edge",
+            pad_value=0.0,
+        )
+        info = json.loads(split_info_json)
+        combined, combine_info_json, _ = combine_node.combine(
+            tiles=tiles,
+            split_info_json="",
+            columns=info["columns"],
+            rows=info["rows"],
+            size_mode=info["size_mode"],
+            overlap_px=info["overlap_px"],
+            canvas_width=info["canvas_width"],
+            canvas_height=info["canvas_height"],
+            original_width=info["original_width"],
+            original_height=info["original_height"],
+            content_x=info["content_x"],
+            content_y=info["content_y"],
+            blend_mode="feather",
+        )
+
+        combine_info = json.loads(combine_info_json)
+        self.assertEqual(tuple(combined.shape), tuple(image.shape))
+        self.assertTrue(torch.allclose(combined, image, atol=1e-6))
+        self.assertEqual(combine_info["source_window"], [0, 0, 7, 5])
 
     def test_legacy_module_aliases_resolve_to_new_package_paths(self) -> None:
         expected = {

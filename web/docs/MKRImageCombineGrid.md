@@ -21,3 +21,4 @@ Stitches a tile batch back into full images using metadata from `MKRImageSplitGr
 - Reassemble tiled image batches after upscaling or stylization.
 - Blend overlapped chunks to avoid visible seams.
 - Recover padded full-frame results from large-image tile workflows.
+- Rebuild crop-mode tiles and keep the original crop window metadata for downstream review or save naming.

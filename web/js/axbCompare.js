@@ -11,7 +11,7 @@ const INTERNAL_SPLIT_PROP = "mkr_axb_split";
 const MKR_BADGE_BG = "#1F1F1F";
 const MKR_BADGE_FG = ACCENT_LIME;
 const LEGACY_CANVAS_SUFFIX = " [Canvas]";
-const AXB_RUNTIME_VERSION = "node2-2026-03-10a";
+const AXB_RUNTIME_VERSION = "node2-2026-03-10b";
 const ACCENT_STYLE_ID = "mkrshift-accent-style";
 const ACCENT_STYLE_CSS = `
 :root {
@@ -1163,6 +1163,11 @@ function createDomState(node, state) {
 
   let dragging = false;
   root.addEventListener("pointerdown", (event) => {
+    const point = getDomLocalPoint(root, event);
+    const frame = state.compareRect || { x: 0, y: 0, w: Math.max(1, root.clientWidth), h: Math.max(1, root.clientHeight) };
+    if (!point || !pointInRect(point, frame)) {
+      return;
+    }
     dragging = true;
     root.setPointerCapture?.(event.pointerId);
     splitFromEvent(event);
@@ -1441,23 +1446,21 @@ function applyOutputMessage(node, state, message) {
 
   const compareState = message?.compare_state?.[0] ?? message?.ui?.compare_state?.[0] ?? null;
   if (compareState && typeof compareState === "object") {
-    state.compareState = { ...compareState };
-    if (compareState.orientation !== undefined) {
-      setWidgetValue(node, "orientation", String(compareState.orientation));
+    state.compareState = { ...(state.compareState || {}), ...compareState };
+    node.properties = node.properties || {};
+    if (compareState.orientation !== undefined && node.properties.orientation === undefined && !getWidget(node, "orientation")) {
+      node.properties.orientation = String(compareState.orientation);
     }
-    if (compareState.split_percent !== undefined) {
+    if (compareState.split_percent !== undefined && node.properties[INTERNAL_SPLIT_PROP] === undefined) {
       setSplitValue(node, state, numberValue(compareState.split_percent, readSplitValue(node, state)));
     }
-    if (compareState.fit_mode !== undefined) {
-      node.properties = node.properties || {};
+    if (compareState.fit_mode !== undefined && node.properties.fit_mode === undefined) {
       node.properties.fit_mode = String(compareState.fit_mode || "contain").toLowerCase();
     }
-    if (compareState.swap_inputs !== undefined) {
-      node.properties = node.properties || {};
+    if (compareState.swap_inputs !== undefined && node.properties.swap_inputs === undefined) {
       node.properties.swap_inputs = boolValue(compareState.swap_inputs, false);
     }
-    if (compareState.display_mode !== undefined) {
-      node.properties = node.properties || {};
+    if (compareState.display_mode !== undefined && node.properties.display_mode === undefined) {
       node.properties.display_mode = String(compareState.display_mode || "actual_definition");
     }
   }
@@ -1639,7 +1642,7 @@ function ensureCompareUI(node) {
       state.previewInfo.b = null;
       state.previewSrc.b = "";
     }
-    if (!hasA && !hasB) {
+    if (!hasA || !hasB) {
       state.compareState = null;
     }
 

@@ -14,4 +14,5 @@
 
 - This is an output-style inspection node and does not emit downstream data.
 - Use it when tuning masks, LUTs, or look variants and you want a larger comparison surface than the stock preview.
-- The viewer is resolution-aware: it does not upscale the smaller input to fake equal definition, so upscale comparisons keep their true relative detail footprint.
+- The viewer uses a shared compare frame derived from the connected image sizes, so either side can be the upscale and still align correctly in the split view.
+- AxB previews keep high source resolution metadata, and split dragging stays stable when the Comfy canvas is zoomed.
