@@ -7,6 +7,7 @@ Builds save-ready naming, subfolder, and manifest-note metadata for studio revie
 - `project`, `sequence`, `shot`, `take`, `version_tag`: Core shot identity.
 - `deliverable`: Handoff mode such as review, client selects, contact sheet, turnover, or social cut.
 - `department`, `artist`, `client`: Human-facing context for labels and naming.
+- `task`, `round_label`, `reviewer`, `custom_badge`: Optional review-pass context used for labels, subtitles, and filenames.
 - `date_text`: Review or delivery date. Falls back to the current date if blank.
 - `naming_mode`: Controls whether the filename is compact, editorial, or client-friendly.
 - `extension`: Suggested primary output extension.
@@ -27,3 +28,4 @@ Builds save-ready naming, subfolder, and manifest-note metadata for studio revie
 - Standardize filenames across slates, review stills, contact sheets, and manifests.
 - Generate consistent client-facing labels from shot metadata.
 - Bridge the new studio review nodes into `MKRPreSave` and `MKRProjectManifest` without manual renaming.
+- Carry round/task/reviewer context into review frames, contact sheets, burn-ins, and compare boards.

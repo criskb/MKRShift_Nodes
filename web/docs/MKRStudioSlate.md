@@ -7,6 +7,7 @@ Builds a branded production slate as an `IMAGE` plus structured slate metadata.
 - `width`, `height`: Output canvas size.
 - `theme`: Visual treatment for the slate background and panels.
 - `project`, `sequence`, `shot`, `take`: Core shot identity fields.
+- `version_tag`, `department`, `badge`: Optional production context shown on the slate and stored in metadata.
 - `director`, `artist`, `camera`, `lens`, `fps`, `aspect`, `date_text`: Production metadata.
 - `notes`: Short review or setup notes.
 - `thumbnail` (optional): Adds a framed preview image to the right metadata panel.
@@ -22,3 +23,4 @@ Builds a branded production slate as an `IMAGE` plus structured slate metadata.
 - Add a branded opener frame before client review exports.
 - Generate consistent shot slates for animation, previs, or still-image turnarounds.
 - Feed the JSON output into pack-specific naming or delivery nodes.
+- Stamp versions, departments, or review badges directly into the slate for dailies and handoff prep.

@@ -1,6 +1,11 @@
 from . import MKRCharacterCustomizer, AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRThemeDebugger
 from .image_layout_nodes import MKRImageCombineGrid, MKRImageSplitGrid
 from .preview_nodes import MKRBatchCollagePreview
+from .heatmap_nodes import x1Heatmap, x1Heightmap
+from .material_map_nodes import x1MetalnessMap, x1NormalMap, x1RoughnessMap, x1SpecularMap
+from .tech_art_nodes import x1ChannelBreakout, x1ChannelPack, x1CurvatureFromNormal, x1NormalBlend, x1UVCheckerOverlay
+from .tech_art_surface_nodes import x1AOFromHeight, x1IDMapQuantize, x1IDMaskExtract, x1NormalTweak, x1SlopeMaskFromNormal
+from .texture_tool_nodes import x1TextureEdgePad, x1TextureOffset, x1TextureSeamless, x1TextureTilePreview
 from .social_nodes import (
     MKRshiftSocialPackAssets,
     MKRshiftSocialPackBuilder,
@@ -20,6 +25,14 @@ from .studio_nodes import (
     MKRStudioReviewBurnIn,
     MKRStudioReviewFrame,
     MKRStudioSlate,
+)
+from .face_performance_nodes import (
+    MKRFacePerformanceEvaluate,
+    MKRFacePerformanceEyeMotion,
+    MKRFacePerformanceLipRefine,
+    MKRFacePerformancePoseMerge,
+    MKRFacePerformanceRigApplyDeltas,
+    MKRFacePerformanceRigBuildNeutral,
 )
 from .xlut import xLUT, xLUTOutput
 from .xcolor import (
@@ -65,6 +78,8 @@ from .xcine import (
     x1LensBreathing,
     x1SkinToneProtect,
 )
+from .vfx_finishing_nodes import x1AnamorphicStreaks, x1HeatHaze
+from .vfx_optics_nodes import x1LensDirtBloom, x1ShockwaveDistort
 from .xphoto import x1HighlightRecovery, x1LocalContrast, x1SharpenPro
 from .xshader import xShader
 from .xplay import x1AuraFlow, x1Glitch, x1Kaleido
@@ -189,10 +204,36 @@ NODE_CLASS_MAPPINGS = {
     "MKRStudioReviewBurnIn": MKRStudioReviewBurnIn,
     "MKRStudioCompareBoard": MKRStudioCompareBoard,
     "MKRBatchCollagePreview": MKRBatchCollagePreview,
+    "x1Heatmap": x1Heatmap,
+    "x1Heightmap": x1Heightmap,
+    "x1RoughnessMap": x1RoughnessMap,
+    "x1SpecularMap": x1SpecularMap,
+    "x1MetalnessMap": x1MetalnessMap,
+    "x1NormalMap": x1NormalMap,
+    "x1ChannelPack": x1ChannelPack,
+    "x1ChannelBreakout": x1ChannelBreakout,
+    "x1NormalBlend": x1NormalBlend,
+    "x1CurvatureFromNormal": x1CurvatureFromNormal,
+    "x1UVCheckerOverlay": x1UVCheckerOverlay,
+    "x1SlopeMaskFromNormal": x1SlopeMaskFromNormal,
+    "x1AOFromHeight": x1AOFromHeight,
+    "x1IDMapQuantize": x1IDMapQuantize,
+    "x1IDMaskExtract": x1IDMaskExtract,
+    "x1NormalTweak": x1NormalTweak,
+    "x1TextureOffset": x1TextureOffset,
+    "x1TextureSeamless": x1TextureSeamless,
+    "x1TextureTilePreview": x1TextureTilePreview,
+    "x1TextureEdgePad": x1TextureEdgePad,
     "MKRshiftSocialPackBuilder": MKRshiftSocialPackBuilder,
     "MKRshiftSocialPackAssets": MKRshiftSocialPackAssets,
     "MKRshiftSocialPromptAtIndex": MKRshiftSocialPromptAtIndex,
     "MKRshiftSocialPackCatalog": MKRshiftSocialPackCatalog,
+    "MKRFacePerformanceEyeMotion": MKRFacePerformanceEyeMotion,
+    "MKRFacePerformanceLipRefine": MKRFacePerformanceLipRefine,
+    "MKRFacePerformanceRigBuildNeutral": MKRFacePerformanceRigBuildNeutral,
+    "MKRFacePerformanceRigApplyDeltas": MKRFacePerformanceRigApplyDeltas,
+    "MKRFacePerformancePoseMerge": MKRFacePerformancePoseMerge,
+    "MKRFacePerformanceEvaluate": MKRFacePerformanceEvaluate,
     "xLUT": xLUT,
     "xLUTOutput": xLUTOutput,
     "x1LUTBlend": x1LUTBlend,
@@ -230,6 +271,10 @@ NODE_CLASS_MAPPINGS = {
     "x1GateWeave": x1GateWeave,
     "x1FilmDamage": x1FilmDamage,
     "x1LensBreathing": x1LensBreathing,
+    "x1AnamorphicStreaks": x1AnamorphicStreaks,
+    "x1HeatHaze": x1HeatHaze,
+    "x1LensDirtBloom": x1LensDirtBloom,
+    "x1ShockwaveDistort": x1ShockwaveDistort,
     "x1HighlightRecovery": x1HighlightRecovery,
     "x1LocalContrast": x1LocalContrast,
     "x1SharpenPro": x1SharpenPro,
@@ -344,10 +389,36 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRStudioReviewBurnIn": "Studio Review Burn-In • MKRShift Nodes",
     "MKRStudioCompareBoard": "Studio Compare Board • MKRShift Nodes",
     "MKRBatchCollagePreview": "XY:PRE • MKRShift Nodes",
+    "x1Heatmap": "Heatmap • MKRShift Nodes",
+    "x1Heightmap": "Heightmap • MKRShift Nodes",
+    "x1RoughnessMap": "Roughness Map • MKRShift Nodes",
+    "x1SpecularMap": "Specular Map • MKRShift Nodes",
+    "x1MetalnessMap": "Metalness Map • MKRShift Nodes",
+    "x1NormalMap": "Normal Map • MKRShift Nodes",
+    "x1ChannelPack": "Channel Pack • MKRShift Nodes",
+    "x1ChannelBreakout": "Channel Breakout • MKRShift Nodes",
+    "x1NormalBlend": "Normal Blend • MKRShift Nodes",
+    "x1CurvatureFromNormal": "Curvature From Normal • MKRShift Nodes",
+    "x1UVCheckerOverlay": "UV Checker Overlay • MKRShift Nodes",
+    "x1SlopeMaskFromNormal": "Slope Mask From Normal • MKRShift Nodes",
+    "x1AOFromHeight": "AO From Height • MKRShift Nodes",
+    "x1IDMapQuantize": "ID Map Quantize • MKRShift Nodes",
+    "x1IDMaskExtract": "ID Mask Extract • MKRShift Nodes",
+    "x1NormalTweak": "Normal Tweak • MKRShift Nodes",
+    "x1TextureOffset": "Texture Offset • MKRShift Nodes",
+    "x1TextureSeamless": "Texture Seamless • MKRShift Nodes",
+    "x1TextureTilePreview": "Texture Tile Preview • MKRShift Nodes",
+    "x1TextureEdgePad": "Texture Edge Pad • MKRShift Nodes",
     "MKRshiftSocialPackBuilder": "Social Pack Builder • MKRShift Nodes",
     "MKRshiftSocialPackAssets": "Social Assets Extract • MKRShift Nodes",
     "MKRshiftSocialPromptAtIndex": "Prompt At Index • MKRShift Nodes",
     "MKRshiftSocialPackCatalog": "Pack Catalog • MKRShift Nodes",
+    "MKRFacePerformanceEyeMotion": "Face Performance Eye Motion • MKRShift Nodes",
+    "MKRFacePerformanceLipRefine": "Face Performance Lip Refine • MKRShift Nodes",
+    "MKRFacePerformanceRigBuildNeutral": "Face Performance Rig Build Neutral • MKRShift Nodes",
+    "MKRFacePerformanceRigApplyDeltas": "Face Performance Rig Apply Deltas • MKRShift Nodes",
+    "MKRFacePerformancePoseMerge": "Face Performance Pose Merge • MKRShift Nodes",
+    "MKRFacePerformanceEvaluate": "Face Performance Evaluate Clip • MKRShift Nodes",
     "xLUT": "xLUT • MKRShift Nodes",
     "xLUTOutput": "xLUT Output • MKRShift Nodes",
     "x1LUTBlend": "LUT Blend • MKRShift Nodes",
@@ -385,6 +456,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "x1GateWeave": "Gate Weave • MKRShift Nodes",
     "x1FilmDamage": "Film Damage • MKRShift Nodes",
     "x1LensBreathing": "Lens Breathing • MKRShift Nodes",
+    "x1AnamorphicStreaks": "Anamorphic Streaks • MKRShift Nodes",
+    "x1HeatHaze": "Heat Haze • MKRShift Nodes",
+    "x1LensDirtBloom": "Lens Dirt Bloom • MKRShift Nodes",
+    "x1ShockwaveDistort": "Shockwave Distort • MKRShift Nodes",
     "x1HighlightRecovery": "Highlight Recovery • MKRShift Nodes",
     "x1LocalContrast": "Local Contrast • MKRShift Nodes",
     "x1SharpenPro": "Sharpen Pro • MKRShift Nodes",

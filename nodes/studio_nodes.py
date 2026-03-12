@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import torch
 
-from ..categories import STUDIO_DELIVERY, STUDIO_PREP, STUDIO_REVIEW
+from ..categories import STUDIO_BOARDS, STUDIO_DELIVERY, STUDIO_PREP, STUDIO_REVIEW
 
 
 StudioPalette = Dict[str, Tuple[int, int, int]]
@@ -282,6 +282,71 @@ def _labels_from_delivery_plan(plan_json: Any, warnings: List[str]) -> Dict[str,
     return {str(key): _clean_text(value) for key, value in labels.items()}
 
 
+def _resolve_delivery_text(value: Any, placeholder: str, delivery_value: str, hard_default: str = "") -> str:
+    text = _clean_text(value, "")
+    placeholder_text = _clean_text(placeholder, "")
+    if text and text != placeholder_text:
+        return text
+    if delivery_value:
+        return delivery_value
+    if text:
+        return text
+    return _clean_text(hard_default, "")
+
+
+def _mix_rgb(a: Tuple[int, int, int], b: Tuple[int, int, int], amount: float) -> Tuple[int, int, int]:
+    t = float(np.clip(amount, 0.0, 1.0))
+    return (
+        int(round((a[0] * (1.0 - t)) + (b[0] * t))),
+        int(round((a[1] * (1.0 - t)) + (b[1] * t))),
+        int(round((a[2] * (1.0 - t)) + (b[2] * t))),
+    )
+
+
+def _selection_mark_map(raw: Any, start_index: int, count: int, warnings: List[str]) -> Dict[int, Dict[str, str]]:
+    payload = _json_blob(raw, "selection_json", warnings)
+    if not payload:
+        return {}
+
+    marks: Dict[int, Dict[str, str]] = {}
+    for key, value in payload.items():
+        try:
+            display_index = int(str(key).strip())
+        except Exception:
+            warnings.append(f"selection_json key '{key}' is not a frame number")
+            continue
+
+        zero_index = int(display_index) - int(start_index)
+        if zero_index < 0 or zero_index >= int(count):
+            warnings.append(f"selection_json frame {display_index} is outside the displayed range")
+            continue
+
+        if isinstance(value, dict):
+            status_text = _clean_text(value.get("status", value.get("label", "")), "SELECT")
+            note_text = _clean_text(value.get("note", ""), "")
+        else:
+            status_text = _clean_text(value, "SELECT")
+            note_text = ""
+
+        marks[zero_index] = {
+            "display_index": str(display_index),
+            "status": status_text or "SELECT",
+            "note": note_text,
+        }
+    return marks
+
+
+def _status_chip_fill(palette: StudioPalette, status: str) -> Tuple[int, int, int]:
+    token = _slug_token(status, "", max_len=24)
+    if any(part in token for part in ("hero", "select", "approved", "final", "best")):
+        return _mix_rgb(palette["accent"], (36, 184, 111), 0.58)
+    if any(part in token for part in ("hold", "review", "revise", "wip", "temp")):
+        return _mix_rgb(palette["accent"], (245, 166, 35), 0.42)
+    if any(part in token for part in ("omit", "reject", "kill", "drop", "out")):
+        return _mix_rgb(palette["accent"], (224, 78, 78), 0.56)
+    return palette["accent"]
+
+
 def _render_theme_background(canvas: Image.Image, theme_name: str, palette: StudioPalette) -> None:
     draw = ImageDraw.Draw(canvas)
     w, h = canvas.size
@@ -334,6 +399,9 @@ class MKRStudioSlate:
                 "sequence": ("STRING", {"default": "SEQ_01"}),
                 "shot": ("STRING", {"default": "A001"}),
                 "take": ("STRING", {"default": "1"}),
+                "version_tag": ("STRING", {"default": ""}),
+                "department": ("STRING", {"default": ""}),
+                "badge": ("STRING", {"default": ""}),
                 "director": ("STRING", {"default": ""}),
                 "artist": ("STRING", {"default": ""}),
                 "camera": ("STRING", {"default": "Virtual Camera"}),
@@ -362,6 +430,9 @@ class MKRStudioSlate:
         sequence: str = "SEQ_01",
         shot: str = "A001",
         take: str = "1",
+        version_tag: str = "",
+        department: str = "",
+        badge: str = "",
         director: str = "",
         artist: str = "",
         camera: str = "Virtual Camera",
@@ -421,6 +492,40 @@ class MKRStudioSlate:
         draw.rounded_rectangle(take_box, radius=16, fill=palette["panel_alt"])
         draw.text((take_box[0] + margin // 5, take_box[1] + margin // 8), f"TAKE {take or '1'}", font=take_font, fill=palette["text"])
 
+        version_text = _clean_text(version_tag, "")
+        badge_text = _clean_text(badge, "")
+        if version_text:
+            version_w, version_h = _text_size(draw, version_text.upper(), badge_font := _load_font(int(h * 0.034), bold=True))
+            version_box = (
+                take_box[2] + max(12, margin // 4),
+                take_box[1] + max(2, margin // 12),
+                take_box[2] + max(12, margin // 4) + version_w + max(18, margin // 3),
+                take_box[1] + max(2, margin // 12) + version_h + max(12, margin // 5),
+            )
+            draw.rounded_rectangle(version_box, radius=16, fill=palette["panel_alt"])
+            draw.text((version_box[0] + max(8, margin // 6), version_box[1] + max(4, margin // 12)), version_text.upper(), font=badge_font, fill=palette["accent"])
+            if badge_text:
+                badge_w, badge_h = _text_size(draw, badge_text.upper(), badge_font)
+                badge_box = (
+                    version_box[0],
+                    version_box[3] + max(10, margin // 6),
+                    version_box[0] + badge_w + max(18, margin // 3),
+                    version_box[3] + max(10, margin // 6) + badge_h + max(12, margin // 5),
+                )
+                draw.rounded_rectangle(badge_box, radius=16, fill=palette["panel_alt"])
+                draw.text((badge_box[0] + max(8, margin // 6), badge_box[1] + max(4, margin // 12)), badge_text.upper(), font=badge_font, fill=palette["text"])
+        elif badge_text:
+            badge_font = _load_font(int(h * 0.034), bold=True)
+            badge_w, badge_h = _text_size(draw, badge_text.upper(), badge_font)
+            badge_box = (
+                take_box[2] + max(12, margin // 4),
+                take_box[1] + max(2, margin // 12),
+                take_box[2] + max(12, margin // 4) + badge_w + max(18, margin // 3),
+                take_box[1] + max(2, margin // 12) + badge_h + max(12, margin // 5),
+            )
+            draw.rounded_rectangle(badge_box, radius=16, fill=palette["panel_alt"])
+            draw.text((badge_box[0] + max(8, margin // 6), badge_box[1] + max(4, margin // 12)), badge_text.upper(), font=badge_font, fill=palette["text"])
+
         stamp = f"{camera or 'Camera'}  |  {lens or 'Lens'}  |  {fps or '24'} FPS  |  {aspect or '16:9'}"
         draw.text((left_x, left_box[3] - margin), stamp, font=meta_val_font, fill=palette["muted"])
 
@@ -441,6 +546,8 @@ class MKRStudioSlate:
             right_inner_y = thumb_box[3] + margin // 2
 
         metadata_rows = [
+            ("Department", department or "-"),
+            ("Version", version_text or "-"),
             ("Director", director or "-"),
             ("Artist", artist or "-"),
             ("Date", date_text or "-"),
@@ -483,6 +590,9 @@ class MKRStudioSlate:
             "sequence": str(sequence or ""),
             "shot": str(shot or ""),
             "take": str(take or ""),
+            "version_tag": version_text,
+            "department": str(department or ""),
+            "badge": badge_text,
             "director": str(director or ""),
             "artist": str(artist or ""),
             "camera": str(camera or ""),
@@ -495,7 +605,13 @@ class MKRStudioSlate:
             "size": [w, h],
             "has_thumbnail": bool(thumb is not None),
         }
-        summary = f"Studio slate {shot or 'A001'} take {take or '1'} | {w}x{h} | {theme}"
+        summary_bits = [f"Studio slate {shot or 'A001'}", f"take {take or '1'}"]
+        if version_text:
+            summary_bits.append(version_text)
+        if department:
+            summary_bits.append(str(department))
+        summary_bits.extend([f"{w}x{h}", str(theme)])
+        summary = " | ".join(summary_bits)
         return (_pil_to_batch([base.convert("RGB")]), json.dumps(metadata, ensure_ascii=False), summary)
 
 
@@ -516,8 +632,12 @@ class MKRStudioReviewFrame:
                 "header_px": ("INT", {"default": 120, "min": 36, "max": 320, "step": 2}),
                 "footer_px": ("INT", {"default": 72, "min": 24, "max": 200, "step": 2}),
                 "show_safe_area": ("BOOLEAN", {"default": True}),
+                "show_frame_index": ("BOOLEAN", {"default": True}),
                 "shadow_strength": ("FLOAT", {"default": 0.28, "min": 0.0, "max": 1.0, "step": 0.01}),
-            }
+            },
+            "optional": {
+                "delivery_plan_json": ("STRING", {"default": "", "multiline": True}),
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "STRING")
@@ -539,14 +659,19 @@ class MKRStudioReviewFrame:
         header_px: int = 120,
         footer_px: int = 72,
         show_safe_area: bool = True,
+        show_frame_index: bool = True,
         shadow_strength: float = 0.28,
+        delivery_plan_json: str = "",
     ):
         batch = _to_image_batch(image)
         palette = _theme(theme)
-        title_text = str(title or "Client Review")
-        subtitle_text = str(subtitle or "")
-        badge_text = str(badge or "")
+        warnings: List[str] = []
+        labels = _labels_from_delivery_plan(delivery_plan_json, warnings)
+        title_text = _resolve_delivery_text(title, "Client Review", labels.get("review_title", ""), "Client Review")
+        subtitle_text = _resolve_delivery_text(subtitle, "Lookdev pass", labels.get("review_subtitle", ""), "")
+        badge_text = _resolve_delivery_text(badge, "IN REVIEW", labels.get("badge", ""), "IN REVIEW")
         version_text = str(version_tag or "")
+        footer_left_text = _resolve_delivery_text(footer_left, "MKRShift Nodes", labels.get("footer_left", ""), "MKRShift Nodes")
         framed: List[Image.Image] = []
         layout_rows: List[Dict[str, Any]] = []
 
@@ -617,11 +742,18 @@ class MKRStudioReviewFrame:
                     draw.rectangle(guide, outline=color, width=1)
 
             ratio = _ratio_label(src_w, src_h)
-            right_footer = footer_right or f"{src_w}x{src_h} | {ratio} | {version_text}"
-            draw.text((margin, out_h - margin - int(footer_h * 0.58)), footer_left, font=footer_font, fill=palette["muted"])
+            fallback_right = f"{src_w}x{src_h} | {ratio} | {version_text}" if version_text else f"{src_w}x{src_h} | {ratio}"
+            right_footer_base = _clean_text(footer_right, labels.get("footer_right", "")) or fallback_right
+            draw.text((margin, out_h - margin - int(footer_h * 0.58)), footer_left_text, font=footer_font, fill=palette["muted"])
+
+            right_parts = [right_footer_base] if right_footer_base else []
+            if bool(show_frame_index):
+                right_parts.append(f"FRAME {idx + 1:02d}")
+            right_footer = " | ".join(part for part in right_parts if part)
             right_w, _ = _text_size(draw, right_footer, footer_font)
             draw.text((out_w - margin - right_w, out_h - margin - int(footer_h * 0.58)), right_footer, font=footer_font, fill=palette["muted"])
-            draw.text((margin, out_h - margin - int(footer_h * 0.22)), f"FRAME {idx + 1:02d}", font=micro_font, fill=palette["accent"])
+            if bool(show_frame_index):
+                draw.text((margin, out_h - margin - int(footer_h * 0.22)), f"FRAME {idx + 1:02d}", font=micro_font, fill=palette["accent"])
 
             framed.append(base.convert("RGB"))
             layout_rows.append(
@@ -632,6 +764,10 @@ class MKRStudioReviewFrame:
                     "ratio": ratio,
                     "theme": theme,
                     "title": title_text,
+                    "subtitle": subtitle_text,
+                    "badge": badge_text,
+                    "footer_left": footer_left_text,
+                    "footer_right": right_footer_base,
                     "version_tag": version_text,
                 }
             )
@@ -640,7 +776,16 @@ class MKRStudioReviewFrame:
             "theme": theme,
             "count": len(layout_rows),
             "show_safe_area": bool(show_safe_area),
+            "show_frame_index": bool(show_frame_index),
+            "labels": {
+                "title": title_text,
+                "subtitle": subtitle_text,
+                "badge": badge_text,
+                "footer_left": footer_left_text,
+                "footer_right": _clean_text(footer_right, labels.get("footer_right", "")),
+            },
             "frames": layout_rows,
+            "warnings": warnings,
         }
         return (_pil_to_batch(framed), json.dumps(info, ensure_ascii=False))
 
@@ -665,13 +810,17 @@ class MKRStudioContactSheet:
                 "start_index": ("INT", {"default": 1, "min": 0, "max": 9999, "step": 1}),
                 "show_ratio": ("BOOLEAN", {"default": True}),
                 "show_resolution": ("BOOLEAN", {"default": True}),
-            }
+            },
+            "optional": {
+                "delivery_plan_json": ("STRING", {"default": "", "multiline": True}),
+                "selection_json": ("STRING", {"default": "", "multiline": True}),
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("image", "contact_sheet_info")
     FUNCTION = "board"
-    CATEGORY = STUDIO_REVIEW
+    CATEGORY = STUDIO_BOARDS
 
     def board(
         self,
@@ -690,11 +839,20 @@ class MKRStudioContactSheet:
         start_index: int = 1,
         show_ratio: bool = True,
         show_resolution: bool = True,
+        delivery_plan_json: str = "",
+        selection_json: str = "",
     ):
         batch = _to_image_batch(images)
         count = int(batch.shape[0])
         src_h = int(batch.shape[1])
         src_w = int(batch.shape[2])
+        warnings: List[str] = []
+        labels = _labels_from_delivery_plan(delivery_plan_json, warnings)
+        title_text = _resolve_delivery_text(title, "Daily Selects", labels.get("contact_title", ""), "Daily Selects")
+        subtitle_text = _resolve_delivery_text(subtitle, "Batch review board", labels.get("contact_subtitle", ""), "")
+        badge_text = _resolve_delivery_text(badge, "CONTACT SHEET", labels.get("badge", ""), "CONTACT SHEET")
+        label_prefix_text = _resolve_delivery_text(label_prefix, "SHOT", labels.get("contact_label_prefix", ""), "SHOT")
+        selection_marks = _selection_mark_map(selection_json, start_index=int(start_index), count=int(count), warnings=warnings)
 
         cols = max(1, min(int(columns), count or 1))
         rows = max(1, int(math.ceil(float(count) / float(cols))))
@@ -723,10 +881,9 @@ class MKRStudioContactSheet:
         footer_font = _load_font(max(12, int(footer_h * 0.3)))
 
         draw.rectangle((0, 0, board_w, max(10, margin // 5)), fill=palette["accent"])
-        draw.text((margin, margin), str(title or "Daily Selects"), font=title_font, fill=palette["text"])
-        draw.text((margin, margin + int(header_h * 0.42)), str(subtitle or ""), font=subtitle_font, fill=palette["muted"])
+        draw.text((margin, margin), title_text, font=title_font, fill=palette["text"])
+        draw.text((margin, margin + int(header_h * 0.42)), subtitle_text, font=subtitle_font, fill=palette["muted"])
 
-        badge_text = str(badge or "")
         if badge_text:
             badge_w, badge_h = _text_size(draw, badge_text, badge_font)
             badge_box = (
@@ -760,7 +917,7 @@ class MKRStudioContactSheet:
             draw.rounded_rectangle(card_box, radius=22, outline=palette["line"], width=2)
             draw.line((card_x, label_y, card_x + cell_w, label_y), fill=palette["line"], width=2)
 
-            label = f"{label_prefix or 'SHOT'} {start_index + idx:02d}"
+            label = f"{label_prefix_text or 'SHOT'} {start_index + idx:02d}"
             detail_parts: List[str] = []
             if show_resolution:
                 detail_parts.append(f"{src_w}x{src_h}")
@@ -778,19 +935,40 @@ class MKRStudioContactSheet:
             index_w, _ = _text_size(draw, index_text, meta_font)
             draw.text((card_x + cell_w - index_w - max(12, cell_w // 18), label_baseline), index_text, font=meta_font, fill=palette["accent"])
 
+            mark = selection_marks.get(idx)
+            if mark:
+                chip_text = _clean_text(mark.get("status", ""), "SELECT").upper()
+                chip_fill = _status_chip_fill(palette, chip_text)
+                chip_w, chip_h = _text_size(draw, chip_text, meta_font)
+                chip_box = (
+                    card_x + cell_w - chip_w - max(22, cell_w // 7),
+                    card_y + max(10, cell_w // 18),
+                    card_x + cell_w - max(10, cell_w // 18),
+                    card_y + max(10, cell_w // 18) + chip_h + max(10, cell_w // 16),
+                )
+                draw.rounded_rectangle(chip_box, radius=12, fill=chip_fill)
+                draw.text((chip_box[0] + max(8, cell_w // 24), chip_box[1] + max(4, cell_w // 28)), chip_text, font=meta_font, fill=palette["bg"])
+                draw.rounded_rectangle(card_box, radius=22, outline=chip_fill, width=3)
+                if mark.get("note"):
+                    detail = f"{detail} | {mark['note']}" if detail else str(mark["note"])
+
             frames.append(
                 {
                     "index": idx + 1,
+                    "display_index": start_index + idx,
                     "row": row + 1,
                     "column": col + 1,
                     "label": label,
                     "input_size": [src_w, src_h],
                     "card_size": [cell_w, card_h],
                     "ratio": ratio_text,
+                    "selection": mark or {},
                 }
             )
 
         footer_left = f"{count} frames | {rows} rows x {cols} columns | card {cell_w}x{card_h}"
+        if selection_marks:
+            footer_left += f" | {len(selection_marks)} marked"
         footer_right = f"{theme} review board"
         footer_y = board_h - margin - max(16, footer_h // 2)
         draw.text((margin, footer_y), footer_left, font=footer_font, fill=palette["muted"])
@@ -799,8 +977,8 @@ class MKRStudioContactSheet:
 
         info = {
             "theme": theme,
-            "title": str(title or ""),
-            "subtitle": str(subtitle or ""),
+            "title": title_text,
+            "subtitle": subtitle_text,
             "badge": badge_text,
             "count": count,
             "rows": rows,
@@ -810,7 +988,10 @@ class MKRStudioContactSheet:
             "board_size": [board_w, board_h],
             "show_ratio": bool(show_ratio),
             "show_resolution": bool(show_resolution),
+            "selection_count": len(selection_marks),
+            "selection_labels": {str(start_index + idx): mark.get("status", "") for idx, mark in selection_marks.items()},
             "frames": frames,
+            "warnings": warnings,
         }
         return (_pil_to_batch([base.convert("RGB")]), json.dumps(info, ensure_ascii=False))
 
@@ -831,6 +1012,10 @@ class MKRStudioDeliveryPlan:
                 "department": (_DEPARTMENTS, {"default": "Lookdev"}),
                 "artist": ("STRING", {"default": ""}),
                 "client": ("STRING", {"default": ""}),
+                "task": ("STRING", {"default": ""}),
+                "round_label": ("STRING", {"default": ""}),
+                "reviewer": ("STRING", {"default": ""}),
+                "custom_badge": ("STRING", {"default": ""}),
                 "date_text": ("STRING", {"default": ""}),
                 "naming_mode": (_NAMING_MODES, {"default": "Editorial"}),
                 "extension": ("STRING", {"default": "png"}),
@@ -863,6 +1048,10 @@ class MKRStudioDeliveryPlan:
         department: str = "Lookdev",
         artist: str = "",
         client: str = "",
+        task: str = "",
+        round_label: str = "",
+        reviewer: str = "",
+        custom_badge: str = "",
         date_text: str = "",
         naming_mode: str = "Editorial",
         extension: str = "png",
@@ -892,6 +1081,9 @@ class MKRStudioDeliveryPlan:
         take_text = _clean_text(take, slate_data.get("take", "1"))
         artist_text = _clean_text(artist, slate_data.get("artist", ""))
         client_text = _clean_text(client, "")
+        task_text = _clean_text(task, "")
+        round_text = _clean_text(round_label, "")
+        reviewer_text = _clean_text(reviewer, "")
         date_value = _clean_text(date_text, slate_data.get("date_text", "")) or datetime.now().strftime("%Y-%m-%d")
         version_text = _normalize_version_tag(version_tag)
         take_token, take_label = _normalize_take_token(take_text)
@@ -900,7 +1092,7 @@ class MKRStudioDeliveryPlan:
         deliverable_meta = _DELIVERABLES.get(deliverable, _DELIVERABLES["Review"])
         deliverable_folder = deliverable_meta["folder"]
         deliverable_slug = deliverable_meta["slug"]
-        badge_text = deliverable_meta["badge"]
+        badge_text = _clean_text(custom_badge, deliverable_meta["badge"])
 
         project_token = _slug_token(project_text, "mkrshift")
         sequence_token = _slug_token(sequence_text, "seq_01")
@@ -920,6 +1112,12 @@ class MKRStudioDeliveryPlan:
         tokens.append(version_text)
         if naming_mode == "Editorial" and department_token:
             tokens.append(department_token)
+        task_token = _slug_token(task_text, "", max_len=24) if task_text else ""
+        round_token = _slug_token(round_text, "", max_len=24) if round_text else ""
+        if task_token and naming_mode != "Compact":
+            tokens.append(task_token)
+        if round_token and naming_mode == "Editorial":
+            tokens.append(round_token)
         tokens.append(deliverable_slug)
         if bool(include_date):
             tokens.append(date_token)
@@ -934,6 +1132,10 @@ class MKRStudioDeliveryPlan:
 
         review_title = f"{project_text} | {sequence_text} | {shot_text} | {version_text}"
         subtitle_parts = [department.lower(), deliverable.lower()]
+        if task_text:
+            subtitle_parts.append(task_text)
+        if round_text:
+            subtitle_parts.append(round_text)
         if bool(include_take) and take_label:
             subtitle_parts.append(f"take {take_label}")
         if date_value:
@@ -943,9 +1145,13 @@ class MKRStudioDeliveryPlan:
         footer_left_parts = [department]
         if artist_text:
             footer_left_parts.append(artist_text)
+        if task_text:
+            footer_left_parts.append(task_text)
         footer_left = " • ".join(part for part in footer_left_parts if part)
 
         footer_right_parts = [version_text, aspect_text]
+        if round_text:
+            footer_right_parts.append(round_text)
         if client_text and naming_mode == "Client Friendly":
             footer_right_parts.append(client_text)
         footer_right = " | ".join(part for part in footer_right_parts if part)
@@ -958,9 +1164,12 @@ class MKRStudioDeliveryPlan:
         suggested_files = {
             "main": f"{filename_prefix}.{ext_token}",
             "review_frame": f"{filename_prefix}_review.{ext_token}",
+            "burnin": f"{filename_prefix}_burnin.{ext_token}",
+            "compare_board": f"{filename_prefix}_compare.{ext_token}",
             "contact_sheet": f"{filename_prefix}_contact_sheet.{ext_token}",
             "slate": f"{filename_prefix}_slate.{ext_token}",
             "manifest": f"{filename_prefix}_manifest.json",
+            "notes": f"{filename_prefix}_notes.txt",
         }
 
         manifest_notes = {
@@ -974,6 +1183,9 @@ class MKRStudioDeliveryPlan:
                 "department": department,
                 "artist": artist_text,
                 "client": client_text,
+                "task": task_text,
+                "round_label": round_text,
+                "reviewer": reviewer_text,
                 "date_text": date_value,
                 "aspect": aspect_text,
                 "filename_prefix": filename_prefix,
@@ -986,9 +1198,13 @@ class MKRStudioDeliveryPlan:
                 "badge": badge_text,
                 "footer_left": footer_left,
                 "footer_right": footer_right,
-                "contact_title": f"{project_text} {deliverable}",
-                "contact_subtitle": f"{shot_text} • {version_text}",
+                "contact_title": f"{project_text} {deliverable}" + (f" • {task_text}" if task_text else ""),
+                "contact_subtitle": f"{shot_text} • {version_text}" + (f" • {round_text}" if round_text else ""),
                 "contact_label_prefix": shot_text,
+                "slate_badge": badge_text,
+                "round_label": round_text,
+                "task": task_text,
+                "reviewer": reviewer_text,
             },
             "suggested_files": suggested_files,
             "source_counts": source_counts,
@@ -1199,7 +1415,7 @@ class MKRStudioCompareBoard:
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("image", "compare_info")
     FUNCTION = "board"
-    CATEGORY = STUDIO_REVIEW
+    CATEGORY = STUDIO_BOARDS
 
     def board(
         self,

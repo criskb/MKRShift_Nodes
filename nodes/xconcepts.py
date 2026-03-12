@@ -7,7 +7,7 @@ from PIL import Image, ImageFilter
 import torch
 import torch.nn.functional as F
 
-from ..categories import FX_CONCEPT
+from ..categories import FX_CONCEPT, FX_DISTORT, FX_OPTICS
 
 
 def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
@@ -618,7 +618,7 @@ class x1LightLeak:
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "lightleak_info")
     FUNCTION = "run"
-    CATEGORY = FX_CONCEPT
+    CATEGORY = FX_OPTICS
 
     def run(
         self,
@@ -834,7 +834,7 @@ class x1LensDistort:
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "lens_distort_info")
     FUNCTION = "run"
-    CATEGORY = FX_CONCEPT
+    CATEGORY = FX_OPTICS
 
     def run(
         self,
@@ -965,7 +965,7 @@ class x1WarpDisplace:
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "warp_displace_info")
     FUNCTION = "run"
-    CATEGORY = FX_CONCEPT
+    CATEGORY = FX_DISTORT
 
     def run(
         self,

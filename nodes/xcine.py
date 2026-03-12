@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFilter
 import torch
 import torch.nn.functional as F
 
-from ..categories import COLOR_LUT, COLOR_TOOLS, FX_CONCEPT, FX_PHOTO, FX_STYLIZE
+from ..categories import COLOR_LUT, COLOR_TOOLS, FX_CONCEPT, FX_OPTICS, FX_PHOTO, FX_STYLIZE
 from ..lib.image_shared import (
     gaussian_blur_rgb_np as _gaussian_blur_rgb_np,
     hsv_to_rgb_np as _hsv_to_rgb_np,
@@ -1077,7 +1077,7 @@ class x1LensBreathing:
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "lens_breathing_info")
     FUNCTION = "run"
-    CATEGORY = FX_CONCEPT
+    CATEGORY = FX_OPTICS
 
     def run(
         self,
