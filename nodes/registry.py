@@ -6,7 +6,7 @@ from .material_map_nodes import x1MetalnessMap, x1NormalMap, x1RoughnessMap, x1S
 from .material_preview_nodes import x1PreviewMaterial
 from .tech_art_nodes import x1ChannelBreakout, x1ChannelPack, x1CurvatureFromNormal, x1NormalBlend, x1UVCheckerOverlay
 from .tech_art_surface_nodes import x1AOFromHeight, x1IDMapQuantize, x1IDMaskExtract, x1NormalTweak, x1SlopeMaskFromNormal
-from .texture_tool_nodes import x1TextureEdgePad, x1TextureOffset, x1TextureSeamless, x1TextureTilePreview
+from .texture_tool_nodes import x1TextureDelight, x1TextureEdgePad, x1TextureOffset, x1TextureSeamless, x1TextureTilePreview
 from .social_nodes import (
     MKRshiftSocialPackAssets,
     MKRshiftSocialPackBuilder,
@@ -226,6 +226,7 @@ NODE_CLASS_MAPPINGS = {
     "x1TextureSeamless": x1TextureSeamless,
     "x1TextureTilePreview": x1TextureTilePreview,
     "x1TextureEdgePad": x1TextureEdgePad,
+    "x1TextureDelight": x1TextureDelight,
     "MKRshiftSocialPackBuilder": MKRshiftSocialPackBuilder,
     "MKRshiftSocialPackAssets": MKRshiftSocialPackAssets,
     "MKRshiftSocialPromptAtIndex": MKRshiftSocialPromptAtIndex,
@@ -412,6 +413,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "x1TextureSeamless": "Texture Seamless • MKRShift Nodes",
     "x1TextureTilePreview": "Texture Tile Preview • MKRShift Nodes",
     "x1TextureEdgePad": "Texture Edge Pad • MKRShift Nodes",
+    "x1TextureDelight": "Texture Delight • MKRShift Nodes",
     "MKRshiftSocialPackBuilder": "Social Pack Builder • MKRShift Nodes",
     "MKRshiftSocialPackAssets": "Social Assets Extract • MKRShift Nodes",
     "MKRshiftSocialPromptAtIndex": "Prompt At Index • MKRShift Nodes",

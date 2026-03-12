@@ -43,6 +43,8 @@ This pack ships custom `WEB_DIRECTORY` extensions for nodes that benefit from a 
 
 Markdown help pages for these nodes live in `web/docs/`.
 
+If you publish/maintain a GitHub wiki, use `web/docs/Home.md` as the landing page and `web/docs/_Sidebar.md` for wiki navigation so the wiki stays in sync with this repository.
+
 ## Installation
 
 1. Clone or copy this folder into `ComfyUI/custom_nodes/`.

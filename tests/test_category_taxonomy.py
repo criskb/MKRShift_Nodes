@@ -33,7 +33,7 @@ from MKRShift_Nodes.nodes.studio_nodes import (  # noqa: E402
     MKRStudioReviewFrame,
 )
 from MKRShift_Nodes.nodes.tech_art_surface_nodes import x1IDMaskExtract, x1NormalTweak, x1SlopeMaskFromNormal  # noqa: E402
-from MKRShift_Nodes.nodes.texture_tool_nodes import x1TextureSeamless  # noqa: E402
+from MKRShift_Nodes.nodes.texture_tool_nodes import x1TextureDelight, x1TextureSeamless  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_finishing_nodes import x1AnamorphicStreaks, x1HeatHaze  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_optics_nodes import x1LensDirtBloom, x1ShockwaveDistort  # noqa: E402
 from MKRShift_Nodes.nodes.xcine import x1LensBreathing  # noqa: E402
@@ -52,6 +52,7 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(x1MetalnessMap.CATEGORY, SURFACE_MAPS)
         self.assertEqual(x1NormalMap.CATEGORY, SURFACE_MAPS)
         self.assertEqual(x1PreviewMaterial.CATEGORY, SURFACE_PREVIEW)
+        self.assertEqual(x1TextureDelight.CATEGORY, SURFACE_TEXTURE)
         self.assertEqual(x1TextureSeamless.CATEGORY, SURFACE_TEXTURE)
         self.assertEqual(x1IDMaskExtract.CATEGORY, SURFACE_TECH_ART)
         self.assertEqual(x1SlopeMaskFromNormal.CATEGORY, SURFACE_TECH_ART)

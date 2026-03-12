@@ -12,6 +12,7 @@ if str(PACKAGE_PARENT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_PARENT))
 
 from MKRShift_Nodes.nodes.texture_tool_nodes import (  # noqa: E402
+    x1TextureDelight,
     x1TextureEdgePad,
     x1TextureOffset,
     x1TextureSeamless,
@@ -91,6 +92,58 @@ class TextureToolNodeTests(unittest.TestCase):
         self.assertGreater(float(mask[0, 4, 5].item()), 0.5)
         self.assertGreater(float(output[0, 4, 5, 3].item()), 0.5)
         self.assertIn("x1TextureEdgePad", info)
+
+    def test_texture_delight_flattens_low_frequency_lighting(self) -> None:
+        base = torch.ones((1, 48, 48, 3), dtype=torch.float32)
+        base *= torch.tensor([0.55, 0.38, 0.22], dtype=torch.float32)
+        gradient = torch.linspace(0.6, 1.45, 48, dtype=torch.float32).view(1, 1, 48, 1)
+        image = torch.clamp(base * gradient, 0.0, 1.0)
+
+        node = x1TextureDelight()
+        output, mask, info = node.run(
+            image=image,
+            blur_radius=10.0,
+            flatten_strength=1.0,
+            detail_preserve=0.85,
+            shadow_lift=0.4,
+            highlight_compress=0.3,
+            mask_feather=0.0,
+        )
+
+        before_delta = float(torch.mean(torch.abs(image[:, :, :8, :] - image[:, :, -8:, :])).item())
+        after_delta = float(torch.mean(torch.abs(output[:, :, :8, :] - output[:, :, -8:, :])).item())
+        before_ratio = float(image[0, 24, 24, 0].item() / max(image[0, 24, 24, 1].item(), 1e-6))
+        after_ratio = float(output[0, 24, 24, 0].item() / max(output[0, 24, 24, 1].item(), 1e-6))
+
+        self.assertLess(after_delta, before_delta * 0.7)
+        self.assertAlmostEqual(before_ratio, after_ratio, places=2)
+        self.assertGreater(float(mask.mean().item()), 0.05)
+        self.assertIn("x1TextureDelight", info)
+
+    def test_texture_delight_respects_optional_mask(self) -> None:
+        base = torch.ones((1, 40, 40, 3), dtype=torch.float32)
+        base *= torch.tensor([0.42, 0.42, 0.42], dtype=torch.float32)
+        vertical = torch.linspace(0.55, 1.5, 40, dtype=torch.float32).view(1, 40, 1, 1)
+        image = torch.clamp(base * vertical, 0.0, 1.0)
+        mask = torch.zeros((1, 40, 40), dtype=torch.float32)
+        mask[:, :, :20] = 1.0
+
+        node = x1TextureDelight()
+        output, _, _ = node.run(
+            image=image,
+            blur_radius=8.0,
+            flatten_strength=1.0,
+            detail_preserve=0.75,
+            shadow_lift=0.5,
+            highlight_compress=0.4,
+            mask_feather=0.0,
+            mask=mask,
+        )
+
+        left_change = float(torch.mean(torch.abs(output[:, :, :20, :] - image[:, :, :20, :])).item())
+        right_change = float(torch.mean(torch.abs(output[:, :, 20:, :] - image[:, :, 20:, :])).item())
+
+        self.assertGreater(left_change, right_change * 4.0)
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@ import numpy as np
 import torch
 
 from ..categories import SURFACE_TEXTURE
-from ..lib.image_shared import luma_np, to_image_batch
-from ..lib.scalar_map_shared import mask_tensor_to_np
+from ..lib.image_shared import hsv_to_rgb_np, luma_np, mask_to_batch, rgb_to_hsv_np, to_image_batch
+from ..lib.scalar_map_shared import blur_single_channel, mask_tensor_to_np
 from ..lib.texture_shared import cross_seam_mask, edge_match_low_frequency, roll_image_np, smooth_seams, tile_grid_mask
 
 
@@ -80,6 +80,61 @@ def _edge_pad_rgb(rgb: np.ndarray, valid_mask: np.ndarray, pad_pixels: int) -> t
 
     fill_mask = np.clip(valid.astype(np.float32) - initial_valid.astype(np.float32), 0.0, 1.0)
     return color.astype(np.float32, copy=False), fill_mask.astype(np.float32, copy=False)
+
+
+def _weighted_mean(values: np.ndarray, weights: np.ndarray) -> float:
+    weights_np = np.clip(weights, 0.0, 1.0).astype(np.float32, copy=False)
+    denom = float(np.sum(weights_np))
+    if denom <= 1e-6:
+        return float(np.mean(values))
+    return float(np.sum(values * weights_np) / denom)
+
+
+def _delight_rgb(
+    rgb: np.ndarray,
+    effect_mask: np.ndarray,
+    blur_radius: float,
+    flatten_strength: float,
+    detail_preserve: float,
+    shadow_lift: float,
+    highlight_compress: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    h, s, v = rgb_to_hsv_np(rgb)
+    light_field = blur_single_channel(v, radius=blur_radius)
+    neutral_level = max(_weighted_mean(light_field, effect_mask), 1e-4)
+    neutral_field = np.clip(light_field / neutral_level, 0.25, 4.0).astype(np.float32, copy=False)
+
+    shadow_weight = np.clip((1.0 - neutral_field) / 0.75, 0.0, 1.0).astype(np.float32, copy=False)
+    highlight_weight = np.clip((neutral_field - 1.0) / 0.75, 0.0, 1.0).astype(np.float32, copy=False)
+    exponent = np.clip(
+        float(max(0.0, flatten_strength))
+        + (shadow_weight * float(max(0.0, shadow_lift)))
+        + (highlight_weight * float(max(0.0, highlight_compress))),
+        0.0,
+        4.0,
+    ).astype(np.float32, copy=False)
+
+    corrected_v = np.clip(v * np.power(np.maximum(neutral_field, 1e-4), -exponent), 0.0, 1.0).astype(
+        np.float32,
+        copy=False,
+    )
+
+    detail_radius = max(1.0, min(float(max(1.0, blur_radius)) * 0.15, 12.0))
+    original_low = blur_single_channel(v, radius=detail_radius)
+    corrected_low = blur_single_channel(corrected_v, radius=detail_radius)
+    original_high = v - original_low
+    corrected_high = corrected_v - corrected_low
+    keep_detail = float(np.clip(detail_preserve, 0.0, 1.0))
+    final_v = np.clip(
+        corrected_low + (corrected_high * (1.0 - keep_detail)) + (original_high * keep_detail),
+        0.0,
+        1.0,
+    ).astype(np.float32, copy=False)
+
+    effect = np.clip(effect_mask, 0.0, 1.0).astype(np.float32, copy=False)
+    blended_v = ((v * (1.0 - effect)) + (final_v * effect)).astype(np.float32, copy=False)
+    adjustment_mask = np.clip(np.abs(blended_v - v) * 2.5, 0.0, 1.0).astype(np.float32, copy=False)
+    return hsv_to_rgb_np(h, s, blended_v), adjustment_mask
 
 
 class x1TextureOffset:
@@ -377,5 +432,97 @@ class x1TextureEdgePad:
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
             torch.from_numpy(fill_mask_np).to(device=batch.device, dtype=batch.dtype),
+            info,
+        )
+
+
+class x1TextureDelight:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "blur_radius": ("FLOAT", {"default": 32.0, "min": 1.0, "max": 512.0, "step": 0.5}),
+                "flatten_strength": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0, "step": 0.01}),
+                "detail_preserve": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "shadow_lift": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "step": 0.01}),
+                "highlight_compress": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 2.0, "step": 0.01}),
+                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
+                "invert_mask": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {
+                "mask": ("MASK",),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "delight_info")
+    FUNCTION = "run"
+    CATEGORY = SURFACE_TEXTURE
+
+    def run(
+        self,
+        image: torch.Tensor,
+        blur_radius: float = 32.0,
+        flatten_strength: float = 0.85,
+        detail_preserve: float = 0.8,
+        shadow_lift: float = 0.3,
+        highlight_compress: float = 0.2,
+        mask_feather: float = 8.0,
+        invert_mask: bool = False,
+        mask: Optional[torch.Tensor] = None,
+    ):
+        batch = to_image_batch(image)
+        b, h, w, c = batch.shape
+        src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
+        out_np = np.empty_like(src_np)
+        adjustment_mask_np = np.zeros((int(b), int(h), int(w)), dtype=np.float32)
+
+        effect_mask_t = mask_to_batch(
+            mask=mask,
+            batch=int(b),
+            h=int(h),
+            w=int(w),
+            feather_radius=float(max(0.0, mask_feather)),
+            invert_mask=bool(invert_mask),
+            device=batch.device,
+            dtype=batch.dtype,
+        )
+        effect_mask_np = effect_mask_t.detach().cpu().numpy().astype(np.float32, copy=False)
+        coverage = float(effect_mask_t.mean().item()) * 100.0
+
+        for idx in range(int(b)):
+            sample = src_np[idx]
+            delighted_rgb, adjustment_mask = _delight_rgb(
+                rgb=sample[..., :3],
+                effect_mask=effect_mask_np[idx],
+                blur_radius=float(max(1.0, blur_radius)),
+                flatten_strength=float(max(0.0, flatten_strength)),
+                detail_preserve=float(np.clip(detail_preserve, 0.0, 1.0)),
+                shadow_lift=float(max(0.0, shadow_lift)),
+                highlight_compress=float(max(0.0, highlight_compress)),
+            )
+            adjustment_mask_np[idx] = adjustment_mask
+            if c == 4:
+                out_np[idx] = np.concatenate([delighted_rgb, sample[..., 3:4]], axis=-1).astype(np.float32, copy=False)
+            else:
+                out_np[idx] = delighted_rgb
+
+        info = (
+            "x1TextureDelight: blur_radius={:.1f}px, flatten_strength={:.2f}, detail_preserve={:.2f}, "
+            "shadow_lift={:.2f}, highlight_compress={:.2f}, mask_feather={:.1f}px, mask_coverage={:.2f}%{}"
+        ).format(
+            float(max(1.0, blur_radius)),
+            float(max(0.0, flatten_strength)),
+            float(np.clip(detail_preserve, 0.0, 1.0)),
+            float(max(0.0, shadow_lift)),
+            float(max(0.0, highlight_compress)),
+            float(max(0.0, mask_feather)),
+            coverage,
+            " (inverted)" if invert_mask else "",
+        )
+        return (
+            _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
+            torch.from_numpy(adjustment_mask_np).to(device=batch.device, dtype=batch.dtype),
             info,
         )
