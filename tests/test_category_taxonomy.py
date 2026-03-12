@@ -16,6 +16,7 @@ from MKRShift_Nodes.categories import (  # noqa: E402
     STUDIO_BOARDS,
     STUDIO_REVIEW,
     SURFACE_MAPS,
+    SURFACE_PREVIEW,
     SURFACE_TECH_ART,
     SURFACE_TEXTURE,
     UTILITY_MAPS,
@@ -24,6 +25,7 @@ from MKRShift_Nodes.categories import (  # noqa: E402
 )
 from MKRShift_Nodes.nodes.heatmap_nodes import x1Heatmap, x1Heightmap  # noqa: E402
 from MKRShift_Nodes.nodes.material_map_nodes import x1MetalnessMap, x1NormalMap  # noqa: E402
+from MKRShift_Nodes.nodes.material_preview_nodes import x1PreviewMaterial  # noqa: E402
 from MKRShift_Nodes.nodes.studio_nodes import (  # noqa: E402
     MKRStudioCompareBoard,
     MKRStudioContactSheet,
@@ -49,6 +51,7 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(x1Heightmap.CATEGORY, SURFACE_MAPS)
         self.assertEqual(x1MetalnessMap.CATEGORY, SURFACE_MAPS)
         self.assertEqual(x1NormalMap.CATEGORY, SURFACE_MAPS)
+        self.assertEqual(x1PreviewMaterial.CATEGORY, SURFACE_PREVIEW)
         self.assertEqual(x1TextureSeamless.CATEGORY, SURFACE_TEXTURE)
         self.assertEqual(x1IDMaskExtract.CATEGORY, SURFACE_TECH_ART)
         self.assertEqual(x1SlopeMaskFromNormal.CATEGORY, SURFACE_TECH_ART)

@@ -3,6 +3,7 @@ from .image_layout_nodes import MKRImageCombineGrid, MKRImageSplitGrid
 from .preview_nodes import MKRBatchCollagePreview
 from .heatmap_nodes import x1Heatmap, x1Heightmap
 from .material_map_nodes import x1MetalnessMap, x1NormalMap, x1RoughnessMap, x1SpecularMap
+from .material_preview_nodes import x1PreviewMaterial
 from .tech_art_nodes import x1ChannelBreakout, x1ChannelPack, x1CurvatureFromNormal, x1NormalBlend, x1UVCheckerOverlay
 from .tech_art_surface_nodes import x1AOFromHeight, x1IDMapQuantize, x1IDMaskExtract, x1NormalTweak, x1SlopeMaskFromNormal
 from .texture_tool_nodes import x1TextureEdgePad, x1TextureOffset, x1TextureSeamless, x1TextureTilePreview
@@ -210,6 +211,7 @@ NODE_CLASS_MAPPINGS = {
     "x1SpecularMap": x1SpecularMap,
     "x1MetalnessMap": x1MetalnessMap,
     "x1NormalMap": x1NormalMap,
+    "x1PreviewMaterial": x1PreviewMaterial,
     "x1ChannelPack": x1ChannelPack,
     "x1ChannelBreakout": x1ChannelBreakout,
     "x1NormalBlend": x1NormalBlend,
@@ -395,6 +397,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "x1SpecularMap": "Specular Map • MKRShift Nodes",
     "x1MetalnessMap": "Metalness Map • MKRShift Nodes",
     "x1NormalMap": "Normal Map • MKRShift Nodes",
+    "x1PreviewMaterial": "Preview Material • MKRShift Nodes",
     "x1ChannelPack": "Channel Pack • MKRShift Nodes",
     "x1ChannelBreakout": "Channel Breakout • MKRShift Nodes",
     "x1NormalBlend": "Normal Blend • MKRShift Nodes",

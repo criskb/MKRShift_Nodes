@@ -35,6 +35,7 @@ UTILITY_PHOTO = f"{ROOT}/Utility/Photo"
 # Surface workflow nodes.
 SURFACE_ROOT = f"{ROOT}/Surface"
 SURFACE_MAPS = f"{SURFACE_ROOT}/Maps"
+SURFACE_PREVIEW = f"{SURFACE_ROOT}/Preview"
 SURFACE_TEXTURE = f"{SURFACE_ROOT}/Texture"
 SURFACE_TECH_ART = f"{SURFACE_ROOT}/Tech Art"
 
