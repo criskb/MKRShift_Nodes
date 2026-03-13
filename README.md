@@ -19,11 +19,13 @@ MKRShift Nodes is a broad ComfyUI node pack focused on image craft and workflow 
 | Area | Example Nodes | Focus |
 | --- | --- | --- |
 | Direction | `MKRCharacterCustomizer`, `AngleShift`, `Aspect1X`, `AxBCompare` | Character setup, angle exploration, compare views, and framing |
+| Surface + Material | `x1PreviewMaterial`, `x1PBRPack`, `x1ClearcoatMap`, `x1ClearcoatRoughnessMap`, `x1EdgeWearMask`, `x1TextureDetileBlend` | Practical PBR map derivation, material preview, packing, wear masking, and anti-tiling texture cleanup |
 | Color + Lookdev | `xLUT`, `xLUTOutput`, `x1ColorWheels`, `x1Curves`, `x1PaletteMap` | LUT authoring, grading, color matching, and look building |
 | Image Processing | `x1Bloom`, `x1Film`, `x1Stylize`, `x1LocalContrast`, `x1SharpenPro` | Finishing, texture, stylization, and polish |
+| Inspect + Review | `AxBCompare`, `MKRBatchCollagePreview`, `MKRStudioReviewFrame`, `MKRStudioCompareBoard` | Fast side-by-side checks, labeled batch sheets, and review-ready boards |
 | Mask + Utility | `x1MaskGen`, `AdvResize`, `MKRImageSplitGrid`, `MKRImageCombineGrid`, `xShader`, `x1DenoiseDetail` | Mask generation, resize work, tiled image workflows, shader utilities, and cleanup |
 | PreSave + Media | `MKRPreSave`, `MKRPresaveVideo`, `MKRPresaveAudio`, `MKRMuxVideoAudio`, `MKRTrimVideoByTime` | Preview-first export helpers plus audio/video utility work |
-| Social Planning | `MKRshiftSocialPackBuilder`, `MKRshiftSocialPackAssets`, `MKRshiftSocialPromptAtIndex`, `MKRshiftSocialPackCatalog` | Pack-driven captions, prompts, scheduling, and social asset planning |
+| Social Planning | `MKRshiftSocialPackBuilder`, `MKRshiftSocialPackAssets`, `MKRshiftSocialPromptAtIndex`, `MKRshiftSocialPackCatalog` | MKRShift social planning tools for pack-driven captions, prompts, scheduling, and structured asset plans |
 | G-code | `MKRGCodePrinterProfile`, `MKRGCodeOrcaProfileLoader`, `MKRGCodeLoadMeshModel`, `MKRGCodeHeightmapPlate`, `MKRGCodeSpiralVase`, `MKRGCodePlanAnalyzer`, `MKRGCodeBedMeshCompensate`, `MKRGCodeCalibrationTower`, `MKRGCodeConditionalInjector`, `MKRGCodePreview`, `MKRGCodeExternalSlicer`, `MKRGCodeExport` | 3D-print printer profiles, Orca preset import, mesh/model loading, generators, plan analysis, bed compensation, calibration macros, preview, external slicing, and direct `.gcode` export |
 | Studio Review + Delivery | `MKRStudioSlate`, `MKRStudioReviewFrame`, `MKRStudioReviewBurnIn`, `MKRStudioCompareBoard`, `MKRStudioContactSheet`, `MKRStudioDeliveryPlan` | Branded slates, quick burn-ins, compare boards, review frames, contact sheets, and naming/handoff planning for internal or client-facing review |
 
@@ -43,7 +45,7 @@ This pack ships custom `WEB_DIRECTORY` extensions for nodes that benefit from a 
 
 Markdown help pages for these nodes live in `web/docs/`.
 
-If you publish/maintain a GitHub wiki, use `web/docs/Home.md` as the landing page and `web/docs/_Sidebar.md` for wiki navigation so the wiki stays in sync with this repository.
+If you publish/maintain a GitHub wiki, use `web/docs/Home.md` as the landing page and `web/docs/_Sidebar.md` for wiki navigation. Those pages are organized to mirror the current in-app taxonomy, including the refreshed Surface and Inspect branches.
 
 ## Installation
 

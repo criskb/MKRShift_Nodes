@@ -16,7 +16,9 @@ if str(PACKAGE_PARENT) not in sys.path:
 
 from MKRShift_Nodes.nodes.mask_nodes import x1MaskGen  # noqa: E402
 from MKRShift_Nodes.nodes.core_nodes import AxBCompare  # noqa: E402
+from MKRShift_Nodes.nodes.inspect_compare_nodes import MKRBatchDifferencePreview  # noqa: E402
 from MKRShift_Nodes.nodes.presave_media_nodes import MKRPresaveVideo  # noqa: E402
+from MKRShift_Nodes.nodes.social_campaign_nodes import MKRshiftSocialCampaignLinks  # noqa: E402
 from MKRShift_Nodes.nodes.social_nodes import MKRshiftSocialPackBuilder  # noqa: E402
 from MKRShift_Nodes.nodes.gcode_analysis_nodes import MKRGCodePlanAnalyzer  # noqa: E402
 from MKRShift_Nodes.nodes.gcode_input_nodes import MKRGCodeLoadMeshModel, MKRGCodeOrcaProfileLoader  # noqa: E402
@@ -42,6 +44,7 @@ from MKRShift_Nodes.nodes.studio_nodes import (  # noqa: E402
     MKRStudioReviewFrame,
     MKRStudioSlate,
 )
+from MKRShift_Nodes.nodes.studio_selection_nodes import MKRStudioSelectionSet  # noqa: E402
 
 
 class FeatureImprovementTests(unittest.TestCase):
@@ -439,6 +442,41 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertEqual(info["columns"], 3)
         self.assertEqual(info["board_size"], [312, 388])
         self.assertEqual(info["frames"][0]["label"], "SHOT 12")
+        self.assertEqual(info["footer_layout"], "stacked")
+
+    def test_studio_contact_sheet_clips_card_content_to_rounded_shape(self) -> None:
+        node = MKRStudioContactSheet()
+        frames = torch.ones((1, 48, 64, 3), dtype=torch.float32)
+
+        image, info_json = node.board(
+            images=frames,
+            title="Daily Selects",
+            subtitle="Rounded crop check",
+            theme="Carbon",
+            columns=1,
+            cell_width=96,
+            gap_px=12,
+            margin_px=24,
+            header_px=72,
+            footer_px=48,
+            label_prefix="SHOT",
+            start_index=1,
+        )
+
+        info = json.loads(info_json)
+        card_x = 24
+        card_y = 24 + 72
+        card_w, card_h = info["card_size"]
+        corner_pixel = image[0, card_y + 4, card_x + 4]
+        center_pixel = image[0, card_y + 28, card_x + 28]
+        bottom_corner_pixel = image[0, card_y + card_h - 5, card_x + 4]
+        label_fill_pixel = image[0, card_y + card_h - 8, card_x + (card_w // 2)]
+
+        self.assertEqual(info["board_size"][0], int(image.shape[2]))
+        self.assertLess(float(corner_pixel.mean()), 0.95)
+        self.assertGreater(float(center_pixel.mean()), 0.95)
+        self.assertLess(float(bottom_corner_pixel.mean()), 0.13)
+        self.assertGreater(float(label_fill_pixel.mean()), float(bottom_corner_pixel.mean()) + 0.03)
 
     def test_studio_delivery_plan_builds_save_ready_naming_bundle(self) -> None:
         slate_node = MKRStudioSlate()
@@ -589,6 +627,123 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertEqual(info["rows"][0]["label_a"], "Before")
         self.assertEqual(info["rows"][0]["output_size"], [244, 184])
         self.assertTrue(float(image.mean()) > 0.05)
+
+    def test_studio_selection_set_builds_contact_sheet_ready_selection_json(self) -> None:
+        delivery_node = MKRStudioDeliveryPlan()
+        selection_node = MKRStudioSelectionSet()
+
+        _, _, _, _, delivery_plan_json = delivery_node.plan(
+            project="Studio Test",
+            sequence="SEQ_07",
+            shot="B012",
+            take="3",
+            version_tag="v003",
+            deliverable="Client Selects",
+            department="Lookdev",
+            artist="Ada",
+            client="Northstar",
+            task="Beauty Pass",
+            round_label="Round 2",
+            reviewer="Jules",
+            date_text="2026-03-09",
+            naming_mode="Editorial",
+            extension="png",
+            include_take=True,
+            include_date=True,
+            include_artist=False,
+            include_client=False,
+        )
+
+        selection_json, manifest_json, frames_csv, summary, count = selection_node.build(
+            marked_frames="12:hero|best lighting\n14-15:select\n18:revise|hair cleanup",
+            default_status="SELECT",
+            delivery_plan_json=delivery_plan_json,
+            reviewer="Jules",
+            round_label="Round 2",
+        )
+
+        selections = json.loads(selection_json)
+        manifest = json.loads(manifest_json)
+
+        self.assertEqual(count, 4)
+        self.assertEqual(frames_csv, "12,14,15,18")
+        self.assertEqual(selections["12"]["status"], "HERO")
+        self.assertEqual(selections["18"]["note"], "hair cleanup")
+        self.assertEqual(manifest["status_counts"]["SELECT"], 2)
+        self.assertEqual(manifest["reviewer"], "Jules")
+        self.assertIn("Round 2", summary)
+
+    def test_social_campaign_links_emits_tracked_urls_from_plan_assets(self) -> None:
+        builder = MKRshiftSocialPackBuilder()
+        links_node = MKRshiftSocialCampaignLinks()
+        image = torch.zeros((1, 8, 8, 3), dtype=torch.float32)
+
+        result = builder.build(
+            image=image,
+            pack="After Hours Dump (pack_social_dump)",
+            output_mode="Carousel",
+            count=3,
+            aspect="Auto",
+            branding="Off",
+            caption_tone="Clean",
+            platform="Instagram",
+            objective="Awareness",
+            hook_style="Question",
+            cta_mode="Soft",
+            hashtag_mode="Lite",
+            product_name="Night Lamp",
+        )
+        plan_json = result["result"][1]
+
+        links_json, _, first_url, summary_json, link_count = links_node.build_links(
+            plan_json=plan_json,
+            base_url="https://brand.example.com",
+            target_path="/products/night-lamp",
+            utm_medium="paid social",
+            utm_campaign="",
+            utm_source_mode="Asset Platform",
+            utm_content_mode="Slot",
+            include_ratio_suffix=True,
+        )
+
+        rows = json.loads(links_json)
+        summary = json.loads(summary_json)
+
+        self.assertEqual(link_count, 3)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(summary["campaign_slug"], "night-lamp")
+        self.assertIn("utm_source=instagram", first_url)
+        self.assertIn("utm_medium=paid-social", first_url)
+        self.assertIn("utm_campaign=night-lamp", first_url)
+        self.assertTrue(rows[0]["url"].startswith("https://brand.example.com/products/night-lamp"))
+
+    def test_batch_difference_preview_reports_pair_deltas(self) -> None:
+        node = MKRBatchDifferencePreview()
+        image_a = torch.zeros((1, 12, 12, 3), dtype=torch.float32)
+        image_b = torch.ones((1, 12, 12, 3), dtype=torch.float32)
+
+        image_out, preview, layout_json = node.run(
+            image_a=image_a,
+            image_b=image_b,
+            columns=1,
+            layout_mode="A | B | Diff",
+            difference_style="heat",
+            difference_gain=2.0,
+            tile_fit_mode="contain",
+            panel_padding=8,
+            panel_gap=8,
+            label_height=28,
+            show_resolution=True,
+            theme="dark",
+            max_collage_side=512,
+        )
+
+        layout = json.loads(layout_json)
+        self.assertEqual(tuple(image_out.shape), tuple(image_a.shape))
+        self.assertEqual(preview.shape[0], 1)
+        self.assertEqual(layout["count"], 1)
+        self.assertEqual(layout["layout_mode"], "A | B | Diff")
+        self.assertGreater(layout["rows_meta"][0]["mean_delta"], 0.95)
 
     def test_gcode_printer_profile_uses_gcode_studio_style_fields(self) -> None:
         node = MKRGCodePrinterProfile()

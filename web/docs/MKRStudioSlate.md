@@ -11,6 +11,7 @@ Builds a branded production slate as an `IMAGE` plus structured slate metadata.
 - `director`, `artist`, `camera`, `lens`, `fps`, `aspect`, `date_text`: Production metadata.
 - `notes`: Short review or setup notes.
 - `thumbnail` (optional): Adds a framed preview image to the right metadata panel.
+- `delivery_plan_json` (optional): Reuses delivery metadata when you want the slate to stay in sync with `MKRStudioDeliveryPlan`.
 
 ## Outputs
 
@@ -24,3 +25,4 @@ Builds a branded production slate as an `IMAGE` plus structured slate metadata.
 - Generate consistent shot slates for animation, previs, or still-image turnarounds.
 - Feed the JSON output into pack-specific naming or delivery nodes.
 - Stamp versions, departments, or review badges directly into the slate for dailies and handoff prep.
+- Auto-fill task / round / reviewer notes from the delivery plan when you leave the slate note field blank.

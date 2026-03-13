@@ -13,6 +13,7 @@ Builds save-ready naming, subfolder, and manifest-note metadata for studio revie
 - `extension`: Suggested primary output extension.
 - `include_take`, `include_date`, `include_artist`, `include_client`: Toggles extra tokens in the generated filename.
 - `slate_json`, `review_frame_info`, `contact_sheet_info` (optional): Pulls metadata from the studio nodes added earlier.
+- `selection_manifest_json` (optional): Embeds pick counts, frame lists, and status breakdown from `MKRStudioSelectionSet`.
 - `notes_json` (optional): Extra structured notes to embed into the generated manifest notes bundle.
 
 ## Outputs
@@ -29,3 +30,4 @@ Builds save-ready naming, subfolder, and manifest-note metadata for studio revie
 - Generate consistent client-facing labels from shot metadata.
 - Bridge the new studio review nodes into `MKRPreSave` and `MKRProjectManifest` without manual renaming.
 - Carry round/task/reviewer context into review frames, contact sheets, burn-ins, and compare boards.
+- Seed `MKRStudioReviewNotes` and `MKRStudioDeliverySheet` with the same file and delivery metadata.

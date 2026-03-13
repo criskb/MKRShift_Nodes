@@ -1,4 +1,4 @@
-# MKRshiftSocialPackBuilder
+# MKRShift Social Pack Builder
 
 ## What It Does
 

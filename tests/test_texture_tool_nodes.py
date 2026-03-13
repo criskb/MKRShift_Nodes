@@ -12,11 +12,19 @@ if str(PACKAGE_PARENT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_PARENT))
 
 from MKRShift_Nodes.nodes.texture_tool_nodes import (  # noqa: E402
+    x1TextureAlbedoSafe,
+    x1TextureCellPattern,
+    x1TextureDetileBlend,
     x1TextureDelight,
     x1TextureEdgePad,
+    x1TextureHexTiles,
+    x1TextureMacroVariation,
+    x1TextureNoiseField,
     x1TextureOffset,
     x1TextureSeamless,
+    x1TextureStrata,
     x1TextureTilePreview,
+    x1TextureWeavePattern,
 )
 
 
@@ -144,6 +152,276 @@ class TextureToolNodeTests(unittest.TestCase):
         right_change = float(torch.mean(torch.abs(output[:, :, 20:, :] - image[:, :, 20:, :])).item())
 
         self.assertGreater(left_change, right_change * 4.0)
+
+    def test_texture_albedo_safe_reduces_extremes_while_preserving_hue_bias(self) -> None:
+        image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+        image[:, :, :16, :] = torch.tensor([0.02, 0.01, 0.005], dtype=torch.float32)
+        image[:, :, 16:, :] = torch.tensor([1.0, 0.20, 0.10], dtype=torch.float32)
+
+        node = x1TextureAlbedoSafe()
+        output, mask, info = node.run(
+            image=image,
+            target_black=0.04,
+            target_white=0.82,
+            saturation_limit=0.75,
+            shadow_lift=0.45,
+            highlight_rolloff=0.65,
+            mask_feather=0.0,
+        )
+
+        before_dark = float(image[0, 16, 8, 0].item())
+        after_dark = float(output[0, 16, 8, 0].item())
+        before_bright = float(image[0, 16, 24, 0].item())
+        after_bright = float(output[0, 16, 24, 0].item())
+        before_ratio = float(image[0, 16, 24, 0].item() / max(image[0, 16, 24, 1].item(), 1e-6))
+        after_ratio = float(output[0, 16, 24, 0].item() / max(output[0, 16, 24, 1].item(), 1e-6))
+
+        self.assertGreater(after_dark, before_dark)
+        self.assertLess(after_bright, before_bright)
+        self.assertAlmostEqual(before_ratio, after_ratio, places=1)
+        self.assertGreater(float(mask.mean().item()), 0.05)
+        self.assertIn("x1TextureAlbedoSafe", info)
+
+    def test_texture_macro_variation_is_deterministic_for_a_fixed_seed(self) -> None:
+        image = torch.ones((1, 40, 40, 3), dtype=torch.float32)
+        image *= torch.tensor([0.46, 0.40, 0.32], dtype=torch.float32)
+
+        node = x1TextureMacroVariation()
+        output_a, mask_a, info = node.run(
+            image=image,
+            macro_scale_px=96.0,
+            strength=0.65,
+            hue_variation=0.03,
+            value_variation=0.16,
+            contrast_variation=0.18,
+            seed=123,
+            mask_feather=0.0,
+        )
+        output_b, mask_b, _ = node.run(
+            image=image,
+            macro_scale_px=96.0,
+            strength=0.65,
+            hue_variation=0.03,
+            value_variation=0.16,
+            contrast_variation=0.18,
+            seed=123,
+            mask_feather=0.0,
+        )
+
+        self.assertTrue(torch.allclose(output_a, output_b, atol=1e-6))
+        self.assertTrue(torch.allclose(mask_a, mask_b, atol=1e-6))
+        self.assertGreater(float(mask_a.mean().item()), 0.05)
+        self.assertGreater(float(torch.mean(torch.abs(output_a - image)).item()), 0.01)
+        self.assertIn("x1TextureMacroVariation", info)
+
+    def test_texture_detile_blend_is_deterministic_and_changes_macro_pattern(self) -> None:
+        image = torch.zeros((1, 48, 48, 3), dtype=torch.float32)
+        image[:, :, :24, :] = torch.tensor([0.62, 0.48, 0.34], dtype=torch.float32)
+        image[:, :, 24:, :] = torch.tensor([0.48, 0.34, 0.22], dtype=torch.float32)
+        image[:, 12:20, :, :] += torch.tensor([0.08, 0.02, 0.01], dtype=torch.float32)
+        image = torch.clamp(image, 0.0, 1.0)
+
+        node = x1TextureDetileBlend()
+        output_a, mask_a, info = node.run(
+            image=image,
+            macro_scale_px=96.0,
+            blend_strength=0.60,
+            color_match_blur=12.0,
+            detail_preserve=0.78,
+            seed=77,
+            mask_feather=0.0,
+        )
+        output_b, mask_b, _ = node.run(
+            image=image,
+            macro_scale_px=96.0,
+            blend_strength=0.60,
+            color_match_blur=12.0,
+            detail_preserve=0.78,
+            seed=77,
+            mask_feather=0.0,
+        )
+
+        self.assertTrue(torch.allclose(output_a, output_b, atol=1e-6))
+        self.assertTrue(torch.allclose(mask_a, mask_b, atol=1e-6))
+        self.assertGreater(float(mask_a.mean().item()), 0.05)
+        self.assertGreater(float(torch.mean(torch.abs(output_a - image)).item()), 0.01)
+        self.assertIn("x1TextureDetileBlend", info)
+
+    def test_texture_noise_field_is_deterministic_and_tileable(self) -> None:
+        node = x1TextureNoiseField()
+        output_a, mask_a, info = node.run(
+            width=72,
+            height=64,
+            variant="ridged",
+            scale_px=18.0,
+            octaves=4,
+            lacunarity=2.0,
+            gain=0.55,
+            contrast=1.3,
+            balance=0.0,
+            invert=False,
+            seed=99,
+        )
+        output_b, mask_b, _ = node.run(
+            width=72,
+            height=64,
+            variant="ridged",
+            scale_px=18.0,
+            octaves=4,
+            lacunarity=2.0,
+            gain=0.55,
+            contrast=1.3,
+            balance=0.0,
+            invert=False,
+            seed=99,
+        )
+
+        self.assertEqual(tuple(output_a.shape), (1, 64, 72, 3))
+        self.assertTrue(torch.allclose(output_a, output_b, atol=1e-6))
+        self.assertTrue(torch.allclose(mask_a, mask_b, atol=1e-6))
+        self.assertTrue(torch.allclose(output_a[0, :, :, 0], mask_a[0], atol=1e-6))
+        self.assertTrue(torch.allclose(mask_a[0, :, 0], mask_a[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(mask_a[0, 0, :], mask_a[0, -1, :], atol=1e-6))
+        self.assertGreater(float(mask_a.std().item()), 0.08)
+        self.assertIn("x1TextureNoiseField", info)
+
+    def test_texture_cell_pattern_emits_distinct_crack_structure(self) -> None:
+        node = x1TextureCellPattern()
+        fill_output, fill_mask, info = node.run(
+            width=64,
+            height=64,
+            pattern_mode="fill",
+            cell_scale_px=12.0,
+            jitter=0.85,
+            edge_width=0.16,
+            contrast=1.1,
+            balance=0.0,
+            invert=False,
+            seed=7,
+        )
+        crack_output, crack_mask, _ = node.run(
+            width=64,
+            height=64,
+            pattern_mode="cracks",
+            cell_scale_px=12.0,
+            jitter=0.85,
+            edge_width=0.16,
+            contrast=1.1,
+            balance=0.0,
+            invert=False,
+            seed=7,
+        )
+
+        self.assertTrue(torch.allclose(fill_mask[0, :, 0], fill_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(fill_mask[0, 0, :], fill_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(float(fill_mask.std().item()), 0.05)
+        self.assertLess(float(crack_mask.mean().item()), float(fill_mask.mean().item()))
+        self.assertGreater(float(crack_mask.max().item()), 0.9)
+        self.assertTrue(torch.allclose(fill_output[0, :, :, 0], fill_mask[0], atol=1e-6))
+        self.assertTrue(torch.allclose(crack_output[0, :, :, 0], crack_mask[0], atol=1e-6))
+        self.assertIn("x1TextureCellPattern", info)
+
+    def test_texture_strata_respects_directional_profile(self) -> None:
+        node = x1TextureStrata()
+        output, mask, info = node.run(
+            width=80,
+            height=64,
+            profile="veins",
+            band_scale_px=18.0,
+            direction_deg=90.0,
+            warp_strength=0.25,
+            breakup_scale_px=20.0,
+            breakup_strength=0.35,
+            contrast=1.2,
+            balance=0.0,
+            invert=False,
+            seed=1234,
+        )
+
+        row_delta = float(torch.mean(torch.abs(mask[0, 1:, :] - mask[0, :-1, :])).item())
+        col_delta = float(torch.mean(torch.abs(mask[0, :, 1:] - mask[0, :, :-1])).item())
+
+        self.assertTrue(torch.allclose(mask[0, :, 0], mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(mask[0, 0, :], mask[0, -1, :], atol=1e-6))
+        self.assertGreater(row_delta, col_delta * 1.15)
+        self.assertGreater(float(mask.std().item()), 0.06)
+        self.assertTrue(torch.allclose(output[0, :, :, 0], mask[0], atol=1e-6))
+        self.assertIn("x1TextureStrata", info)
+
+    def test_texture_hex_tiles_are_tileable_and_mode_distinct(self) -> None:
+        node = x1TextureHexTiles()
+        fill_output, fill_mask, info = node.run(
+            width=96,
+            height=96,
+            pattern_mode="fill",
+            hex_scale_px=18.0,
+            line_width=0.16,
+            contrast=1.1,
+            balance=0.0,
+            invert=False,
+            seed=21,
+        )
+        line_output, line_mask, _ = node.run(
+            width=96,
+            height=96,
+            pattern_mode="lines",
+            hex_scale_px=18.0,
+            line_width=0.16,
+            contrast=1.1,
+            balance=0.0,
+            invert=False,
+            seed=21,
+        )
+
+        self.assertTrue(torch.allclose(fill_mask[0, :, 0], fill_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(fill_mask[0, 0, :], fill_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(float(fill_mask.std().item()), 0.05)
+        self.assertLess(float(line_mask.mean().item()), float(fill_mask.mean().item()))
+        self.assertGreater(float(line_mask.max().item()), 0.9)
+        self.assertTrue(torch.allclose(fill_output[0, :, :, 0], fill_mask[0], atol=1e-6))
+        self.assertTrue(torch.allclose(line_output[0, :, :, 0], line_mask[0], atol=1e-6))
+        self.assertIn("x1TextureHexTiles", info)
+
+    def test_texture_weave_pattern_is_tileable_and_style_changes_output(self) -> None:
+        node = x1TextureWeavePattern()
+        plain_output, plain_mask, info = node.run(
+            width=96,
+            height=96,
+            style="plain",
+            warp_scale_px=12.0,
+            weft_scale_px=12.0,
+            thread_width=0.72,
+            relief=0.85,
+            contrast=1.15,
+            balance=0.0,
+            invert=False,
+            seed=55,
+        )
+        basket_output, basket_mask, _ = node.run(
+            width=96,
+            height=96,
+            style="basket",
+            warp_scale_px=12.0,
+            weft_scale_px=12.0,
+            thread_width=0.72,
+            relief=0.85,
+            contrast=1.15,
+            balance=0.0,
+            invert=False,
+            seed=55,
+        )
+
+        row_delta = float(torch.mean(torch.abs(plain_mask[0, 1:, :] - plain_mask[0, :-1, :])).item())
+        col_delta = float(torch.mean(torch.abs(plain_mask[0, :, 1:] - plain_mask[0, :, :-1])).item())
+
+        self.assertTrue(torch.allclose(plain_mask[0, :, 0], plain_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(plain_mask[0, 0, :], plain_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(row_delta, 0.03)
+        self.assertGreater(col_delta, 0.03)
+        self.assertGreater(float(plain_mask.std().item()), 0.08)
+        self.assertGreater(float(torch.mean(torch.abs(plain_output - basket_output)).item()), 0.01)
+        self.assertTrue(torch.allclose(plain_output[0, :, :, 0], plain_mask[0], atol=1e-6))
+        self.assertIn("x1TextureWeavePattern", info)
 
 
 if __name__ == "__main__":

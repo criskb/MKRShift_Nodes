@@ -81,14 +81,28 @@ def _pick_load3d_component_asset(asset_dir: Path) -> str:
     raise FileNotFoundError("No Load3D frontend asset was found in the ComfyUI frontend package")
 
 
+def _pick_use_load3d_asset(asset_dir: Path) -> str:
+    for path in sorted(asset_dir.glob("useLoad3d-*.js")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        if "nodeToLoad3dMap" in text and "useLoad3d" in text:
+            return path.name
+
+    raise FileNotFoundError("No stable useLoad3d frontend asset was found in the ComfyUI frontend package")
+
+
 @lru_cache(maxsize=1)
 def resolve_native_3d_assets() -> Dict[str, str]:
     errors: List[str] = []
     for asset_dir in _candidate_frontend_asset_dirs():
         try:
             component_asset = _pick_load3d_component_asset(asset_dir)
+            use_load3d_asset = _pick_use_load3d_asset(asset_dir)
             return {
                 "load3d_component_asset": f"/assets/{component_asset}",
+                "use_load3d_asset": f"/assets/{use_load3d_asset}",
                 "frontend_assets_dir": str(asset_dir),
             }
         except Exception as exc:

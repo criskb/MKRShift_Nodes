@@ -367,6 +367,14 @@ def _flatten_input_images(image_input) -> List[Image.Image]:
 
 
 class MKRBatchCollagePreview:
+    SEARCH_ALIASES = [
+        "XY:PRE",
+        "xypre",
+        "xy pre",
+        "batch collage preview",
+        "contact sheet preview",
+    ]
+
     @classmethod
     def INPUT_TYPES(cls):
         return {

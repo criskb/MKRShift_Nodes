@@ -2,7 +2,7 @@
 
 Welcome to the MKRShift Nodes wiki.
 
-This wiki is organized by workflow area so you can quickly jump to the node you need.
+This wiki is organized to match the current pack taxonomy so the GitHub wiki stays aligned with the node menu inside ComfyUI.
 
 ## Getting Started
 
@@ -11,48 +11,82 @@ This wiki is organized by workflow area so you can quickly jump to the node you 
 - [MKRPresaveVideo](MKRPresaveVideo.md)
 - [MKRPresaveAudio](MKRPresaveAudio.md)
 
-## Direction + Comparison
+## Direction + Layout
 
 - [MKRCharacterCustomizer](MKRCharacterCustomizer.md)
 - [AngleShift](AngleShift.md)
+- [Aspect1X](Aspect1X.md)
+- [Aspect1XBatch](Aspect1XBatch.md)
 - [AxBCompare](AxBCompare.md)
 
-## Utility + Layout
+## Inspect + Preview
 
-- [MKRImageSplitGrid](MKRImageSplitGrid.md)
-- [MKRImageCombineGrid](MKRImageCombineGrid.md)
+- [MKRBatchCollagePreview](MKRBatchCollagePreview.md)
+- [MKRBatchDifferencePreview](MKRBatchDifferencePreview.md)
 
 ## Color / Lookdev
 
 - [xLUT](xLUT.md)
+- [xLUTOutput](xLUTOutput.md)
 
-## Mask + Material Helpers
+## Mask + Utility
 
 - [x1MaskGen](x1MaskGen.md)
+
+## Surface / Preview + Packing
+
 - [x1PreviewMaterial](x1PreviewMaterial.md)
+- [x1PBRPack](x1PBRPack.md)
 
-## Surface / Texture / Material Maps
+## Surface / Maps
 
-- [x1AOFromHeight](x1AOFromHeight.md)
-- [x1ChannelBreakout](x1ChannelBreakout.md)
-- [x1ChannelPack](x1ChannelPack.md)
-- [x1CurvatureFromNormal](x1CurvatureFromNormal.md)
 - [x1Heightmap](x1Heightmap.md)
-- [x1IDMapQuantize](x1IDMapQuantize.md)
-- [x1IDMaskExtract](x1IDMaskExtract.md)
-- [x1MetalnessMap](x1MetalnessMap.md)
-- [x1NormalBlend](x1NormalBlend.md)
-- [x1NormalMap](x1NormalMap.md)
-- [x1NormalTweak](x1NormalTweak.md)
 - [x1RoughnessMap](x1RoughnessMap.md)
-- [x1SlopeMaskFromNormal](x1SlopeMaskFromNormal.md)
 - [x1SpecularMap](x1SpecularMap.md)
+- [x1MetalnessMap](x1MetalnessMap.md)
+- [x1OpacityMap](x1OpacityMap.md)
+- [x1ClearcoatMap](x1ClearcoatMap.md)
+- [x1ClearcoatRoughnessMap](x1ClearcoatRoughnessMap.md)
+- [x1SheenMap](x1SheenMap.md)
+- [x1TransmissionMap](x1TransmissionMap.md)
+- [x1ThicknessMap](x1ThicknessMap.md)
+- [x1IridescenceMap](x1IridescenceMap.md)
+- [x1EmissiveMap](x1EmissiveMap.md)
+- [x1CavityMap](x1CavityMap.md)
+- [x1AnisotropyMap](x1AnisotropyMap.md)
+- [x1ColorRegionMask](x1ColorRegionMask.md)
+- [x1EdgeWearMask](x1EdgeWearMask.md)
+- [x1ScalarMapAdjust](x1ScalarMapAdjust.md)
+- [x1NormalMap](x1NormalMap.md)
+
+## Surface / Texture
+
 - [x1TextureDelight](x1TextureDelight.md)
-- [x1TextureEdgePad](x1TextureEdgePad.md)
+- [x1TextureAlbedoSafe](x1TextureAlbedoSafe.md)
+- [x1TextureDetileBlend](x1TextureDetileBlend.md)
+- [x1TextureMacroVariation](x1TextureMacroVariation.md)
+- [x1TextureNoiseField](x1TextureNoiseField.md)
+- [x1TextureCellPattern](x1TextureCellPattern.md)
+- [x1TextureHexTiles](x1TextureHexTiles.md)
+- [x1TextureStrata](x1TextureStrata.md)
+- [x1TextureWeavePattern](x1TextureWeavePattern.md)
 - [x1TextureOffset](x1TextureOffset.md)
 - [x1TextureSeamless](x1TextureSeamless.md)
 - [x1TextureTilePreview](x1TextureTilePreview.md)
+- [x1TextureEdgePad](x1TextureEdgePad.md)
+
+## Surface / Tech Art
+
+- [x1ChannelBreakout](x1ChannelBreakout.md)
+- [x1ChannelPack](x1ChannelPack.md)
+- [x1CurvatureFromNormal](x1CurvatureFromNormal.md)
+- [x1NormalBlend](x1NormalBlend.md)
 - [x1UVCheckerOverlay](x1UVCheckerOverlay.md)
+- [x1SlopeMaskFromNormal](x1SlopeMaskFromNormal.md)
+- [x1AOFromHeight](x1AOFromHeight.md)
+- [x1IDMapQuantize](x1IDMapQuantize.md)
+- [x1IDMaskExtract](x1IDMaskExtract.md)
+- [x1NormalTweak](x1NormalTweak.md)
 
 ## VFX / Optics / Finishing
 
@@ -92,8 +126,15 @@ This wiki is organized by workflow area so you can quickly jump to the node you 
 - [MKRStudioReviewBurnIn](MKRStudioReviewBurnIn.md)
 - [MKRStudioCompareBoard](MKRStudioCompareBoard.md)
 - [MKRStudioContactSheet](MKRStudioContactSheet.md)
+- [MKRStudioSelectionSet](MKRStudioSelectionSet.md)
 - [MKRStudioDeliveryPlan](MKRStudioDeliveryPlan.md)
+- [MKRStudioReviewNotes](MKRStudioReviewNotes.md)
+- [MKRStudioDeliverySheet](MKRStudioDeliverySheet.md)
 
-## Social Pack
+## Social Planning
 
 - [MKRshiftSocialPackBuilder](MKRshiftSocialPackBuilder.md)
+- [MKRshiftSocialPackAssets](MKRshiftSocialPackAssets.md)
+- [MKRshiftSocialPromptAtIndex](MKRshiftSocialPromptAtIndex.md)
+- [MKRshiftSocialPackCatalog](MKRshiftSocialPackCatalog.md)
+- [MKRshiftSocialCampaignLinks](MKRshiftSocialCampaignLinks.md)

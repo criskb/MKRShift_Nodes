@@ -19,6 +19,7 @@ Turns an image batch into a labeled studio contact sheet for daily selects, proo
 
 - `image`: Single rendered contact-sheet board.
 - `contact_sheet_info`: JSON metadata with board size, grid layout, and per-card labels.
+- The metadata now also includes `selection_status_counts` and `selection_frames_csv` for downstream reporting.
 
 ## Use Cases
 

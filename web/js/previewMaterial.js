@@ -1,5 +1,6 @@
 import { app } from "../../../scripts/app.js";
 import { ComponentWidgetImpl, addWidget } from "../../../scripts/domWidget.js";
+import { extractModelFileCandidate } from "./load3dModelFileUtils.js";
 
 const EXT = "mkr.preview_material";
 const NODE_NAME = "x1PreviewMaterial";
@@ -95,13 +96,15 @@ function syncHiddenWidgets(node) {
 
 function syncModelFileFromExecution(node, message) {
   if (!node || !message || typeof message !== "object") return;
-  const candidate = message?.model_file?.[0];
+  const candidate = extractModelFileCandidate(message);
   if (typeof candidate !== "string" || !candidate.trim()) return;
   const widget = getWidget(node, "model_file");
   if (widget && widget.value !== candidate) {
     widget.value = candidate;
     node.setDirtyCanvas?.(true, true);
   }
+  node.__mkrLastModelFile = candidate;
+  node.__mkrModelFileFolderType = "output";
 }
 
 async function attachNativeViewer(node) {

@@ -56,6 +56,34 @@ class NodePackSmokeTests(unittest.TestCase):
                 self.assertIsInstance(display_name, str)
                 self.assertTrue(display_name.strip())
 
+    def test_surface_expansion_nodes_are_registered(self) -> None:
+        expected = {
+            "x1ClearcoatMap",
+            "x1ClearcoatRoughnessMap",
+            "x1SheenMap",
+            "x1TransmissionMap",
+            "x1ThicknessMap",
+            "x1IridescenceMap",
+            "x1ScalarMapAdjust",
+            "x1ColorRegionMask",
+            "x1EdgeWearMask",
+            "x1AnisotropyMap",
+            "x1TextureAlbedoSafe",
+            "x1TextureMacroVariation",
+            "x1TextureDetileBlend",
+            "x1TextureNoiseField",
+            "x1TextureCellPattern",
+            "x1TextureHexTiles",
+            "x1TextureStrata",
+            "x1TextureWeavePattern",
+            "MKRStudioSelectionSet",
+            "MKRStudioReviewNotes",
+            "MKRStudioDeliverySheet",
+            "MKRshiftSocialCampaignLinks",
+            "MKRBatchDifferencePreview",
+        }
+        self.assertTrue(expected.issubset(set(pack.NODE_CLASS_MAPPINGS)))
+
 
 if __name__ == "__main__":
     unittest.main()
