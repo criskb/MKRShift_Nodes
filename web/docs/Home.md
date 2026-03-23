@@ -21,6 +21,7 @@ This wiki is organized to match the current pack taxonomy so the GitHub wiki sta
 - [Aspect1X](Aspect1X.md)
 - [Aspect1XBatch](Aspect1XBatch.md)
 - [AxBCompare](AxBCompare.md)
+- [MKRAddonWorkflowInterface](MKRAddonWorkflowInterface.md)
 
 ## Blender Bridge
 

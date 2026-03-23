@@ -13,6 +13,7 @@ This folder contains the Blender add-on for the first MKRShift bridge pass.
 - Applies a material return-plan JSON back onto a Blender material slot.
 - Applies image output-plan JSON back into Blender.
 - Can now submit live scene/camera/pose/material/image payloads directly to an endpoint plan and poll job status back.
+- Can now load a dynamic workflow-interface JSON and build grouped host controls from it.
 
 ## Install
 
@@ -45,3 +46,19 @@ blender_extension/dist/mkrshift_blender_bridge.zip
 - MKRShift bridge nodes normalize that payload inside ComfyUI.
 - Material and image output-plan JSON can be built in ComfyUI and applied back inside Blender.
 - Endpoint-plan driven live submit/poll is now available in the sidebar and shader bridge panels.
+- `MKRAddonWorkflowInterface` JSON can now drive a dynamic Blender-side form.
+
+## Dynamic Workflow Interface
+
+To use a workflow-driven host form:
+
+1. Build a workflow interface JSON from ComfyUI with `MKRAddonWorkflowInterface`.
+2. Save that JSON somewhere Blender can read.
+3. In the Blender `MKRShift` panel, set `Workflow Interface`.
+4. Click `Load`.
+
+The Blender panel will create grouped controls from the interface fields and include these values in live submits:
+
+- `workflow_interface_name`
+- `workflow_id`
+- `workflow_inputs`

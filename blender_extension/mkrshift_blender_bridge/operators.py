@@ -108,6 +108,72 @@ def _payload_for_kind(context, payload_kind: str):
     return build_scene_packet(context)
 
 
+def _load_workflow_interface_data(context):
+    path_text = getattr(context.scene, "mkrshift_workflow_interface_path", "")
+    if path_text:
+        payload = _load_json_file(path_text)
+        if isinstance(payload, dict) and payload.get("schema") == "mkrshift_addon_workflow_interface_v1":
+            context.scene.mkrshift_workflow_interface_cached_json = json.dumps(payload, ensure_ascii=False, indent=2)
+            return payload
+    cached = str(getattr(context.scene, "mkrshift_workflow_interface_cached_json", "") or "").strip()
+    if not cached:
+        return {}
+    try:
+        payload = json.loads(cached)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _workflow_fields(interface_payload):
+    fields = interface_payload.get("fields") if isinstance(interface_payload, dict) else []
+    return fields if isinstance(fields, list) else []
+
+
+def _ensure_workflow_props(context, interface_payload):
+    scene = context.scene
+    for field in _workflow_fields(interface_payload):
+        if not isinstance(field, dict):
+            continue
+        key = str(field.get("key") or "").strip()
+        if not key:
+            continue
+        prop_name = f"mkrshift_wf_{key}"
+        if prop_name in scene:
+            continue
+        default = field.get("default")
+        field_type = str(field.get("type") or "text").strip()
+        if field_type == "bool":
+            scene[prop_name] = bool(default)
+        elif field_type == "int":
+            try:
+                scene[prop_name] = int(default)
+            except Exception:
+                scene[prop_name] = 0
+        elif field_type == "float":
+            try:
+                scene[prop_name] = float(default)
+            except Exception:
+                scene[prop_name] = 0.0
+        else:
+            scene[prop_name] = "" if default is None else str(default)
+
+
+def _collect_workflow_inputs(context, interface_payload=None):
+    interface = interface_payload or _load_workflow_interface_data(context)
+    _ensure_workflow_props(context, interface)
+    values = {}
+    for field in _workflow_fields(interface):
+        if not isinstance(field, dict):
+            continue
+        key = str(field.get("key") or "").strip()
+        if not key:
+            continue
+        prop_name = f"mkrshift_wf_{key}"
+        values[key] = context.scene.get(prop_name, field.get("default"))
+    return values
+
+
 class MKRSHIFT_OT_copy_camera_payload(bpy.types.Operator):
     bl_idname = "mkrshift_bridge.copy_camera_payload"
     bl_label = "Copy Camera Payload"
@@ -378,6 +444,16 @@ class MKRSHIFT_OT_submit_live_payload(bpy.types.Operator):
         try:
             endpoint_plan = _endpoint_plan_from_scene(context)
             payload = _payload_for_kind(context, self.payload_kind)
+            workflow_interface = _load_workflow_interface_data(context)
+            workflow_values = _collect_workflow_inputs(context, workflow_interface) if workflow_interface else {}
+            if workflow_interface:
+                payload = {
+                    "host_payload": payload,
+                    "payload_kind": self.payload_kind,
+                    "workflow_interface_name": str(workflow_interface.get("interface_name") or ""),
+                    "workflow_id": str(workflow_interface.get("workflow_id") or ""),
+                    "workflow_inputs": workflow_values,
+                }
             response = _submit_to_endpoint(endpoint_plan, payload)
             _store_endpoint_response(context, response)
         except Exception as error:
@@ -405,4 +481,60 @@ class MKRSHIFT_OT_poll_endpoint_job(bpy.types.Operator):
             self.report({"ERROR"}, f"Poll failed: {error}")
             return {"CANCELLED"}
         self.report({"INFO"}, f"Polled job {job_id}")
+        return {"FINISHED"}
+
+
+class MKRSHIFT_OT_load_workflow_interface(bpy.types.Operator):
+    bl_idname = "mkrshift_bridge.load_workflow_interface"
+    bl_label = "Load Workflow Interface"
+    bl_description = "Load a workflow interface JSON and seed dynamic MKRShift controls"
+
+    def execute(self, context):
+        payload = _load_workflow_interface_data(context)
+        if not payload:
+            self.report({"ERROR"}, "No valid workflow interface JSON found")
+            return {"CANCELLED"}
+        _ensure_workflow_props(context, payload)
+        self.report({"INFO"}, f"Loaded workflow interface: {payload.get('interface_name', 'Workflow')}")
+        return {"FINISHED"}
+
+
+class MKRSHIFT_OT_copy_workflow_inputs(bpy.types.Operator):
+    bl_idname = "mkrshift_bridge.copy_workflow_inputs"
+    bl_label = "Copy Workflow Inputs"
+    bl_description = "Copy the current dynamic workflow input values to the clipboard"
+
+    def execute(self, context):
+        payload = _load_workflow_interface_data(context)
+        if not payload:
+            self.report({"ERROR"}, "No workflow interface loaded")
+            return {"CANCELLED"}
+        values = _collect_workflow_inputs(context, payload)
+        context.window_manager.clipboard = json.dumps(
+            {
+                "workflow_interface_name": payload.get("interface_name", ""),
+                "workflow_id": payload.get("workflow_id", ""),
+                "workflow_inputs": values,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        self.report({"INFO"}, "Copied workflow inputs")
+        return {"FINISHED"}
+
+
+class MKRSHIFT_OT_set_workflow_choice(bpy.types.Operator):
+    bl_idname = "mkrshift_bridge.set_workflow_choice"
+    bl_label = "Set Workflow Choice"
+    bl_description = "Set a dynamic choice field value"
+
+    field_key: bpy.props.StringProperty(default="")
+    choice_value: bpy.props.StringProperty(default="")
+
+    def execute(self, context):
+        key = str(self.field_key or "").strip()
+        if not key:
+            self.report({"ERROR"}, "Missing workflow field key")
+            return {"CANCELLED"}
+        context.scene[f"mkrshift_wf_{key}"] = self.choice_value
         return {"FINISHED"}

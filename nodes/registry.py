@@ -1,4 +1,5 @@
 from . import MKRCharacterCustomizer, AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRThemeDebugger
+from .addon_workflow_nodes import MKRAddonWorkflowInterface
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
 from .bridge_nodes import (
     MKRBlenderCameraShot,
@@ -303,6 +304,7 @@ NODE_CLASS_MAPPINGS = {
     "MKRCharacterCustomizer": MKRCharacterCustomizer,
     "MKRCharacterState": MKRCharacterState,
     "MKROutfitSet": MKROutfitSet,
+    "MKRAddonWorkflowInterface": MKRAddonWorkflowInterface,
     "MKRBlenderSceneImport": MKRBlenderSceneImport,
     "MKRBlenderCameraShot": MKRBlenderCameraShot,
     "MKRBlenderImageImport": MKRBlenderImageImport,
@@ -591,6 +593,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRCharacterCustomizer": "Character Direction Studio • MKRShift Nodes",
     "MKRCharacterState": "Character State • MKRShift Nodes",
     "MKROutfitSet": "Outfit Set • MKRShift Nodes",
+    "MKRAddonWorkflowInterface": "Addon Workflow Interface • MKRShift Nodes",
     "MKRBlenderSceneImport": "Blender Scene Import • MKRShift Nodes",
     "MKRBlenderCameraShot": "Blender Camera Shot • MKRShift Nodes",
     "MKRBlenderImageImport": "Blender Image Import • MKRShift Nodes",

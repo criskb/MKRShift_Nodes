@@ -1,6 +1,53 @@
 from __future__ import annotations
 
 import bpy
+from . import operators as _operators
+
+
+def _draw_workflow_interface(layout, context):
+    workflow_box = layout.box()
+    workflow_box.label(text="Workflow Interface")
+    workflow_box.prop(context.scene, "mkrshift_workflow_interface_path", text="Interface JSON")
+    action_row = workflow_box.row(align=True)
+    action_row.operator("mkrshift_bridge.load_workflow_interface", text="Load", icon="FILE_REFRESH")
+    action_row.operator("mkrshift_bridge.copy_workflow_inputs", text="Copy Inputs", icon="COPYDOWN")
+
+    payload = _operators._load_workflow_interface_data(context)
+    if not payload:
+        workflow_box.label(text="No workflow interface loaded", icon="INFO")
+        return
+
+    _operators._ensure_workflow_props(context, payload)
+    fields = _operators._workflow_fields(payload)
+    groups = {}
+    for field in fields:
+        group = str(field.get("group") or "Workflow").strip() or "Workflow"
+        groups.setdefault(group, []).append(field)
+
+    if payload.get("interface_name"):
+        workflow_box.label(text=str(payload.get("interface_name")))
+    for group_name, group_fields in groups.items():
+        group_box = workflow_box.box()
+        group_box.label(text=group_name)
+        for field in group_fields:
+            key = str(field.get("key") or "").strip()
+            if not key:
+                continue
+            prop_name = f'mkrshift_wf_{key}'
+            label = str(field.get("label") or key)
+            field_type = str(field.get("type") or "text")
+            help_text = str(field.get("help") or "").strip()
+            if field_type == "choice":
+                group_box.label(text=f"{label}: {context.scene.get(prop_name, field.get('default', ''))}")
+                choice_row = group_box.row(align=True)
+                for choice in field.get("choices") or []:
+                    op = choice_row.operator("mkrshift_bridge.set_workflow_choice", text=str(choice))
+                    op.field_key = key
+                    op.choice_value = str(choice)
+            else:
+                group_box.prop(context.scene, f'["{prop_name}"]', text=label)
+            if help_text:
+                group_box.label(text=help_text, icon="QUESTION")
 
 
 class MKRSHIFT_PT_bridge_panel(bpy.types.Panel):
@@ -37,6 +84,7 @@ class MKRSHIFT_PT_bridge_panel(bpy.types.Panel):
         col.operator("mkrshift_bridge.save_scene_packet", icon="FILE_TICK")
         col.operator("mkrshift_bridge.apply_image_output_plan", icon="IMAGE_DATA")
         col.operator("mkrshift_bridge.apply_material_return_plan", icon="SHADING_TEXTURE")
+        _draw_workflow_interface(layout, context)
 
 
 class MKRSHIFT_PT_shader_bridge_panel(bpy.types.Panel):
@@ -65,3 +113,4 @@ class MKRSHIFT_PT_shader_bridge_panel(bpy.types.Panel):
         col.operator("mkrshift_bridge.copy_material_payload", icon="MATERIAL")
         col.operator("mkrshift_bridge.apply_image_output_plan", icon="IMAGE_DATA")
         col.operator("mkrshift_bridge.apply_material_return_plan", icon="SHADING_TEXTURE")
+        _draw_workflow_interface(layout, context)

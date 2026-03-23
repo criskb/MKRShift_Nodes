@@ -20,6 +20,7 @@ from MKRShift_Nodes.categories import (  # noqa: E402
     ADDONS_PREMIERE_PRO,
     ADDONS_TIXL,
     ADDONS_TOUCHDESIGNER,
+    ADDONS_WORKFLOW,
     BRIDGE_BLENDER,
     COLOR_ANALYZE,
     CORE_CHARACTER,
@@ -47,6 +48,7 @@ from MKRShift_Nodes.nodes.bridge_nodes import (  # noqa: E402
     MKRBlenderReturnPlan,
     MKRBlenderSceneImport,
 )
+from MKRShift_Nodes.nodes.addon_workflow_nodes import MKRAddonWorkflowInterface  # noqa: E402
 from MKRShift_Nodes.nodes.host_3d_image_bridge_nodes import (  # noqa: E402
     MKRBlenderImageImport,
     MKRBlenderImageOutputPlan,
@@ -203,6 +205,7 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(MKRBlenderMaterialReturnPlan.CATEGORY, BRIDGE_BLENDER)
         self.assertEqual(MKRBlenderReturnPlan.CATEGORY, BRIDGE_BLENDER)
         self.assertEqual(MKRBlenderReturnOutput.CATEGORY, BRIDGE_BLENDER)
+        self.assertEqual(MKRAddonWorkflowInterface.CATEGORY, ADDONS_WORKFLOW)
 
     def test_touchdesigner_bridge_nodes_live_under_bridge_branch(self) -> None:
         self.assertEqual(MKRTouchDesignerImport.CATEGORY, ADDONS_TOUCHDESIGNER)

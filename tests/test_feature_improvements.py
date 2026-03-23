@@ -105,6 +105,7 @@ from MKRShift_Nodes.nodes.network_addon_runtime_nodes import (  # noqa: E402
     MKRWatchFolderWrite,
 )
 from MKRShift_Nodes.nodes.character_state_nodes import MKRCharacterState, MKROutfitSet  # noqa: E402
+from MKRShift_Nodes.nodes.addon_workflow_nodes import MKRAddonWorkflowInterface  # noqa: E402
 from MKRShift_Nodes.nodes.pose_studio_nodes import MKRPoseStudio  # noqa: E402
 from MKRShift_Nodes.nodes.core_nodes import AxBCompare  # noqa: E402
 from MKRShift_Nodes.nodes.inspect_compare_nodes import MKRBatchDifferencePreview  # noqa: E402
@@ -719,6 +720,32 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertEqual(json.loads(http_json)["schema"], "mkrshift_http_plan_v1")
         self.assertEqual(json.loads(watch_json)["schema"], "mkrshift_watch_folder_plan_v1")
         self.assertEqual(json.loads(ws_json)["schema"], "mkrshift_websocket_plan_v1")
+
+    def test_addon_workflow_interface_builds_dynamic_host_schema(self) -> None:
+        node = MKRAddonWorkflowInterface()
+        fields = [
+            {"key": "prompt", "label": "Prompt", "type": "multiline", "default": "hero render", "group": "Core"},
+            {"key": "strength", "label": "Strength", "type": "float", "default": 0.8, "min": 0.0, "max": 1.0, "group": "Core"},
+            {"key": "use_normals", "label": "Use Normals", "type": "bool", "default": True, "group": "Passes"},
+            {"key": "mode", "label": "Mode", "type": "choice", "default": "texture", "choices": ["texture", "preview"], "group": "Passes"},
+        ]
+        interface_json, field_keys_csv, summary_json = node.build(
+            "Blender Texture Job",
+            "blender-texture-job",
+            "blender",
+            json.dumps(fields),
+            json.dumps({"beauty": "MKRBlenderImageOutput"}),
+            "Dynamic Blender UI contract",
+        )
+
+        interface = json.loads(interface_json)
+        summary = json.loads(summary_json)
+        self.assertEqual(interface["schema"], "mkrshift_addon_workflow_interface_v1")
+        self.assertEqual(interface["host_family"], "blender")
+        self.assertEqual(len(interface["fields"]), 4)
+        self.assertIn("prompt", field_keys_csv)
+        self.assertIn("Passes", summary["groups"])
+        self.assertEqual(interface["output_targets"]["beauty"], "MKRBlenderImageOutput")
 
     def test_network_runtime_nodes_execute_transport_actions(self) -> None:
         requests = {"submit": None, "status": None, "webhook": None}

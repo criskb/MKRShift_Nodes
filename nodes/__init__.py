@@ -1,5 +1,6 @@
 from .core_nodes import AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRCharacterCustomizer, MKRThemeDebugger
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
+from .addon_workflow_nodes import MKRAddonWorkflowInterface
 from .bridge_nodes import (
     MKRBlenderCameraShot,
     MKRBlenderMaterialImport,
@@ -107,6 +108,7 @@ __all__ = [
     "MKRCharacterCustomizer",
     "MKRCharacterState",
     "MKROutfitSet",
+    "MKRAddonWorkflowInterface",
     "MKRBlenderSceneImport",
     "MKRBlenderCameraShot",
     "MKRBlenderImageImport",

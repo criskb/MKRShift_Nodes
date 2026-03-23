@@ -63,6 +63,7 @@ class NodePackSmokeTests(unittest.TestCase):
         expected = {
             "MKRCharacterState",
             "MKROutfitSet",
+            "MKRAddonWorkflowInterface",
             "MKRBlenderSceneImport",
             "MKRBlenderCameraShot",
             "MKRBlenderImageImport",

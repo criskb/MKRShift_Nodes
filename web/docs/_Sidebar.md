@@ -12,6 +12,8 @@
   - [Aspect1X](Aspect1X.md)
   - [Aspect1XBatch](Aspect1XBatch.md)
   - [AxBCompare](AxBCompare.md)
+- Addon Workflow
+  - [MKRAddonWorkflowInterface](MKRAddonWorkflowInterface.md)
 - Blender Bridge
   - [MKRBlenderSceneImport](MKRBlenderSceneImport.md)
   - [MKRBlenderCameraShot](MKRBlenderCameraShot.md)
