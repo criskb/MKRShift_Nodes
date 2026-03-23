@@ -1,6 +1,97 @@
 from .core_nodes import AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRCharacterCustomizer, MKRThemeDebugger
+from .character_state_nodes import MKRCharacterState, MKROutfitSet
+from .bridge_nodes import (
+    MKRBlenderCameraShot,
+    MKRBlenderMaterialImport,
+    MKRBlenderMaterialReturnPlan,
+    MKRBlenderReturnPlan,
+    MKRBlenderSceneImport,
+)
+from .touchdesigner_bridge_nodes import MKRTouchDesignerFramePlan, MKRTouchDesignerImport
+from .tixl_bridge_nodes import MKRTiXLFramePlan, MKRTiXLImport
+from .nuke_bridge_nodes import MKRNukeReadPlan, MKRNukeScriptImport
+from .adobe_bridge_nodes import (
+    MKRAfterEffectsCompImport,
+    MKRAfterEffectsRenderPlan,
+    MKRPhotoshopDocumentImport,
+    MKRPhotoshopExportPlan,
+    MKRPremiereExportPlan,
+    MKRPremiereSequenceImport,
+)
+from .dcc_bridge_nodes import (
+    MKRAffinityDocumentImport,
+    MKRAffinityExportPlan,
+    MKRAffinityPhotoshopPluginPlan,
+    MKRFusion360SceneImport,
+    MKRFusion360TexturePlan,
+    MKRMayaMaterialPlan,
+    MKRMayaSceneImport,
+)
+from .blender_image_bridge_nodes import (
+    MKRBlenderImageImport,
+    MKRBlenderImageOutputPlan,
+)
+from .dcc_3d_image_bridge_nodes import (
+    MKRFusion360ImageImport,
+    MKRFusion360ImageOutputPlan,
+    MKRMayaImageImport,
+    MKRMayaImageOutputPlan,
+)
+from .nuke_image_bridge_nodes import (
+    MKRNukeImageImport,
+    MKRNukeImageOutputPlan,
+)
+from .adobe_image_bridge_nodes import (
+    MKRAfterEffectsImageImport,
+    MKRAfterEffectsImageOutputPlan,
+    MKRPhotoshopImageImport,
+    MKRPhotoshopImageOutputPlan,
+    MKRPremiereImageImport,
+    MKRPremiereImageOutputPlan,
+)
+from .host_image_runtime_nodes import (
+    MKRAfterEffectsImageOutput,
+    MKRBlenderImageOutput,
+    MKRFusion360ImageOutput,
+    MKRMayaImageOutput,
+    MKRNukeImageOutput,
+    MKRPhotoshopImageOutput,
+    MKRPremiereImageOutput,
+)
+from .host_plan_runtime_nodes import (
+    MKRAffinityExportOutput,
+    MKRAfterEffectsRenderOutput,
+    MKRBlenderReturnOutput,
+    MKRFusion360TextureOutput,
+    MKRMayaMaterialOutput,
+    MKRNukeReadOutput,
+    MKRPhotoshopExportOutput,
+    MKRPremiereExportOutput,
+)
+from .network_addon_nodes import (
+    MKRAddonEndpointPlan,
+    MKRHTTPWebhookPlan,
+    MKRNDIStreamPlan,
+    MKROSCMessagePlan,
+    MKRSpoutSenderPlan,
+    MKRSyphonSenderPlan,
+    MKRTCPBridgePlan,
+    MKRWatchFolderPlan,
+    MKRWebSocketBridgePlan,
+)
+from .network_addon_runtime_nodes import (
+    MKRAddonEndpointPoll,
+    MKRAddonEndpointSubmit,
+    MKRHTTPWebhookSend,
+    MKROSCSend,
+    MKRTCPBridgeSend,
+    MKRWatchFolderWrite,
+)
+from .pose_studio_nodes import MKRPoseStudio
 from .inspect_compare_nodes import MKRBatchDifferencePreview
-from .social_campaign_nodes import MKRshiftSocialCampaignLinks
+from .publish_manifest_nodes import MKRPublishAssetManifest, MKRPublishCopyAtIndex, MKRPublishCopyDeck, MKRPublishManifestAtIndex
+from .publish_nodes import MKRPublishEndCard, MKRPublishPromoFrame
+from .vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite
 from .studio_handoff_nodes import MKRStudioDeliverySheet, MKRStudioReviewNotes
 from .studio_nodes import (
     MKRStudioCompareBoard,
@@ -14,6 +105,77 @@ from .studio_selection_nodes import MKRStudioSelectionSet
 
 __all__ = [
     "MKRCharacterCustomizer",
+    "MKRCharacterState",
+    "MKROutfitSet",
+    "MKRBlenderSceneImport",
+    "MKRBlenderCameraShot",
+    "MKRBlenderImageImport",
+    "MKRBlenderImageOutputPlan",
+    "MKRBlenderImageOutput",
+    "MKRBlenderMaterialImport",
+    "MKRBlenderMaterialReturnPlan",
+    "MKRBlenderReturnPlan",
+    "MKRBlenderReturnOutput",
+    "MKRTouchDesignerImport",
+    "MKRTouchDesignerFramePlan",
+    "MKRTiXLImport",
+    "MKRTiXLFramePlan",
+    "MKRNukeScriptImport",
+    "MKRNukeReadPlan",
+    "MKRNukeReadOutput",
+    "MKRNukeImageImport",
+    "MKRNukeImageOutputPlan",
+    "MKRNukeImageOutput",
+    "MKRPhotoshopDocumentImport",
+    "MKRPhotoshopExportPlan",
+    "MKRPhotoshopExportOutput",
+    "MKRPhotoshopImageImport",
+    "MKRPhotoshopImageOutputPlan",
+    "MKRPhotoshopImageOutput",
+    "MKRAfterEffectsCompImport",
+    "MKRAfterEffectsRenderPlan",
+    "MKRAfterEffectsRenderOutput",
+    "MKRAfterEffectsImageImport",
+    "MKRAfterEffectsImageOutputPlan",
+    "MKRAfterEffectsImageOutput",
+    "MKRPremiereSequenceImport",
+    "MKRPremiereExportPlan",
+    "MKRPremiereExportOutput",
+    "MKRPremiereImageImport",
+    "MKRPremiereImageOutputPlan",
+    "MKRPremiereImageOutput",
+    "MKRAffinityDocumentImport",
+    "MKRAffinityExportPlan",
+    "MKRAffinityExportOutput",
+    "MKRAffinityPhotoshopPluginPlan",
+    "MKRFusion360SceneImport",
+    "MKRFusion360TexturePlan",
+    "MKRFusion360TextureOutput",
+    "MKRFusion360ImageImport",
+    "MKRFusion360ImageOutputPlan",
+    "MKRFusion360ImageOutput",
+    "MKRMayaSceneImport",
+    "MKRMayaMaterialPlan",
+    "MKRMayaMaterialOutput",
+    "MKRMayaImageImport",
+    "MKRMayaImageOutputPlan",
+    "MKRMayaImageOutput",
+    "MKROSCMessagePlan",
+    "MKRNDIStreamPlan",
+    "MKRSpoutSenderPlan",
+    "MKRSyphonSenderPlan",
+    "MKRTCPBridgePlan",
+    "MKRHTTPWebhookPlan",
+    "MKRWatchFolderPlan",
+    "MKRAddonEndpointPlan",
+    "MKRWebSocketBridgePlan",
+    "MKRAddonEndpointSubmit",
+    "MKRAddonEndpointPoll",
+    "MKRHTTPWebhookSend",
+    "MKRTCPBridgeSend",
+    "MKROSCSend",
+    "MKRWatchFolderWrite",
+    "MKRPoseStudio",
     "AngleShift",
     "Aspect1X",
     "Aspect1XBatch",
@@ -28,6 +190,13 @@ __all__ = [
     "MKRStudioReviewNotes",
     "MKRStudioDeliverySheet",
     "MKRStudioSelectionSet",
-    "MKRshiftSocialCampaignLinks",
+    "MKRPublishPromoFrame",
+    "MKRPublishEndCard",
+    "MKRPublishAssetManifest",
+    "MKRPublishManifestAtIndex",
+    "MKRPublishCopyDeck",
+    "MKRPublishCopyAtIndex",
     "MKRBatchDifferencePreview",
+    "x1LightWrapComposite",
+    "x1EdgeAberration",
 ]

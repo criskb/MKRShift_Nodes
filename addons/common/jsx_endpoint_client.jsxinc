@@ -1,0 +1,12 @@
+function MKRShiftBuildEndpointHeaders(endpointPlan) {
+    var headers = {"Content-Type": "application/json"};
+    if (!endpointPlan) {
+        return headers;
+    }
+    if (endpointPlan.auth_mode === "bearer" && endpointPlan.auth_value) {
+        headers[endpointPlan.auth_key || "Authorization"] = "Bearer " + endpointPlan.auth_value;
+    } else if (endpointPlan.auth_mode === "header" && endpointPlan.auth_value) {
+        headers[endpointPlan.auth_key || "Authorization"] = endpointPlan.auth_value;
+    }
+    return headers;
+}

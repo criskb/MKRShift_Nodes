@@ -2,11 +2,11 @@ import importlib
 import sys
 
 from .nodes.registry import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, WEB_DIRECTORY
+from .v3_extension import comfy_entrypoint
 
 
 _LEGACY_MODULE_ALIASES = {
     "preview_collage": ".nodes.preview_nodes",
-    "social_pack": ".nodes.social_nodes",
     "xcine": ".nodes.xcine",
     "xcolor": ".nodes.xcolor",
     "xconcepts": ".nodes.xconcepts",
@@ -34,4 +34,4 @@ _LEGACY_MODULE_ALIASES = {
 for alias, target in _LEGACY_MODULE_ALIASES.items():
     sys.modules.setdefault(f"{__name__}.{alias}", importlib.import_module(target, __name__))
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY", "comfy_entrypoint"]

@@ -14,10 +14,114 @@ This wiki is organized to match the current pack taxonomy so the GitHub wiki sta
 ## Direction + Layout
 
 - [MKRCharacterCustomizer](MKRCharacterCustomizer.md)
+- [MKRCharacterState](MKRCharacterState.md)
+- [MKROutfitSet](MKROutfitSet.md)
+- [MKRPoseStudio](MKRPoseStudio.md)
 - [AngleShift](AngleShift.md)
 - [Aspect1X](Aspect1X.md)
 - [Aspect1XBatch](Aspect1XBatch.md)
 - [AxBCompare](AxBCompare.md)
+
+## Blender Bridge
+
+- [MKRBlenderSceneImport](MKRBlenderSceneImport.md)
+- [MKRBlenderCameraShot](MKRBlenderCameraShot.md)
+- [MKRBlenderImageImport](MKRBlenderImageImport.md)
+- [MKRBlenderImageOutputPlan](MKRBlenderImageOutputPlan.md)
+- [MKRBlenderImageOutput](MKRBlenderImageOutput.md)
+- [MKRBlenderMaterialImport](MKRBlenderMaterialImport.md)
+- [MKRBlenderMaterialReturnPlan](MKRBlenderMaterialReturnPlan.md)
+- [MKRBlenderReturnPlan](MKRBlenderReturnPlan.md)
+- [MKRBlenderReturnOutput](MKRBlenderReturnOutput.md)
+
+## TouchDesigner Bridge
+
+- [MKRTouchDesignerImport](MKRTouchDesignerImport.md)
+- [MKRTouchDesignerFramePlan](MKRTouchDesignerFramePlan.md)
+
+## TiXL Bridge
+
+- [MKRTiXLImport](MKRTiXLImport.md)
+- [MKRTiXLFramePlan](MKRTiXLFramePlan.md)
+
+## Network Addon
+
+- [MKRAddonEndpointPlan](MKRAddonEndpointPlan.md)
+- [MKROSCMessagePlan](MKROSCMessagePlan.md)
+- [MKRNDIStreamPlan](MKRNDIStreamPlan.md)
+- [MKRSpoutSenderPlan](MKRSpoutSenderPlan.md)
+- [MKRSyphonSenderPlan](MKRSyphonSenderPlan.md)
+- [MKRTCPBridgePlan](MKRTCPBridgePlan.md)
+- [MKRHTTPWebhookPlan](MKRHTTPWebhookPlan.md)
+- [MKRWatchFolderPlan](MKRWatchFolderPlan.md)
+- [MKRWebSocketBridgePlan](MKRWebSocketBridgePlan.md)
+- [MKRAddonEndpointSubmit](MKRAddonEndpointSubmit.md)
+- [MKRAddonEndpointPoll](MKRAddonEndpointPoll.md)
+- [MKRHTTPWebhookSend](MKRHTTPWebhookSend.md)
+- [MKRTCPBridgeSend](MKRTCPBridgeSend.md)
+- [MKROSCSend](MKROSCSend.md)
+- [MKRWatchFolderWrite](MKRWatchFolderWrite.md)
+
+## Nuke Addon
+
+- [MKRNukeScriptImport](MKRNukeScriptImport.md)
+- [MKRNukeReadPlan](MKRNukeReadPlan.md)
+- [MKRNukeReadOutput](MKRNukeReadOutput.md)
+- [MKRNukeImageImport](MKRNukeImageImport.md)
+- [MKRNukeImageOutputPlan](MKRNukeImageOutputPlan.md)
+- [MKRNukeImageOutput](MKRNukeImageOutput.md)
+
+## Photoshop Addon
+
+- [MKRPhotoshopDocumentImport](MKRPhotoshopDocumentImport.md)
+- [MKRPhotoshopExportPlan](MKRPhotoshopExportPlan.md)
+- [MKRPhotoshopExportOutput](MKRPhotoshopExportOutput.md)
+- [MKRPhotoshopImageImport](MKRPhotoshopImageImport.md)
+- [MKRPhotoshopImageOutputPlan](MKRPhotoshopImageOutputPlan.md)
+- [MKRPhotoshopImageOutput](MKRPhotoshopImageOutput.md)
+
+## After Effects Addon
+
+- [MKRAfterEffectsCompImport](MKRAfterEffectsCompImport.md)
+- [MKRAfterEffectsRenderPlan](MKRAfterEffectsRenderPlan.md)
+- [MKRAfterEffectsRenderOutput](MKRAfterEffectsRenderOutput.md)
+- [MKRAfterEffectsImageImport](MKRAfterEffectsImageImport.md)
+- [MKRAfterEffectsImageOutputPlan](MKRAfterEffectsImageOutputPlan.md)
+- [MKRAfterEffectsImageOutput](MKRAfterEffectsImageOutput.md)
+
+## Premiere Pro Addon
+
+- [MKRPremiereSequenceImport](MKRPremiereSequenceImport.md)
+- [MKRPremiereExportPlan](MKRPremiereExportPlan.md)
+- [MKRPremiereExportOutput](MKRPremiereExportOutput.md)
+- [MKRPremiereImageImport](MKRPremiereImageImport.md)
+- [MKRPremiereImageOutputPlan](MKRPremiereImageOutputPlan.md)
+- [MKRPremiereImageOutput](MKRPremiereImageOutput.md)
+
+## Affinity Addon
+
+- [MKRAffinityDocumentImport](MKRAffinityDocumentImport.md)
+- [MKRAffinityExportPlan](MKRAffinityExportPlan.md)
+- [MKRAffinityExportOutput](MKRAffinityExportOutput.md)
+- [MKRAffinityPhotoshopPluginPlan](MKRAffinityPhotoshopPluginPlan.md)
+
+## Fusion 360 Addon
+
+- [MKRFusion360SceneImport](MKRFusion360SceneImport.md)
+- [MKRFusion360TexturePlan](MKRFusion360TexturePlan.md)
+- [MKRFusion360TextureOutput](MKRFusion360TextureOutput.md)
+- [MKRFusion360ImageImport](MKRFusion360ImageImport.md)
+- [MKRFusion360ImageOutputPlan](MKRFusion360ImageOutputPlan.md)
+- [MKRFusion360ImageOutput](MKRFusion360ImageOutput.md)
+
+## Maya Addon
+
+- [MKRMayaSceneImport](MKRMayaSceneImport.md)
+- [MKRMayaMaterialPlan](MKRMayaMaterialPlan.md)
+- [MKRMayaMaterialOutput](MKRMayaMaterialOutput.md)
+- [MKRMayaImageImport](MKRMayaImageImport.md)
+- [MKRMayaImageOutputPlan](MKRMayaImageOutputPlan.md)
+- [MKRMayaImageOutput](MKRMayaImageOutput.md)
 
 ## Inspect + Preview
 
@@ -93,6 +197,8 @@ This wiki is organized to match the current pack taxonomy so the GitHub wiki sta
 - [x1AnamorphicStreaks](x1AnamorphicStreaks.md)
 - [x1HeatHaze](x1HeatHaze.md)
 - [x1LensDirtBloom](x1LensDirtBloom.md)
+- [x1LightWrapComposite](x1LightWrapComposite.md)
+- [x1EdgeAberration](x1EdgeAberration.md)
 - [x1Heatmap](x1Heatmap.md)
 
 ## Face Performance
@@ -131,10 +237,11 @@ This wiki is organized to match the current pack taxonomy so the GitHub wiki sta
 - [MKRStudioReviewNotes](MKRStudioReviewNotes.md)
 - [MKRStudioDeliverySheet](MKRStudioDeliverySheet.md)
 
-## Social Planning
+## Publish Output
 
-- [MKRshiftSocialPackBuilder](MKRshiftSocialPackBuilder.md)
-- [MKRshiftSocialPackAssets](MKRshiftSocialPackAssets.md)
-- [MKRshiftSocialPromptAtIndex](MKRshiftSocialPromptAtIndex.md)
-- [MKRshiftSocialPackCatalog](MKRshiftSocialPackCatalog.md)
-- [MKRshiftSocialCampaignLinks](MKRshiftSocialCampaignLinks.md)
+- [MKRPublishPromoFrame](MKRPublishPromoFrame.md)
+- [MKRPublishEndCard](MKRPublishEndCard.md)
+- [MKRPublishAssetManifest](MKRPublishAssetManifest.md)
+- [MKRPublishManifestAtIndex](MKRPublishManifestAtIndex.md)
+- [MKRPublishCopyDeck](MKRPublishCopyDeck.md)
+- [MKRPublishCopyAtIndex](MKRPublishCopyAtIndex.md)

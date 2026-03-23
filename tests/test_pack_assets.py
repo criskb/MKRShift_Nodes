@@ -21,6 +21,8 @@ class PackAssetTests(unittest.TestCase):
     def test_readme_and_pyproject_exist(self) -> None:
         self.assertTrue((REPO_ROOT / "README.md").is_file())
         self.assertTrue((REPO_ROOT / "pyproject.toml").is_file())
+        self.assertTrue((REPO_ROOT / "v3_extension.py").is_file())
+        self.assertTrue((REPO_ROOT / "subgraphs").is_dir())
 
     def test_pyproject_has_basic_identity(self) -> None:
         if tomllib is None:
@@ -36,6 +38,7 @@ class PackAssetTests(unittest.TestCase):
         self.assertIsInstance(project.get("version"), str)
         self.assertTrue(project.get("version"))
         self.assertEqual(comfy.get("DisplayName"), "MKRShift Nodes")
+        self.assertIn("v3", project.get("optional-dependencies", {}))
 
     def test_help_docs_exist_for_documented_nodes(self) -> None:
         docs_root = REPO_ROOT / "web" / "docs"
@@ -44,6 +47,77 @@ class PackAssetTests(unittest.TestCase):
             "Aspect1X.md",
             "Aspect1XBatch.md",
             "MKRCharacterCustomizer.md",
+            "MKRCharacterState.md",
+            "MKROutfitSet.md",
+            "MKRBlenderSceneImport.md",
+            "MKRBlenderCameraShot.md",
+            "MKRBlenderImageImport.md",
+            "MKRBlenderImageOutputPlan.md",
+            "MKRBlenderImageOutput.md",
+            "MKRBlenderMaterialImport.md",
+            "MKRBlenderMaterialReturnPlan.md",
+            "MKRBlenderReturnPlan.md",
+            "MKRBlenderReturnOutput.md",
+            "MKRTouchDesignerImport.md",
+            "MKRTouchDesignerFramePlan.md",
+            "MKRTiXLImport.md",
+            "MKRTiXLFramePlan.md",
+            "MKROSCMessagePlan.md",
+            "MKRAddonEndpointPlan.md",
+            "MKRNDIStreamPlan.md",
+            "MKRSpoutSenderPlan.md",
+            "MKRSyphonSenderPlan.md",
+            "MKRTCPBridgePlan.md",
+            "MKRHTTPWebhookPlan.md",
+            "MKRWatchFolderPlan.md",
+            "MKRWebSocketBridgePlan.md",
+            "MKRAddonEndpointSubmit.md",
+            "MKRAddonEndpointPoll.md",
+            "MKRHTTPWebhookSend.md",
+            "MKRTCPBridgeSend.md",
+            "MKROSCSend.md",
+            "MKRWatchFolderWrite.md",
+            "MKRNukeScriptImport.md",
+            "MKRNukeReadPlan.md",
+            "MKRNukeReadOutput.md",
+            "MKRNukeImageImport.md",
+            "MKRNukeImageOutputPlan.md",
+            "MKRNukeImageOutput.md",
+            "MKRPhotoshopDocumentImport.md",
+            "MKRPhotoshopExportPlan.md",
+            "MKRPhotoshopExportOutput.md",
+            "MKRPhotoshopImageImport.md",
+            "MKRPhotoshopImageOutputPlan.md",
+            "MKRPhotoshopImageOutput.md",
+            "MKRAfterEffectsCompImport.md",
+            "MKRAfterEffectsRenderPlan.md",
+            "MKRAfterEffectsRenderOutput.md",
+            "MKRAfterEffectsImageImport.md",
+            "MKRAfterEffectsImageOutputPlan.md",
+            "MKRAfterEffectsImageOutput.md",
+            "MKRPremiereSequenceImport.md",
+            "MKRPremiereExportPlan.md",
+            "MKRPremiereExportOutput.md",
+            "MKRPremiereImageImport.md",
+            "MKRPremiereImageOutputPlan.md",
+            "MKRPremiereImageOutput.md",
+            "MKRAffinityDocumentImport.md",
+            "MKRAffinityExportPlan.md",
+            "MKRAffinityExportOutput.md",
+            "MKRAffinityPhotoshopPluginPlan.md",
+            "MKRFusion360SceneImport.md",
+            "MKRFusion360TexturePlan.md",
+            "MKRFusion360TextureOutput.md",
+            "MKRFusion360ImageImport.md",
+            "MKRFusion360ImageOutputPlan.md",
+            "MKRFusion360ImageOutput.md",
+            "MKRMayaSceneImport.md",
+            "MKRMayaMaterialPlan.md",
+            "MKRMayaMaterialOutput.md",
+            "MKRMayaImageImport.md",
+            "MKRMayaImageOutputPlan.md",
+            "MKRMayaImageOutput.md",
+            "MKRPoseStudio.md",
             "MKRBatchCollagePreview.md",
             "MKRPreSave.md",
             "MKRPresaveVideo.md",
@@ -71,11 +145,12 @@ class PackAssetTests(unittest.TestCase):
             "MKRStudioSelectionSet.md",
             "MKRStudioReviewNotes.md",
             "MKRStudioDeliverySheet.md",
-            "MKRshiftSocialPackBuilder.md",
-            "MKRshiftSocialPackAssets.md",
-            "MKRshiftSocialPromptAtIndex.md",
-            "MKRshiftSocialPackCatalog.md",
-            "MKRshiftSocialCampaignLinks.md",
+            "MKRPublishPromoFrame.md",
+            "MKRPublishEndCard.md",
+            "MKRPublishAssetManifest.md",
+            "MKRPublishManifestAtIndex.md",
+            "MKRPublishCopyDeck.md",
+            "MKRPublishCopyAtIndex.md",
             "MKRBatchDifferencePreview.md",
             "MKRFacePerformanceEyeMotion.md",
             "MKRFacePerformanceLipRefine.md",
@@ -134,6 +209,8 @@ class PackAssetTests(unittest.TestCase):
             "x1HeatHaze.md",
             "x1LensDirtBloom.md",
             "x1ShockwaveDistort.md",
+            "x1LightWrapComposite.md",
+            "x1EdgeAberration.md",
             "AxBCompare.md",
         }
         existing = {path.name for path in docs_root.glob("*.md")}
@@ -145,6 +222,77 @@ class PackAssetTests(unittest.TestCase):
             "Aspect1X",
             "Aspect1XBatch",
             "MKRCharacterCustomizer",
+            "MKRCharacterState",
+            "MKROutfitSet",
+            "MKRBlenderSceneImport",
+            "MKRBlenderCameraShot",
+            "MKRBlenderImageImport",
+            "MKRBlenderImageOutputPlan",
+            "MKRBlenderImageOutput",
+            "MKRBlenderMaterialImport",
+            "MKRBlenderMaterialReturnPlan",
+            "MKRBlenderReturnPlan",
+            "MKRBlenderReturnOutput",
+            "MKRTouchDesignerImport",
+            "MKRTouchDesignerFramePlan",
+            "MKRTiXLImport",
+            "MKRTiXLFramePlan",
+            "MKROSCMessagePlan",
+            "MKRAddonEndpointPlan",
+            "MKRNDIStreamPlan",
+            "MKRSpoutSenderPlan",
+            "MKRSyphonSenderPlan",
+            "MKRTCPBridgePlan",
+            "MKRHTTPWebhookPlan",
+            "MKRWatchFolderPlan",
+            "MKRWebSocketBridgePlan",
+            "MKRAddonEndpointSubmit",
+            "MKRAddonEndpointPoll",
+            "MKRHTTPWebhookSend",
+            "MKRTCPBridgeSend",
+            "MKROSCSend",
+            "MKRWatchFolderWrite",
+            "MKRNukeScriptImport",
+            "MKRNukeReadPlan",
+            "MKRNukeReadOutput",
+            "MKRNukeImageImport",
+            "MKRNukeImageOutputPlan",
+            "MKRNukeImageOutput",
+            "MKRPhotoshopDocumentImport",
+            "MKRPhotoshopExportPlan",
+            "MKRPhotoshopExportOutput",
+            "MKRPhotoshopImageImport",
+            "MKRPhotoshopImageOutputPlan",
+            "MKRPhotoshopImageOutput",
+            "MKRAfterEffectsCompImport",
+            "MKRAfterEffectsRenderPlan",
+            "MKRAfterEffectsRenderOutput",
+            "MKRAfterEffectsImageImport",
+            "MKRAfterEffectsImageOutputPlan",
+            "MKRAfterEffectsImageOutput",
+            "MKRPremiereSequenceImport",
+            "MKRPremiereExportPlan",
+            "MKRPremiereExportOutput",
+            "MKRPremiereImageImport",
+            "MKRPremiereImageOutputPlan",
+            "MKRPremiereImageOutput",
+            "MKRAffinityDocumentImport",
+            "MKRAffinityExportPlan",
+            "MKRAffinityExportOutput",
+            "MKRAffinityPhotoshopPluginPlan",
+            "MKRFusion360SceneImport",
+            "MKRFusion360TexturePlan",
+            "MKRFusion360TextureOutput",
+            "MKRFusion360ImageImport",
+            "MKRFusion360ImageOutputPlan",
+            "MKRFusion360ImageOutput",
+            "MKRMayaSceneImport",
+            "MKRMayaMaterialPlan",
+            "MKRMayaMaterialOutput",
+            "MKRMayaImageImport",
+            "MKRMayaImageOutputPlan",
+            "MKRMayaImageOutput",
+            "MKRPoseStudio",
             "MKRBatchCollagePreview",
             "MKRPreSave",
             "MKRPresaveVideo",
@@ -172,11 +320,12 @@ class PackAssetTests(unittest.TestCase):
             "MKRStudioSelectionSet",
             "MKRStudioReviewNotes",
             "MKRStudioDeliverySheet",
-            "MKRshiftSocialPackBuilder",
-            "MKRshiftSocialPackAssets",
-            "MKRshiftSocialPromptAtIndex",
-            "MKRshiftSocialPackCatalog",
-            "MKRshiftSocialCampaignLinks",
+            "MKRPublishPromoFrame",
+            "MKRPublishEndCard",
+            "MKRPublishAssetManifest",
+            "MKRPublishManifestAtIndex",
+            "MKRPublishCopyDeck",
+            "MKRPublishCopyAtIndex",
             "MKRBatchDifferencePreview",
             "MKRFacePerformanceEyeMotion",
             "MKRFacePerformanceLipRefine",
@@ -235,9 +384,73 @@ class PackAssetTests(unittest.TestCase):
             "x1HeatHaze",
             "x1LensDirtBloom",
             "x1ShockwaveDistort",
+            "x1LightWrapComposite",
+            "x1EdgeAberration",
             "AxBCompare",
         }
         self.assertTrue(documented_nodes.issubset(set(pack.NODE_CLASS_MAPPINGS)))
+
+    def test_blender_bridge_extension_files_exist(self) -> None:
+        bridge_root = REPO_ROOT / "blender_extension" / "mkrshift_blender_bridge"
+        expected = {"__init__.py", "operators.py", "payloads.py", "ui.py"}
+        self.assertTrue((REPO_ROOT / "blender_extension" / "README.md").is_file())
+        self.assertTrue(bridge_root.is_dir())
+        self.assertTrue(expected.issubset({path.name for path in bridge_root.glob("*.py")}))
+
+    def test_host_addon_scaffolds_exist(self) -> None:
+        addons_root = REPO_ROOT / "addons"
+        self.assertTrue((addons_root / "README.md").is_file())
+        self.assertTrue((addons_root / "common" / "README.md").is_file())
+        self.assertTrue((addons_root / "common" / "python_endpoint_client.py").is_file())
+        self.assertTrue((addons_root / "common" / "js_endpoint_client.js").is_file())
+        self.assertTrue((addons_root / "blender" / "README.md").is_file())
+        self.assertTrue((addons_root / "touchdesigner" / "README.md").is_file())
+        self.assertTrue((addons_root / "touchdesigner" / "MKRShiftBridgeExt.py").is_file())
+        self.assertTrue((addons_root / "tixl" / "README.md").is_file())
+        self.assertTrue((addons_root / "tixl" / "MKRShiftComfyBridgeOperator.cs").is_file())
+        self.assertTrue((addons_root / "nuke" / "README.md").is_file())
+        self.assertTrue((addons_root / "nuke" / "menu.py").is_file())
+        self.assertTrue((addons_root / "photoshop" / "README.md").is_file())
+        self.assertTrue((addons_root / "photoshop" / "manifest.json").is_file())
+        self.assertTrue((addons_root / "after_effects" / "README.md").is_file())
+        self.assertTrue((addons_root / "after_effects" / "MKRShift_AE_Bridge.jsx").is_file())
+        self.assertTrue((addons_root / "premiere_pro" / "README.md").is_file())
+        self.assertTrue((addons_root / "premiere_pro" / "manifest.json").is_file())
+        self.assertTrue((addons_root / "affinity" / "README.md").is_file())
+        self.assertTrue((addons_root / "fusion360" / "README.md").is_file())
+        self.assertTrue((addons_root / "fusion360" / "MKRShiftFusionBridge.py").is_file())
+        self.assertTrue((addons_root / "maya" / "README.md").is_file())
+        self.assertTrue((addons_root / "maya" / "MKRShiftMayaBridge.py").is_file())
+
+    def test_legacy_plugin_scaffolds_exist(self) -> None:
+        plugins_root = REPO_ROOT / "plugins"
+        self.assertTrue((plugins_root / "README.md").is_file())
+        self.assertTrue((plugins_root / "install_plugins.py").is_file())
+        self.assertTrue((plugins_root / "common" / "README.md").is_file())
+        self.assertTrue((plugins_root / "common" / "python_endpoint_client.py").is_file())
+        self.assertTrue((plugins_root / "blender" / "README.md").is_file())
+        self.assertTrue((plugins_root / "touchdesigner" / "README.md").is_file())
+        self.assertTrue((plugins_root / "touchdesigner" / "MKRShiftBridgeExt.py").is_file())
+        self.assertTrue((plugins_root / "tixl" / "README.md").is_file())
+        self.assertTrue((plugins_root / "tixl" / "MKRShiftComfyBridgeOperator.cs").is_file())
+        self.assertTrue((plugins_root / "nuke" / "README.md").is_file())
+        self.assertTrue((plugins_root / "nuke" / "menu.py").is_file())
+        self.assertTrue((plugins_root / "photoshop" / "README.md").is_file())
+        self.assertTrue((plugins_root / "photoshop" / "manifest.json").is_file())
+        self.assertTrue((plugins_root / "after_effects" / "README.md").is_file())
+        self.assertTrue((plugins_root / "after_effects" / "MKRShift_AE_Bridge.jsx").is_file())
+        self.assertTrue((plugins_root / "premiere_pro" / "README.md").is_file())
+        self.assertTrue((plugins_root / "premiere_pro" / "manifest.json").is_file())
+        self.assertTrue((plugins_root / "affinity" / "README.md").is_file())
+        self.assertTrue((plugins_root / "fusion360" / "README.md").is_file())
+        self.assertTrue((plugins_root / "fusion360" / "MKRShiftFusionBridge.py").is_file())
+        self.assertTrue((plugins_root / "maya" / "README.md").is_file())
+        self.assertTrue((plugins_root / "maya" / "MKRShiftMayaBridge.py").is_file())
+
+    def test_subgraph_blueprints_exist(self) -> None:
+        subgraphs_root = REPO_ROOT / "subgraphs"
+        self.assertTrue((subgraphs_root / "README.md").is_file())
+        self.assertTrue(subgraphs_root.is_dir())
 
 
 if __name__ == "__main__":

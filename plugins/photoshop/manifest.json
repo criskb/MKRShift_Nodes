@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 5,
+  "id": "com.mkrshift.photoshop.bridge",
+  "name": "MKRShift Photoshop Bridge",
+  "version": "0.1.0",
+  "host": {
+    "app": "PS",
+    "minVersion": "24.0.0"
+  },
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "mkrshiftPhotoshopBridge",
+      "label": {
+        "default": "MKRShift Bridge"
+      }
+    }
+  ]
+}

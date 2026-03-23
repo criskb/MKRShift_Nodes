@@ -5,6 +5,26 @@ CORE_CHARACTER = f"{ROOT}/Core/Character"
 CORE_CAMERA = f"{ROOT}/Core/Camera"
 CORE_LAYOUT = f"{ROOT}/Core/Layout"
 
+# Addon / host integration workflow nodes.
+ADDONS_ROOT = f"{ROOT}/Addons"
+ADDONS_BLENDER = f"{ADDONS_ROOT}/Blender"
+ADDONS_TOUCHDESIGNER = f"{ADDONS_ROOT}/TouchDesigner"
+ADDONS_TIXL = f"{ADDONS_ROOT}/TiXL"
+ADDONS_NETWORK = f"{ADDONS_ROOT}/Network"
+ADDONS_NUKE = f"{ADDONS_ROOT}/Nuke"
+ADDONS_PHOTOSHOP = f"{ADDONS_ROOT}/Photoshop"
+ADDONS_AFTER_EFFECTS = f"{ADDONS_ROOT}/After Effects"
+ADDONS_PREMIERE_PRO = f"{ADDONS_ROOT}/Premiere Pro"
+ADDONS_AFFINITY = f"{ADDONS_ROOT}/Affinity"
+ADDONS_FUSION360 = f"{ADDONS_ROOT}/Fusion 360"
+ADDONS_MAYA = f"{ADDONS_ROOT}/Maya"
+
+# Backward compatibility aliases for the older bridge taxonomy.
+BRIDGE_ROOT = ADDONS_ROOT
+BRIDGE_BLENDER = ADDONS_BLENDER
+BRIDGE_TOUCHDESIGNER = ADDONS_TOUCHDESIGNER
+BRIDGE_TIXL = ADDONS_TIXL
+
 # Inspection and tooling nodes.
 INSPECT_COMPARE = f"{ROOT}/Inspect/Compare"
 INSPECT_DEBUG = f"{ROOT}/Inspect/Debug"
@@ -59,9 +79,14 @@ MEDIA_AUDIO_FX = f"{MEDIA_ROOT}/Audio/FX"
 # Backward compatibility alias.
 UTILITY_MEDIA = MEDIA_ROOT
 
-# Social workflow nodes.
-SOCIAL_BUILDER = f"{ROOT}/Social/Builder"
-SOCIAL_UTILS = f"{ROOT}/Social/Utils"
+# Publish / output workflow nodes.
+PUBLISH_ROOT = f"{ROOT}/Publish"
+PUBLISH_BUILD = f"{PUBLISH_ROOT}/Build"
+PUBLISH_UTILS = f"{PUBLISH_ROOT}/Utils"
+
+# Backward compatibility aliases.
+SOCIAL_BUILDER = PUBLISH_BUILD
+SOCIAL_UTILS = PUBLISH_UTILS
 
 # Performance capture and retarget nodes.
 PERFORMANCE_ROOT = f"{ROOT}/Performance"

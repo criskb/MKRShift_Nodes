@@ -1,0 +1,11 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "addin",
+  "id": "com.mkrshift.fusion360.bridge",
+  "author": "MKRShift",
+  "description": {
+    "": "MKRShift Fusion 360 Bridge"
+  },
+  "version": "0.1.0",
+  "runOnStartup": false
+}

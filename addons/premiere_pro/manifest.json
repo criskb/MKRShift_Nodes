@@ -1,0 +1,10 @@
+{
+  "id": "com.mkrshift.premiere.bridge",
+  "name": "MKRShift Premiere Bridge",
+  "version": "0.1.0",
+  "main": "index.html",
+  "host": {
+    "app": "PR",
+    "minVersion": "25.0.0"
+  }
+}

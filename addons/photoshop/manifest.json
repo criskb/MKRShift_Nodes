@@ -1,0 +1,10 @@
+{
+  "id": "com.mkrshift.photoshop.bridge",
+  "name": "MKRShift Photoshop Bridge",
+  "version": "0.1.0",
+  "main": "index.html",
+  "host": {
+    "app": "PS",
+    "minVersion": "25.0.0"
+  }
+}

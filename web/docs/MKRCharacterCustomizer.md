@@ -2,6 +2,7 @@
 
 ## Included nodes
 - `MKRCharacterCustomizer` (`MKR • Character Direction Studio`)
+- `MKRPoseStudio` (`MKR • Pose Studio`)
 - `AngleShift` (`MKR • AngleShift Director`)
 
 ## Character Direction Studio

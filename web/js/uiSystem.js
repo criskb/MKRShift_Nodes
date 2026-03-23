@@ -336,7 +336,8 @@ export function createError(text) {
 
 export function createSliderControl({ label, min, max, step, value, decimals = 2, onChange }) {
   const row = el("div", "mkr-control");
-  row.appendChild(el("label", "mkr-label", label));
+  const labelNode = el("label", "mkr-label", label);
+  row.appendChild(labelNode);
 
   const range = document.createElement("input");
   range.type = "range";
@@ -375,8 +376,12 @@ export function createSliderControl({ label, min, max, step, value, decimals = 2
 
   return {
     element: row,
+    labelNode,
     setValue(next) {
       commit(next);
+    },
+    setLabel(next) {
+      labelNode.textContent = next;
     },
   };
 }

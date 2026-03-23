@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 5,
+  "id": "com.mkrshift.premiere.bridge",
+  "name": "MKRShift Premiere Bridge",
+  "version": "0.1.0",
+  "host": {
+    "app": "PPRO",
+    "minVersion": "24.0.0"
+  },
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "mkrshiftPremiereBridge",
+      "label": {
+        "default": "MKRShift Bridge"
+      }
+    }
+  ]
+}

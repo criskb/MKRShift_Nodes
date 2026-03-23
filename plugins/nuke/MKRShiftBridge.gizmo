@@ -1,0 +1,32 @@
+push $cut_paste_input
+Group {
+ name MKRShiftBridge
+ label "MKRShift Bridge"
+ tile_color 0x2a3443ff
+ note_font_size 24
+ help "Install-facing MKRShift Nuke bridge gizmo. Populate the JSON paths from MKRShift plan outputs or endpoint workflows."
+ addUserKnob {20 mkrshift_tab l MKRShift}
+ addUserKnob {1 packet_path l "Packet JSON"}
+ addUserKnob {1 read_plan_path l "Read Plan JSON"}
+ addUserKnob {1 image_output_plan_path l "Image Output Plan JSON"}
+ addUserKnob {1 transport_plan_path l "Transport Plan JSON"}
+ addUserKnob {1 endpoint_plan_path l "Endpoint Plan JSON"}
+ addUserKnob {1 status_text l Status +DISABLED}
+ addUserKnob {26 ""}
+ Input {
+  name Input1
+ }
+ Dot {
+  name BridgeInput
+ }
+ StickyNote {
+  name Instructions
+  label "Bridge anchor for MKRShift-driven reads, plates, and image return plans.\nUse the Python bridge panel helpers to submit/poll endpoint jobs when needed."
+  note_font_size 18
+  tile_color 0x1e2631ff
+ }
+ Output {
+  name Output1
+ }
+end_group
+
