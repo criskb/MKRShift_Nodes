@@ -24,9 +24,11 @@ from MKRShift_Nodes.categories import (  # noqa: E402
     BRIDGE_BLENDER,
     COLOR_ANALYZE,
     CORE_CHARACTER,
+    CORE_PROMPT,
     INSPECT_COMPARE,
     FX_DISTORT,
     FX_OPTICS,
+    FX_PHOTO,
     INSPECT_PREVIEW,
     PUBLISH_BUILD,
     PUBLISH_UTILS,
@@ -49,6 +51,7 @@ from MKRShift_Nodes.nodes.bridge_nodes import (  # noqa: E402
     MKRBlenderSceneImport,
 )
 from MKRShift_Nodes.nodes.addon_workflow_nodes import MKRAddonWorkflowInterface  # noqa: E402
+from MKRShift_Nodes.nodes.addon_debug_nodes import MKRAddonStats, MKRJSONDiff  # noqa: E402
 from MKRShift_Nodes.nodes.host_3d_image_bridge_nodes import (  # noqa: E402
     MKRBlenderImageImport,
     MKRBlenderImageOutputPlan,
@@ -126,6 +129,7 @@ from MKRShift_Nodes.nodes.network_addon_runtime_nodes import (  # noqa: E402
     MKRWatchFolderWrite,
 )
 from MKRShift_Nodes.nodes.character_state_nodes import MKRCharacterState, MKROutfitSet  # noqa: E402
+from MKRShift_Nodes.nodes.prompt_nodes import MKRCLIPTextEncodePrompt  # noqa: E402
 from MKRShift_Nodes.nodes.pose_studio_nodes import MKRPoseStudio  # noqa: E402
 from MKRShift_Nodes.nodes.heatmap_nodes import x1Heatmap, x1Heightmap  # noqa: E402
 from MKRShift_Nodes.nodes.publish_manifest_nodes import (  # noqa: E402
@@ -180,6 +184,7 @@ from MKRShift_Nodes.nodes.texture_tool_nodes import (  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_finishing_nodes import x1AnamorphicStreaks, x1HeatHaze  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_optics_nodes import x1LensDirtBloom, x1ShockwaveDistort  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite  # noqa: E402
+from MKRShift_Nodes.nodes.layer_stack_nodes import MKRLayerStackComposite  # noqa: E402
 from MKRShift_Nodes.nodes.xcine import x1LensBreathing  # noqa: E402
 from MKRShift_Nodes.nodes.xconcepts import x1LensDistort, x1WarpDisplace  # noqa: E402
 
@@ -195,6 +200,9 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(MKROutfitSet.CATEGORY, CORE_CHARACTER)
         self.assertEqual(MKRPoseStudio.CATEGORY, CORE_CHARACTER)
 
+    def test_prompt_node_lives_under_prompt_branch(self) -> None:
+        self.assertEqual(MKRCLIPTextEncodePrompt.CATEGORY, CORE_PROMPT)
+
     def test_blender_bridge_nodes_live_under_bridge_branch(self) -> None:
         self.assertEqual(MKRBlenderSceneImport.CATEGORY, BRIDGE_BLENDER)
         self.assertEqual(MKRBlenderCameraShot.CATEGORY, BRIDGE_BLENDER)
@@ -206,6 +214,8 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(MKRBlenderReturnPlan.CATEGORY, BRIDGE_BLENDER)
         self.assertEqual(MKRBlenderReturnOutput.CATEGORY, BRIDGE_BLENDER)
         self.assertEqual(MKRAddonWorkflowInterface.CATEGORY, ADDONS_WORKFLOW)
+        self.assertEqual(MKRJSONDiff.CATEGORY, ADDONS_NETWORK)
+        self.assertEqual(MKRAddonStats.CATEGORY, ADDONS_NETWORK)
 
     def test_touchdesigner_bridge_nodes_live_under_bridge_branch(self) -> None:
         self.assertEqual(MKRTouchDesignerImport.CATEGORY, ADDONS_TOUCHDESIGNER)
@@ -334,6 +344,7 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(x1LensDirtBloom.CATEGORY, FX_OPTICS)
         self.assertEqual(x1LensDistort.CATEGORY, FX_OPTICS)
         self.assertEqual(x1LensBreathing.CATEGORY, FX_OPTICS)
+        self.assertEqual(MKRLayerStackComposite.CATEGORY, FX_PHOTO)
         self.assertEqual(x1HeatHaze.CATEGORY, FX_DISTORT)
         self.assertEqual(x1ShockwaveDistort.CATEGORY, FX_DISTORT)
         self.assertEqual(x1WarpDisplace.CATEGORY, FX_DISTORT)

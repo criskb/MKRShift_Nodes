@@ -4,6 +4,7 @@ ROOT = "MKRShift Nodes"
 CORE_CHARACTER = f"{ROOT}/Core/Character"
 CORE_CAMERA = f"{ROOT}/Core/Camera"
 CORE_LAYOUT = f"{ROOT}/Core/Layout"
+CORE_PROMPT = f"{ROOT}/Core/Prompt"
 
 # Addon / host integration workflow nodes.
 ADDONS_ROOT = f"{ROOT}/Addons"

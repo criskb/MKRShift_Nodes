@@ -1,5 +1,6 @@
 import importlib
 import json
+import os
 import socketserver
 import sys
 import tempfile
@@ -105,7 +106,15 @@ from MKRShift_Nodes.nodes.network_addon_runtime_nodes import (  # noqa: E402
     MKRWatchFolderWrite,
 )
 from MKRShift_Nodes.nodes.character_state_nodes import MKRCharacterState, MKROutfitSet  # noqa: E402
+from MKRShift_Nodes.nodes.prompt_nodes import MKRCLIPTextEncodePrompt  # noqa: E402
 from MKRShift_Nodes.nodes.addon_workflow_nodes import MKRAddonWorkflowInterface  # noqa: E402
+from MKRShift_Nodes.nodes.addon_debug_nodes import MKRAddonStats, MKRJSONDiff  # noqa: E402
+from MKRShift_Nodes.lib.prompt_bookmarks import (  # noqa: E402
+    PROMPT_BOOKMARKS_ENV,
+    delete_prompt_bookmark,
+    list_prompt_bookmarks,
+    save_prompt_bookmark,
+)
 from MKRShift_Nodes.nodes.pose_studio_nodes import MKRPoseStudio  # noqa: E402
 from MKRShift_Nodes.nodes.core_nodes import AxBCompare  # noqa: E402
 from MKRShift_Nodes.nodes.inspect_compare_nodes import MKRBatchDifferencePreview  # noqa: E402
@@ -118,6 +127,7 @@ from MKRShift_Nodes.nodes.publish_manifest_nodes import (  # noqa: E402
 )
 from MKRShift_Nodes.nodes.publish_nodes import MKRPublishEndCard, MKRPublishPromoFrame  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite  # noqa: E402
+from MKRShift_Nodes.nodes.layer_stack_nodes import MKRLayerStackComposite  # noqa: E402
 from MKRShift_Nodes.nodes.gcode_analysis_nodes import MKRGCodePlanAnalyzer  # noqa: E402
 from MKRShift_Nodes.nodes.gcode_input_nodes import MKRGCodeLoadMeshModel, MKRGCodeOrcaProfileLoader  # noqa: E402
 from MKRShift_Nodes.nodes.gcode_modify_nodes import (  # noqa: E402
@@ -203,6 +213,93 @@ class FeatureImprovementTests(unittest.TestCase):
             archive.writestr("filament.orca_filament", json.dumps(filament))
             archive.writestr("process.json", json.dumps(process))
         return path
+
+    def test_prompt_bookmarks_save_list_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ[PROMPT_BOOKMARKS_ENV] = str(Path(tmpdir) / "prompt_bookmarks.json")
+            try:
+                bookmark, updated = save_prompt_bookmark(
+                    {
+                        "folder": "Characters/Hero",
+                        "name": "Hero Base",
+                        "prompt": "hero portrait, clean rim light, high detail",
+                        "notes": "Good default portrait prompt.",
+                        "tags": "hero, portrait, rim-light",
+                        "favorite": True,
+                    }
+                )
+                self.assertFalse(updated)
+                listed = list_prompt_bookmarks()
+                self.assertEqual(listed["count"], 1)
+                self.assertIn("Characters/Hero", listed["folders"])
+                self.assertEqual(listed["bookmarks"][0]["name"], "Hero Base")
+                self.assertTrue(delete_prompt_bookmark(bookmark["id"]))
+                self.assertEqual(list_prompt_bookmarks()["count"], 0)
+            finally:
+                os.environ.pop(PROMPT_BOOKMARKS_ENV, None)
+
+    def test_clip_prompt_node_encodes_and_summarizes(self) -> None:
+        class MockClip:
+            def tokenize(self, text):
+                tokens = [part for part in str(text).split(" ") if part]
+                return {"l": list(tokens), "g": list(tokens)}
+
+            def encode_from_tokens(self, tokens, return_pooled=False):
+                cond = torch.ones((1, 4, 8), dtype=torch.float32)
+                pooled = torch.full((1, 8), float(len(tokens.get("l", []))), dtype=torch.float32)
+                if return_pooled:
+                    return cond, pooled
+                return cond
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.environ[PROMPT_BOOKMARKS_ENV] = str(Path(tmpdir) / "prompt_bookmarks.json")
+            try:
+                node = MKRCLIPTextEncodePrompt()
+                conditioning, prompt_text, summary_json = node.encode(
+                    MockClip(),
+                    "cinematic hero portrait\nsoft key light",
+                )
+                self.assertEqual(prompt_text, "cinematic hero portrait\nsoft key light")
+                self.assertEqual(len(conditioning), 1)
+                self.assertEqual(len(conditioning[0]), 2)
+                summary = json.loads(summary_json)
+                self.assertEqual(summary["line_count"], 2)
+                self.assertGreater(summary["approx_token_count"], 0)
+                self.assertTrue(summary["has_conditioning"])
+            finally:
+                os.environ.pop(PROMPT_BOOKMARKS_ENV, None)
+
+    def test_layer_stack_composite_applies_masked_layers(self) -> None:
+        node = MKRLayerStackComposite()
+        base = torch.zeros((1, 16, 16, 3), dtype=torch.float32)
+        red = torch.zeros((1, 16, 16, 3), dtype=torch.float32)
+        red[..., 0] = 1.0
+        blue = torch.zeros((1, 16, 16, 3), dtype=torch.float32)
+        blue[..., 2] = 1.0
+        left_mask = torch.zeros((1, 16, 16), dtype=torch.float32)
+        left_mask[:, :, :8] = 1.0
+        right_mask = torch.zeros((1, 16, 16), dtype=torch.float32)
+        right_mask[:, :, 8:] = 1.0
+
+        image, combined_mask, info = node.composite(
+            base_image=base,
+            layer_1=red,
+            layer_1_mask=left_mask,
+            layer_1_opacity=1.0,
+            layer_1_blend_mode="normal",
+            resize_mode="stretch",
+            layer_2=blue,
+            layer_2_mask=right_mask,
+            layer_2_opacity=1.0,
+            layer_2_blend_mode="normal",
+            mask_feather=0.0,
+        )
+
+        self.assertEqual(tuple(image.shape), (1, 16, 16, 3))
+        self.assertEqual(tuple(combined_mask.shape), (1, 16, 16))
+        self.assertGreater(float(image[0, 8, 3, 0]), 0.9)
+        self.assertGreater(float(image[0, 8, 12, 2]), 0.9)
+        self.assertIn("layers=2", info)
 
     def test_publish_asset_manifest_builds_rows_from_batch(self) -> None:
         manifest_node = MKRPublishAssetManifest()
@@ -746,6 +843,35 @@ class FeatureImprovementTests(unittest.TestCase):
         self.assertIn("prompt", field_keys_csv)
         self.assertIn("Passes", summary["groups"])
         self.assertEqual(interface["output_targets"]["beauty"], "MKRBlenderImageOutput")
+
+    def test_addon_debug_nodes_report_diff_and_stats(self) -> None:
+        diff_node = MKRJSONDiff()
+        stats_node = MKRAddonStats()
+        watch_dir = Path(tempfile.mkdtemp(prefix="mkrshift-addon-stats-"))
+        (watch_dir / "payload_a.json").write_text("{}", encoding="utf-8")
+        (watch_dir / "payload_b.json").write_text("{}", encoding="utf-8")
+
+        diff_json, diff_lines, diff_summary = diff_node.run(
+            json.dumps({"schema": "v1", "payload": {"a": 1, "b": 2}}),
+            json.dumps({"schema": "v1", "payload": {"a": 2, "c": 3}}),
+        )
+        stats_json, stats_lines, stats_summary = stats_node.run(
+            json.dumps({"schema": "mkrshift_touchdesigner_bridge_v1", "layers": [1, 2]}),
+            str(watch_dir),
+            json.dumps({"base_url": "http://127.0.0.1:8188", "protocol": "http_endpoint"}),
+        )
+
+        diff = json.loads(diff_json)
+        stats = json.loads(stats_json)
+        self.assertEqual(diff["schema"], "mkrshift_json_diff_v1")
+        self.assertGreaterEqual(diff["change_count"], 2)
+        self.assertIn("payload.a", diff_lines)
+        self.assertEqual(json.loads(diff_summary)["change_count"], diff["change_count"])
+        self.assertEqual(stats["schema"], "mkrshift_addon_stats_v1")
+        self.assertEqual(stats["watch_file_count"], 2)
+        self.assertEqual(stats["endpoint_base_url"], "http://127.0.0.1:8188")
+        self.assertIn("payload_bytes", stats_lines)
+        self.assertTrue(json.loads(stats_summary)["has_watch_path"])
 
     def test_network_runtime_nodes_execute_transport_actions(self) -> None:
         requests = {"submit": None, "status": None, "webhook": None}

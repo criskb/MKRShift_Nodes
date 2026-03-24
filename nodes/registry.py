@@ -1,5 +1,7 @@
 from . import MKRCharacterCustomizer, AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRThemeDebugger
+from .prompt_nodes import MKRCLIPTextEncodePrompt
 from .addon_workflow_nodes import MKRAddonWorkflowInterface
+from .addon_debug_nodes import MKRAddonStats, MKRJSONDiff
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
 from .bridge_nodes import (
     MKRBlenderCameraShot,
@@ -204,6 +206,7 @@ from .xcine import (
 from .vfx_finishing_nodes import x1AnamorphicStreaks, x1HeatHaze
 from .vfx_optics_nodes import x1LensDirtBloom, x1ShockwaveDistort
 from .vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite
+from .layer_stack_nodes import MKRLayerStackComposite
 from .xphoto import x1HighlightRecovery, x1LocalContrast, x1SharpenPro
 from .xshader import xShader
 from .xplay import x1AuraFlow, x1Glitch, x1Kaleido
@@ -304,7 +307,10 @@ NODE_CLASS_MAPPINGS = {
     "MKRCharacterCustomizer": MKRCharacterCustomizer,
     "MKRCharacterState": MKRCharacterState,
     "MKROutfitSet": MKROutfitSet,
+    "MKRCLIPTextEncodePrompt": MKRCLIPTextEncodePrompt,
     "MKRAddonWorkflowInterface": MKRAddonWorkflowInterface,
+    "MKRJSONDiff": MKRJSONDiff,
+    "MKRAddonStats": MKRAddonStats,
     "MKRBlenderSceneImport": MKRBlenderSceneImport,
     "MKRBlenderCameraShot": MKRBlenderCameraShot,
     "MKRBlenderImageImport": MKRBlenderImageImport,
@@ -503,6 +509,7 @@ NODE_CLASS_MAPPINGS = {
     "x1ShockwaveDistort": x1ShockwaveDistort,
     "x1LightWrapComposite": x1LightWrapComposite,
     "x1EdgeAberration": x1EdgeAberration,
+    "MKRLayerStackComposite": MKRLayerStackComposite,
     "x1HighlightRecovery": x1HighlightRecovery,
     "x1LocalContrast": x1LocalContrast,
     "x1SharpenPro": x1SharpenPro,
@@ -593,7 +600,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRCharacterCustomizer": "Character Direction Studio • MKRShift Nodes",
     "MKRCharacterState": "Character State • MKRShift Nodes",
     "MKROutfitSet": "Outfit Set • MKRShift Nodes",
+    "MKRCLIPTextEncodePrompt": "CLIP Text Encode (Prompt) • MKRShift Nodes",
     "MKRAddonWorkflowInterface": "Addon Workflow Interface • MKRShift Nodes",
+    "MKRJSONDiff": "JSON Diff • MKRShift Nodes",
+    "MKRAddonStats": "Addon Stats • MKRShift Nodes",
     "MKRBlenderSceneImport": "Blender Scene Import • MKRShift Nodes",
     "MKRBlenderCameraShot": "Blender Camera Shot • MKRShift Nodes",
     "MKRBlenderImageImport": "Blender Image Import • MKRShift Nodes",
@@ -792,6 +802,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "x1ShockwaveDistort": "Shockwave Distort • MKRShift Nodes",
     "x1LightWrapComposite": "Light Wrap Composite • MKRShift Nodes",
     "x1EdgeAberration": "Edge Aberration • MKRShift Nodes",
+    "MKRLayerStackComposite": "Layer Stack Composite • MKRShift Nodes",
     "x1HighlightRecovery": "Highlight Recovery • MKRShift Nodes",
     "x1LocalContrast": "Local Contrast • MKRShift Nodes",
     "x1SharpenPro": "Sharpen Pro • MKRShift Nodes",

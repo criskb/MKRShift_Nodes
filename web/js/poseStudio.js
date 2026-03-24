@@ -765,12 +765,12 @@ function ensurePoseStudioStyles() {
   style.textContent = `
     .mkr-pose-panel {
       --mkr-ink: #edf2f7;
-      --mkr-card: rgba(27, 32, 38, 0.98);
-      --mkr-card-alt: rgba(15, 20, 26, 0.96);
+      --mkr-card: #1f2328;
+      --mkr-card-alt: #181c20;
       --mkr-muted: #97a6b6;
       --mkr-line: rgba(123, 142, 161, 0.18);
-      --mkr-accent-a: #4761ff;
-      --mkr-accent-a-src: #4761ff;
+      --mkr-accent-a: #d8ff5b;
+      --mkr-accent-a-src: #d8ff5b;
       --mkr-accent-b: #f3a03f;
       --mkr-accent-c: #d9573b;
       --mkr-shadow: 0 18px 44px rgba(0, 0, 0, 0.26);
@@ -780,7 +780,7 @@ function ensurePoseStudioStyles() {
       max-height: none;
       border-radius: 14px;
       border: 1px solid rgba(124, 143, 160, 0.18);
-      background: #24282d;
+      background: #252a2f;
       padding: 4px;
       overflow: hidden;
       box-sizing: border-box;
@@ -813,7 +813,7 @@ function ensurePoseStudioStyles() {
       padding: 12px;
       border-radius: 14px;
       border: 1px solid rgba(124, 143, 160, 0.18);
-      background: #22272d;
+      background: #23282d;
       box-sizing: border-box;
       color: #eef4fa;
     }
@@ -883,9 +883,9 @@ function ensurePoseStudioStyles() {
 
     .mkr-pose-launcher-btn,
     .mkr-pose-modal-btn {
-      border: 1px solid rgba(103, 129, 255, 0.32);
-      background: #4761ff;
-      color: #eef4fa;
+      border: 1px solid rgba(216, 255, 91, 0.24);
+      background: #2b3320;
+      color: #d8ff5b;
       border-radius: 10px;
       font: 700 12px/1 sans-serif;
       padding: 10px 12px;
@@ -989,7 +989,7 @@ function ensurePoseStudioStyles() {
       height: 100%;
       min-height: 0;
       overflow: hidden;
-      background: #171b34;
+      background: #202428;
     }
 
     .mkr-pose-left,
@@ -1054,10 +1054,9 @@ function ensurePoseStudioStyles() {
 
     .mkr-pose-layout--studio .mkr-pose-left,
     .mkr-pose-layout--studio .mkr-pose-right {
-      background: rgba(22, 28, 35, 0.72);
+      background: rgba(32, 36, 40, 0.88);
       border: 1px solid rgba(124, 143, 160, 0.14);
       border-radius: 14px;
-      backdrop-filter: blur(10px);
       padding: 10px;
       box-sizing: border-box;
     }
@@ -1111,10 +1110,9 @@ function ensurePoseStudioStyles() {
       align-items: center;
       gap: 8px;
       padding: 8px 10px;
-      background: rgba(22, 28, 35, 0.82);
+      background: rgba(32, 36, 40, 0.96);
       border: 1px solid rgba(124, 143, 160, 0.14);
       border-radius: 14px;
-      backdrop-filter: blur(12px);
       box-sizing: border-box;
     }
 
@@ -1129,9 +1127,9 @@ function ensurePoseStudioStyles() {
     }
 
     .mkr-pose-tool-btn[data-active="true"] {
-      background: #4761ff;
-      border-color: rgba(103, 129, 255, 0.48);
-      color: #eef4fa;
+      background: #2b3320;
+      border-color: rgba(216, 255, 91, 0.34);
+      color: #d8ff5b;
     }
 
     .mkr-pose-tool-status {
@@ -1222,9 +1220,9 @@ function ensurePoseStudioStyles() {
     }
 
     .mkr-pose-tab[data-active="true"] {
-      background: #2a3650;
+      background: #222821;
       color: #eef4fa;
-      border-color: rgba(93, 120, 255, 0.5);
+      border-color: rgba(216, 255, 91, 0.34);
     }
 
     .mkr-pose-panel-group {
@@ -1272,17 +1270,17 @@ function ensurePoseStudioStyles() {
     }
 
     .mkr-pose-panel .mkr-btn[data-tone="accent"] {
-      background: #4761ff;
-      border-color: rgba(103, 129, 255, 0.5);
-      color: #eef4fa;
+      background: #2b3320;
+      border-color: rgba(216, 255, 91, 0.34);
+      color: #d8ff5b;
     }
 
-    .mkr-pose-panel .mkr-range { accent-color: #b9d63e; }
+    .mkr-pose-panel .mkr-range { accent-color: #d8ff5b; }
 
     .mkr-pose-panel .mkr-group-chip {
-      background: rgba(71, 97, 255, 0.15);
-      color: #9db0ff;
-      border: 1px solid rgba(71, 97, 255, 0.32);
+      background: rgba(216, 255, 91, 0.08);
+      color: #d8ff5b;
+      border: 1px solid rgba(216, 255, 91, 0.22);
     }
 
     .mkr-pose-viewport-shell .mkr-section {
@@ -1294,7 +1292,7 @@ function ensurePoseStudioStyles() {
       min-height: 520px;
       border-radius: 6px;
       border: 1px solid rgba(196, 145, 51, 0.56);
-      background: linear-gradient(180deg, ${POSE_COLORS.bgTop} 0%, ${POSE_COLORS.bgBottom} 100%);
+      background: ${POSE_COLORS.bgBottom};
       min-width: 0;
       touch-action: none;
       user-select: none;
@@ -1307,7 +1305,7 @@ function ensurePoseStudioStyles() {
       min-height: 0;
       border-radius: 0;
       border: 0;
-      background: linear-gradient(180deg, ${POSE_COLORS.bgTop} 0%, ${POSE_COLORS.bgBottom} 100%);
+      background: ${POSE_COLORS.bgBottom};
     }
 
     .mkr-pose-overlay-canvas {
@@ -5328,7 +5326,7 @@ function openPoseStudioModal(node) {
     "height:100%",
     "color:#dbe4ec",
     "font:600 14px sans-serif",
-    "background:linear-gradient(180deg, #181d38 0%, #131728 100%)",
+    "background:#202428",
   ].join(";");
   boot.textContent = "Opening Pose Studio...";
   body.appendChild(boot);
@@ -5371,7 +5369,7 @@ function openPoseStudioModal(node) {
         "padding:16px",
         "border-radius:14px",
         "border:1px solid rgba(217,87,59,0.4)",
-        "background:rgba(255,95,67,0.12)",
+        "background:#2a1b1a",
         "color:#ffd7d1",
         "font:600 13px/1.45 sans-serif",
         "white-space:pre-wrap",

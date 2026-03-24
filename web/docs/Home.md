@@ -17,11 +17,18 @@ This wiki is organized to match the current pack taxonomy so the GitHub wiki sta
 - [MKRCharacterState](MKRCharacterState.md)
 - [MKROutfitSet](MKROutfitSet.md)
 - [MKRPoseStudio](MKRPoseStudio.md)
+- [MKRCLIPTextEncodePrompt](MKRCLIPTextEncodePrompt.md)
 - [AngleShift](AngleShift.md)
 - [Aspect1X](Aspect1X.md)
 - [Aspect1XBatch](Aspect1XBatch.md)
 - [AxBCompare](AxBCompare.md)
 - [MKRAddonWorkflowInterface](MKRAddonWorkflowInterface.md)
+- [MKRJSONDiff](MKRJSONDiff.md)
+- [MKRAddonStats](MKRAddonStats.md)
+
+## Layer + Composite
+
+- [MKRLayerStackComposite](MKRLayerStackComposite.md)
 
 ## Blender Bridge
 

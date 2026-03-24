@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "bookmarks": [
+    {
+      "id": "e768cda8075f4e53b97f2a701203fd8b",
+      "folder": "Default",
+      "name": "gdfgdfgdfgggg",
+      "prompt": "gfdgdfdgf",
+      "notes": "",
+      "tags": [],
+      "created_at": 1774285557.1574411,
+      "updated_at": 1774285557.1574411,
+      "favorite": false
+    },
+    {
+      "id": "3b329dce27704b958f33a2b0b3a254cf",
+      "folder": "Default",
+      "name": "gdfgdfgdfggg",
+      "prompt": "gfdgdfdgf",
+      "notes": "",
+      "tags": [],
+      "created_at": 1774285555.067874,
+      "updated_at": 1774285555.067874,
+      "favorite": false
+    },
+    {
+      "id": "07a81a9d0a30472e88cb4ded715584fe",
+      "folder": "Default",
+      "name": "gdfgdfgdfgg",
+      "prompt": "gfdgdfdgf",
+      "notes": "",
+      "tags": [],
+      "created_at": 1774285553.550884,
+      "updated_at": 1774285553.550884,
+      "favorite": false
+    },
+    {
+      "id": "d9ccca24976d4800a2b762c0a9979e2f",
+      "folder": "Default",
+      "name": "gdfgdfgdfg",
+      "prompt": "gfdgdfdgf",
+      "notes": "",
+      "tags": [],
+      "created_at": 1774285550.021358,
+      "updated_at": 1774285550.021358,
+      "favorite": false
+    },
+    {
+      "id": "74eb25cbd306468a9da984b6f259a0d4",
+      "folder": "Default",
+      "name": "gdfgdf",
+      "prompt": "gfdgdfdgf",
+      "notes": "",
+      "tags": [],
+      "created_at": 1774285545.965507,
+      "updated_at": 1774285547.787884,
+      "favorite": false
+    },
+    {
+      "id": "5023ef86065544b5a3d18e4269cb0424",
+      "folder": "Default",
+      "name": "sdfsfdsfs",
+      "prompt": "Hello fdsfs",
+      "notes": "",
+      "tags": [],
+      "created_at": 1774284739.416992,
+      "updated_at": 1774284742.665736,
+      "favorite": false
+    }
+  ]
+}

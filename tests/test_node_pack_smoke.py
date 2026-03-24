@@ -63,7 +63,10 @@ class NodePackSmokeTests(unittest.TestCase):
         expected = {
             "MKRCharacterState",
             "MKROutfitSet",
+            "MKRCLIPTextEncodePrompt",
             "MKRAddonWorkflowInterface",
+            "MKRJSONDiff",
+            "MKRAddonStats",
             "MKRBlenderSceneImport",
             "MKRBlenderCameraShot",
             "MKRBlenderImageImport",
@@ -163,6 +166,7 @@ class NodePackSmokeTests(unittest.TestCase):
             "MKRBatchDifferencePreview",
             "x1LightWrapComposite",
             "x1EdgeAberration",
+            "MKRLayerStackComposite",
         }
         self.assertTrue(expected.issubset(set(pack.NODE_CLASS_MAPPINGS)))
 

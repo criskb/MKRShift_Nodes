@@ -8,12 +8,18 @@
   - [MKRCharacterState](MKRCharacterState.md)
   - [MKROutfitSet](MKROutfitSet.md)
   - [MKRPoseStudio](MKRPoseStudio.md)
+  - [MKRCLIPTextEncodePrompt](MKRCLIPTextEncodePrompt.md)
   - [AngleShift](AngleShift.md)
   - [Aspect1X](Aspect1X.md)
   - [Aspect1XBatch](Aspect1XBatch.md)
   - [AxBCompare](AxBCompare.md)
 - Addon Workflow
   - [MKRAddonWorkflowInterface](MKRAddonWorkflowInterface.md)
+- Addon Debug
+  - [MKRJSONDiff](MKRJSONDiff.md)
+  - [MKRAddonStats](MKRAddonStats.md)
+- Layer + Composite
+  - [MKRLayerStackComposite](MKRLayerStackComposite.md)
 - Blender Bridge
   - [MKRBlenderSceneImport](MKRBlenderSceneImport.md)
   - [MKRBlenderCameraShot](MKRBlenderCameraShot.md)

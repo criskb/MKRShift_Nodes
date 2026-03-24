@@ -1,6 +1,8 @@
 from .core_nodes import AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRCharacterCustomizer, MKRThemeDebugger
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
+from .prompt_nodes import MKRCLIPTextEncodePrompt
 from .addon_workflow_nodes import MKRAddonWorkflowInterface
+from .addon_debug_nodes import MKRAddonStats, MKRJSONDiff
 from .bridge_nodes import (
     MKRBlenderCameraShot,
     MKRBlenderMaterialImport,
@@ -93,6 +95,7 @@ from .inspect_compare_nodes import MKRBatchDifferencePreview
 from .publish_manifest_nodes import MKRPublishAssetManifest, MKRPublishCopyAtIndex, MKRPublishCopyDeck, MKRPublishManifestAtIndex
 from .publish_nodes import MKRPublishEndCard, MKRPublishPromoFrame
 from .vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite
+from .layer_stack_nodes import MKRLayerStackComposite
 from .studio_handoff_nodes import MKRStudioDeliverySheet, MKRStudioReviewNotes
 from .studio_nodes import (
     MKRStudioCompareBoard,
@@ -108,7 +111,10 @@ __all__ = [
     "MKRCharacterCustomizer",
     "MKRCharacterState",
     "MKROutfitSet",
+    "MKRCLIPTextEncodePrompt",
     "MKRAddonWorkflowInterface",
+    "MKRJSONDiff",
+    "MKRAddonStats",
     "MKRBlenderSceneImport",
     "MKRBlenderCameraShot",
     "MKRBlenderImageImport",
@@ -201,4 +207,5 @@ __all__ = [
     "MKRBatchDifferencePreview",
     "x1LightWrapComposite",
     "x1EdgeAberration",
+    "MKRLayerStackComposite",
 ]

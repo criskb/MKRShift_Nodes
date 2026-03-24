@@ -49,7 +49,10 @@ class PackAssetTests(unittest.TestCase):
             "MKRCharacterCustomizer.md",
             "MKRCharacterState.md",
             "MKROutfitSet.md",
+            "MKRCLIPTextEncodePrompt.md",
             "MKRAddonWorkflowInterface.md",
+            "MKRJSONDiff.md",
+            "MKRAddonStats.md",
             "MKRBlenderSceneImport.md",
             "MKRBlenderCameraShot.md",
             "MKRBlenderImageImport.md",
@@ -212,6 +215,7 @@ class PackAssetTests(unittest.TestCase):
             "x1ShockwaveDistort.md",
             "x1LightWrapComposite.md",
             "x1EdgeAberration.md",
+            "MKRLayerStackComposite.md",
             "AxBCompare.md",
         }
         existing = {path.name for path in docs_root.glob("*.md")}
@@ -226,6 +230,8 @@ class PackAssetTests(unittest.TestCase):
             "MKRCharacterState",
             "MKROutfitSet",
             "MKRAddonWorkflowInterface",
+            "MKRJSONDiff",
+            "MKRAddonStats",
             "MKRBlenderSceneImport",
             "MKRBlenderCameraShot",
             "MKRBlenderImageImport",
