@@ -1,6 +1,7 @@
 from . import MKRCharacterCustomizer, AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRThemeDebugger
 from .prompt_nodes import MKRCLIPTextEncodePrompt
 from .addon_workflow_nodes import MKRAddonWorkflowInterface
+from .extension_builder_nodes import MKRNodeExtensionBuilderPlan
 from .addon_debug_nodes import MKRAddonStats, MKRJSONDiff
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
 from .bridge_nodes import (
@@ -162,6 +163,8 @@ from .face_performance_nodes import (
 from .xlut import xLUT, xLUTOutput
 from .xcolor import (
     x1ColorBalance,
+    x1ColorWarpChromaLuma,
+    x1ColorWarpHueSat,
     x1ColorMatch,
     x1ColorWheels,
     x1Curves,
@@ -309,6 +312,7 @@ NODE_CLASS_MAPPINGS = {
     "MKROutfitSet": MKROutfitSet,
     "MKRCLIPTextEncodePrompt": MKRCLIPTextEncodePrompt,
     "MKRAddonWorkflowInterface": MKRAddonWorkflowInterface,
+    "MKRNodeExtensionBuilderPlan": MKRNodeExtensionBuilderPlan,
     "MKRJSONDiff": MKRJSONDiff,
     "MKRAddonStats": MKRAddonStats,
     "MKRBlenderSceneImport": MKRBlenderSceneImport,
@@ -473,6 +477,8 @@ NODE_CLASS_MAPPINGS = {
     "x1ColorWheels": x1ColorWheels,
     "x1Curves": x1Curves,
     "x1ColorBalance": x1ColorBalance,
+    "x1ColorWarpHueSat": x1ColorWarpHueSat,
+    "x1ColorWarpChromaLuma": x1ColorWarpChromaLuma,
     "x1HSLQualifier": x1HSLQualifier,
     "x1PaletteMap": x1PaletteMap,
     "x1ColorMatch": x1ColorMatch,
@@ -602,6 +608,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MKROutfitSet": "Outfit Set • MKRShift Nodes",
     "MKRCLIPTextEncodePrompt": "CLIP Text Encode (Prompt) • MKRShift Nodes",
     "MKRAddonWorkflowInterface": "Addon Workflow Interface • MKRShift Nodes",
+    "MKRNodeExtensionBuilderPlan": "Node Extension Builder Plan • MKRShift Nodes",
     "MKRJSONDiff": "JSON Diff • MKRShift Nodes",
     "MKRAddonStats": "Addon Stats • MKRShift Nodes",
     "MKRBlenderSceneImport": "Blender Scene Import • MKRShift Nodes",
@@ -766,6 +773,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "x1ColorWheels": "Color Wheels • MKRShift Nodes",
     "x1Curves": "Curves • MKRShift Nodes",
     "x1ColorBalance": "Color Balance • MKRShift Nodes",
+    "x1ColorWarpHueSat": "Color Warp Hue/Sat • MKRShift Nodes",
+    "x1ColorWarpChromaLuma": "Color Warp Chroma/Luma • MKRShift Nodes",
     "x1HSLQualifier": "HSL Qualifier • MKRShift Nodes",
     "x1PaletteMap": "Palette Map • MKRShift Nodes",
     "x1ColorMatch": "Color Match • MKRShift Nodes",

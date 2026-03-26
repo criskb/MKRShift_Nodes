@@ -15,6 +15,7 @@
   - [AxBCompare](AxBCompare.md)
 - Addon Workflow
   - [MKRAddonWorkflowInterface](MKRAddonWorkflowInterface.md)
+  - [MKRNodeExtensionBuilderPlan](MKRNodeExtensionBuilderPlan.md)
 - Addon Debug
   - [MKRJSONDiff](MKRJSONDiff.md)
   - [MKRAddonStats](MKRAddonStats.md)
@@ -105,6 +106,10 @@
 - Color / Lookdev
   - [xLUT](xLUT.md)
   - [xLUTOutput](xLUTOutput.md)
+  - [x1ColorWheels](x1ColorWheels.md)
+  - [x1Curves](x1Curves.md)
+  - [x1ColorWarpHueSat](x1ColorWarpHueSat.md)
+  - [x1ColorWarpChromaLuma](x1ColorWarpChromaLuma.md)
 - Mask + Utility
   - [x1MaskGen](x1MaskGen.md)
 - Surface / Preview + Packing
