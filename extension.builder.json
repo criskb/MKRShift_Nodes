@@ -1,0 +1,29 @@
+{
+  "schema": "comfyui_node_extension_builder_v1",
+  "name": "MKRShift Nodes",
+  "package": "criskb.mkrshift-nodes",
+  "publisher": "criskb",
+  "version": "0.1.0",
+  "entry": "__init__.py",
+  "web_directory": "web",
+  "repository": "https://github.com/criskb/MKRShift_Nodes",
+  "license": "MIT",
+  "description": "MKRShift Nodes extension package scaffold for ComfyUI distribution workflows.",
+  "nodes": [
+    "MKRNodeExtensionBuilderPlan",
+    "x1SharpenPro",
+    "x1HeatHaze",
+    "MKRAddonWorkflowInterface"
+  ],
+  "tags": [
+    "comfyui",
+    "mkrshift",
+    "lookdev",
+    "workflow"
+  ],
+  "min_comfyui_version": "0.18.1",
+  "extras": {
+    "supports_v3_companions": true,
+    "workflow_examples_dir": "example_workflows"
+  }
+}

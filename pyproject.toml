@@ -6,19 +6,18 @@ build-backend = "setuptools.build_meta"
 name = "mkrshift-nodes"
 version = "0.1.0"
 description = "ComfyUI custom nodes for character direction, color workflows, social planning, and media finishing."
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/criskb/MKRShift_Nodes"
 
 [project.optional-dependencies]
 v3 = []
 
 [tool.comfy]
 DisplayName = "MKRShift Nodes"
-
-# Fill these before registry publishing:
-# PublisherId = "your-publisher-id"
-# requires-comfyui = ">=0.16.0"
-#
-# [project.urls]
-# Repository = "https://github.com/owner/repo"
+PublisherId = "criskb"
+requires-comfyui = ">=0.18.1"

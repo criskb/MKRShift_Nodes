@@ -20,10 +20,10 @@ MKRShift Nodes is a broad ComfyUI node pack focused on image craft and workflow 
 | --- | --- | --- |
 | Direction | `MKRCharacterCustomizer`, `MKRCharacterState`, `MKROutfitSet`, `MKRPoseStudio`, `AngleShift`, `Aspect1X`, `AxBCompare` | Character setup, persistent identity state, outfit variation, 3D pose blockout, angle exploration, compare views, and framing |
 | Blender Bridge | `MKRBlenderSceneImport`, `MKRBlenderCameraShot`, `MKRBlenderImageImport`, `MKRBlenderImageOutputPlan`, `MKRBlenderMaterialImport`, `MKRBlenderMaterialReturnPlan`, `MKRBlenderReturnPlan` | Import Blender camera, armature, image, and material payloads, derive shot/material metadata, and build return plans for roundtrip workflows |
-| Host Addons | `MKRBlenderSceneImport`, `MKRTouchDesignerImport`, `MKRTiXLImport`, `MKRNukeScriptImport`, `MKRPhotoshopDocumentImport`, `MKRAfterEffectsCompImport`, `MKRPremiereSequenceImport`, `MKRAffinityDocumentImport`, `MKRAffinityPhotoshopPluginPlan`, `MKRFusion360SceneImport`, `MKRFusion360ImageImport`, `MKRMayaSceneImport`, `MKRMayaImageImport` | Packet-first host integrations with per-application addon scaffolds under `addons/` and matching ComfyUI nodes under `Addons/...`, including image/texture handoff lanes for the 3D hosts and an Affinity route based on Photoshop-plugin compatibility |
+| Host Addons | `MKRBlenderSceneImport`, `MKRTouchDesignerImport`, `MKRTiXLImport`, `MKRNukeScriptImport`, `MKRPhotoshopDocumentImport`, `MKRAfterEffectsCompImport`, `MKRPremiereSequenceImport`, `MKRAffinityDocumentImport`, `MKRAffinityPhotoshopPluginPlan`, `MKRFusion360SceneImport`, `MKRFusion360ImageImport`, `MKRMayaSceneImport`, `MKRMayaImageImport`, `MKRNodeExtensionBuilderPlan` | Packet-first host integrations with per-application addon scaffolds under `addons/` and matching ComfyUI nodes under `Addons/...`, including image/texture handoff lanes for the 3D hosts, an Affinity route based on Photoshop-plugin compatibility, plus extension-builder manifest planning with optional expert JSON for repository/license metadata and skill-driven packaging command output |
 | Network Transport | `MKRAddonEndpointPlan`, `MKROSCMessagePlan`, `MKRNDIStreamPlan`, `MKRSpoutSenderPlan`, `MKRSyphonSenderPlan`, `MKRTCPBridgePlan`, `MKRHTTPWebhookPlan`, `MKRWatchFolderPlan`, `MKRWebSocketBridgePlan` | Reusable endpoint and transport plans for host add-ons, including HTTP endpoint jobs, OSC, NDI, Spout, Syphon, TCP, watch-folder, and WebSocket workflows |
 | Surface + Material | `x1PreviewMaterial`, `x1PBRPack`, `x1ClearcoatMap`, `x1ClearcoatRoughnessMap`, `x1EdgeWearMask`, `x1TextureDetileBlend` | Practical PBR map derivation, material preview, packing, wear masking, and anti-tiling texture cleanup |
-| Color + Lookdev | `xLUT`, `xLUTOutput`, `x1ColorWheels`, `x1Curves`, `x1PaletteMap` | LUT authoring, grading, color matching, and look building |
+| Color + Lookdev | `xLUT`, `xLUTOutput`, `x1ColorWheels`, `x1Curves`, `x1ColorWarpHueSat`, `x1ColorWarpChromaLuma`, `x1PaletteMap` | LUT authoring, grading, color matching, mesh-based warping, and look building |
 | Image Processing | `x1Bloom`, `x1Film`, `x1Stylize`, `x1LocalContrast`, `x1SharpenPro`, `x1LightWrapComposite`, `x1EdgeAberration` | Finishing, texture, stylization, polish, and practical comp/VFX passes |
 | Inspect + Review | `AxBCompare`, `MKRBatchCollagePreview`, `MKRStudioReviewFrame`, `MKRStudioCompareBoard` | Fast side-by-side checks, labeled batch sheets, and review-ready boards |
 | Mask + Utility | `x1MaskGen`, `AdvResize`, `MKRImageSplitGrid`, `MKRImageCombineGrid`, `xShader`, `x1DenoiseDetail` | Mask generation, resize work, tiled image workflows, shader utilities, and cleanup |
@@ -45,6 +45,10 @@ This pack ships custom `WEB_DIRECTORY` extensions for nodes that benefit from a 
 - `MKRPresaveVideo`
 - `MKRPresaveAudio`
 - `MKRPublishPromoFrame`
+- `x1ColorWheels`
+- `x1Curves`
+- `x1ColorWarpHueSat`
+- `x1ColorWarpChromaLuma`
 - `xLUT`
 - `x1MaskGen`
 
@@ -82,10 +86,22 @@ Subgraph blueprints for the addon/network lane live in `subgraphs/`.
 3. Install `ffmpeg` if you plan to use the video/audio export and muxing nodes.
 4. Install `OrcaSlicer`, `PrusaSlicer`, or `CuraEngine` if you plan to use the external G-code slicer node.
 
+## Extension Builder Quickstart
+
+This repo now includes a starter builder config at `extension.builder.json` and a minimal example workflow at `example_workflows/mkrshift_extension_builder_plan.json` for `MKRNodeExtensionBuilderPlan`.
+
+Suggested build command:
+
+```bash
+python3 /opt/codex/skills/.system/skill-installer/scripts/install-skill-from-github.py --repo criskb/comfyui-node-extension-builder --path . --name comfyui-node-extension-builder
+```
+
+Then write the `builder_manifest_json` output from `MKRNodeExtensionBuilderPlan` to `extension.builder.json` and run your preferred builder CLI (or pass `builder_cli_command` in `advanced_options_json`).
+
 ## Notes
 
 - `pyproject.toml` is included so the pack has a stable package identity.
-- Repository URL, license, and `PublisherId` are intentionally still unset until real publishing details exist.
+- `pyproject.toml` now includes repository and Comfy registry metadata for packaging/distribution readiness.
 - The code uses relative imports and does not rely on the install folder matching the repo name.
 - Package internals are split by concern under `nodes/` and `lib/`, with legacy root import aliases preserved for backward compatibility.
 - The `G-code` category is inspired by the earlier `G-code-Studio` experiment, but implemented here as ComfyUI-native nodes.
@@ -108,3 +124,5 @@ The current checks cover:
 - docs and packaging assets
 - publish/output and mask feature regressions
 - studio review node coverage and legacy import aliases
+
+This extension/addon was created using Codex skill designed by Cris K B https://github.com/criskb/comfyui-node-extension-builder

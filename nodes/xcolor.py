@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 import numpy as np
@@ -583,6 +584,74 @@ def _apply_curve_triplet(x: np.ndarray, s: float, m: float, h: float, amount: fl
     return np.clip(out, 0.0, 1.0).astype(np.float32, copy=False)
 
 
+def _parse_warp_points(raw: str, mode: str) -> tuple[list[dict], list[str]]:
+    warnings: list[str] = []
+    text = str(raw or "").strip()
+    if not text:
+        return ([], warnings)
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return ([], ["warp_points_json is not valid JSON"])
+    if not isinstance(payload, list):
+        return ([], ["warp_points_json must be a JSON array"])
+    points: list[dict] = []
+    for idx, item in enumerate(payload):
+        if not isinstance(item, dict):
+            warnings.append(f"warp point {idx} is not an object")
+            continue
+        src_x = float(np.clip(item.get("src_x", 0.5), 0.0, 1.0))
+        src_y = float(np.clip(item.get("src_y", 0.5), 0.0, 1.0))
+        dst_x = float(np.clip(item.get("dst_x", src_x), 0.0, 1.0))
+        dst_y = float(np.clip(item.get("dst_y", src_y), 0.0, 1.0))
+        radius = float(np.clip(item.get("radius", 0.16), 0.02, 0.6))
+        weight = float(np.clip(item.get("weight", 1.0), 0.0, 2.0))
+        points.append(
+            {
+                "src_x": src_x,
+                "src_y": src_y,
+                "dst_x": dst_x,
+                "dst_y": dst_y,
+                "radius": radius,
+                "weight": weight,
+            }
+        )
+    return (points, warnings)
+
+
+def _apply_warp_field(
+    base_x: np.ndarray,
+    base_y: np.ndarray,
+    points: list[dict],
+    strength: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    dx = np.zeros_like(base_x, dtype=np.float32)
+    dy = np.zeros_like(base_y, dtype=np.float32)
+    wsum = np.zeros_like(base_x, dtype=np.float32)
+    for point in points:
+        sx = point["src_x"]
+        sy = point["src_y"]
+        tx = point["dst_x"]
+        ty = point["dst_y"]
+        radius = max(1e-4, float(point["radius"]))
+        weight = float(point["weight"])
+
+        dist = np.sqrt(((base_x - sx) ** 2) + ((base_y - sy) ** 2)).astype(np.float32, copy=False)
+        norm = np.clip(1.0 - (dist / radius), 0.0, 1.0)
+        influence = np.power(norm, 2.0).astype(np.float32, copy=False) * weight
+
+        dx += (tx - sx) * influence
+        dy += (ty - sy) * influence
+        wsum += influence
+
+    mask = wsum > 1e-6
+    out_x = base_x.copy()
+    out_y = base_y.copy()
+    out_x[mask] = np.clip(base_x[mask] + ((dx[mask] / wsum[mask]) * strength), 0.0, 1.0)
+    out_y[mask] = np.clip(base_y[mask] + ((dy[mask] / wsum[mask]) * strength), 0.0, 1.0)
+    return (out_x, out_y)
+
+
 def _palette_from_preset(
     preset: str,
     custom: np.ndarray,
@@ -900,6 +969,138 @@ class x1ColorBalance:
         )
         return _run_masked_rgb_node(
             label="x1ColorBalance",
+            detail=detail,
+            image=image,
+            mask_feather=mask_feather,
+            invert_mask=invert_mask,
+            mask=mask,
+            fx_fn=fx_fn,
+        )
+
+
+class x1ColorWarpHueSat:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "warp_points_json": ("STRING", {"default": "[]", "multiline": True}),
+                "strength": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 2.0, "step": 0.01}),
+                "falloff": ("FLOAT", {"default": 1.0, "min": 0.4, "max": 2.5, "step": 0.01}),
+                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
+                "invert_mask": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {
+                "mask": ("MASK",),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "color_warp_huesat_info")
+    FUNCTION = "run"
+    CATEGORY = COLOR_GRADE
+
+    def run(
+        self,
+        image: torch.Tensor,
+        warp_points_json: str = "[]",
+        strength: float = 0.7,
+        falloff: float = 1.0,
+        mix: float = 1.0,
+        mask_feather: float = 12.0,
+        invert_mask: bool = False,
+        mask: Optional[torch.Tensor] = None,
+    ):
+        points, warnings = _parse_warp_points(warp_points_json, mode="huesat")
+        st = float(max(0.0, strength))
+        fo = float(max(0.4, falloff))
+        m = float(np.clip(mix, 0.0, 1.0))
+
+        def fx_fn(src: np.ndarray, _: int):
+            h, s, v = _rgb_to_hsv_np(src)
+            target_h, target_s = _apply_warp_field(h, s, points, st)
+            blend = np.clip(np.power(np.maximum(s, 1e-5), 1.0 / fo), 0.0, 1.0).astype(np.float32, copy=False)
+            h_out = (h * (1.0 - blend)) + (target_h * blend)
+            s_out = np.clip((s * (1.0 - blend)) + (target_s * blend), 0.0, 1.0)
+            warped = _hsv_to_rgb_np(np.mod(h_out, 1.0), s_out, v)
+            return np.clip((src * (1.0 - m)) + (warped * m), 0.0, 1.0).astype(np.float32, copy=False)
+
+        detail = "points={}, strength={:.2f}, falloff={:.2f}, mix={:.2f}{}".format(
+            len(points),
+            st,
+            fo,
+            m,
+            f", warnings={'; '.join(warnings)}" if warnings else "",
+        )
+        return _run_masked_rgb_node(
+            label="x1ColorWarpHueSat",
+            detail=detail,
+            image=image,
+            mask_feather=mask_feather,
+            invert_mask=invert_mask,
+            mask=mask,
+            fx_fn=fx_fn,
+        )
+
+
+class x1ColorWarpChromaLuma:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "warp_points_json": ("STRING", {"default": "[]", "multiline": True}),
+                "strength": ("FLOAT", {"default": 0.65, "min": 0.0, "max": 2.0, "step": 0.01}),
+                "falloff": ("FLOAT", {"default": 1.0, "min": 0.4, "max": 2.5, "step": 0.01}),
+                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
+                "invert_mask": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {
+                "mask": ("MASK",),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "color_warp_chromaluma_info")
+    FUNCTION = "run"
+    CATEGORY = COLOR_GRADE
+
+    def run(
+        self,
+        image: torch.Tensor,
+        warp_points_json: str = "[]",
+        strength: float = 0.65,
+        falloff: float = 1.0,
+        mix: float = 1.0,
+        mask_feather: float = 12.0,
+        invert_mask: bool = False,
+        mask: Optional[torch.Tensor] = None,
+    ):
+        points, warnings = _parse_warp_points(warp_points_json, mode="chromaluma")
+        st = float(max(0.0, strength))
+        fo = float(max(0.4, falloff))
+        m = float(np.clip(mix, 0.0, 1.0))
+
+        def fx_fn(src: np.ndarray, _: int):
+            h, s, v = _rgb_to_hsv_np(src)
+            target_s, target_v = _apply_warp_field(s, v, points, st)
+            blend = np.clip(np.power(np.maximum(v, 1e-5), 1.0 / fo), 0.0, 1.0).astype(np.float32, copy=False)
+            s_out = np.clip((s * (1.0 - blend)) + (target_s * blend), 0.0, 1.0)
+            v_out = np.clip((v * (1.0 - blend)) + (target_v * blend), 0.0, 1.0)
+            warped = _hsv_to_rgb_np(h, s_out, v_out)
+            return np.clip((src * (1.0 - m)) + (warped * m), 0.0, 1.0).astype(np.float32, copy=False)
+
+        detail = "points={}, strength={:.2f}, falloff={:.2f}, mix={:.2f}{}".format(
+            len(points),
+            st,
+            fo,
+            m,
+            f", warnings={'; '.join(warnings)}" if warnings else "",
+        )
+        return _run_masked_rgb_node(
+            label="x1ColorWarpChromaLuma",
             detail=detail,
             image=image,
             mask_feather=mask_feather,

@@ -1,0 +1,37 @@
+{
+  "last_node_id": 1,
+  "last_link_id": 0,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "MKRNodeExtensionBuilderPlan",
+      "pos": [420, 280],
+      "size": [430, 330],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        { "name": "builder_manifest_json", "type": "STRING", "links": null },
+        { "name": "builder_command", "type": "STRING", "links": null },
+        { "name": "summary_json", "type": "STRING", "links": null }
+      ],
+      "properties": { "Node name for S&R": "MKRNodeExtensionBuilderPlan" },
+      "widgets_values": [
+        "MKRShift Nodes",
+        "criskb",
+        "0.1.0",
+        "__init__.py",
+        "[\"MKRNodeExtensionBuilderPlan\", \"x1SharpenPro\"]",
+        "{\"repository\":\"https://github.com/criskb/MKRShift_Nodes\",\"license\":\"MIT\",\"skill_url\":\"https://github.com/criskb/comfyui-node-extension-builder\"}"
+      ]
+    }
+  ],
+  "links": [],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": { "scale": 0.9, "offset": [100, 80] }
+  },
+  "version": 0.4
+}
