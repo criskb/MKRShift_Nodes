@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mkrshift-nodes"
 version = "0.1.0"
-description = "ComfyUI custom nodes for character direction, color workflows, social planning, and media finishing."
+description = "WIP Experimental!, ComfyUI custom nodes for character direction, color workflows, social planning, and media finishing."
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
