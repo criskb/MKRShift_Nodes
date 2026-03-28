@@ -175,6 +175,7 @@ from .xcolor import (
     x1LUTStack,
     x1PaletteMap,
 )
+from .xcolor_analyze_nodes import x1GamutWarning, x1HistogramScope, x1SkinToneCheck, x1Vectorscope, x1WaveformScope
 from .xprocess import (
     x1Bloom,
     x1Bokeh,
@@ -484,6 +485,11 @@ NODE_CLASS_MAPPINGS = {
     "x1ColorMatch": x1ColorMatch,
     "x1GamutMap": x1GamutMap,
     "x1FalseColor": x1FalseColor,
+    "x1WaveformScope": x1WaveformScope,
+    "x1Vectorscope": x1Vectorscope,
+    "x1GamutWarning": x1GamutWarning,
+    "x1HistogramScope": x1HistogramScope,
+    "x1SkinToneCheck": x1SkinToneCheck,
     "x1Tone": x1Tone,
     "x1Stylize": x1Stylize,
     "x1Pixelate": x1Pixelate,
@@ -782,6 +788,11 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "x1ColorMatch": "Color Match • MKRShift Nodes",
     "x1GamutMap": "Gamut Map • MKRShift Nodes",
     "x1FalseColor": "False Color • MKRShift Nodes",
+    "x1WaveformScope": "Waveform Scope • MKRShift Nodes",
+    "x1Vectorscope": "Vectorscope • MKRShift Nodes",
+    "x1GamutWarning": "Gamut Warning • MKRShift Nodes",
+    "x1HistogramScope": "Histogram Scope • MKRShift Nodes",
+    "x1SkinToneCheck": "Skin Tone Check • MKRShift Nodes",
     "x1Tone": "Tone • MKRShift Nodes",
     "x1Stylize": "Stylize • MKRShift Nodes",
     "x1Pixelate": "Pixelate • MKRShift Nodes",

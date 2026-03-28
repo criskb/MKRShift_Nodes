@@ -1,4 +1,5 @@
 import colorsys
+import json
 import math
 from typing import Optional
 
@@ -8,6 +9,7 @@ import torch
 import torch.nn.functional as F
 
 from ..categories import FX_CONCEPT, FX_DISTORT, FX_OPTICS
+from ..lib.settings_bundle import parse_settings_payload
 
 
 def _to_image_batch(image: torch.Tensor) -> torch.Tensor:
@@ -590,25 +592,38 @@ def _apply_glow_edges_rgb(
 
 
 class x1LightLeak:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "strength": 0.35,
+            "angle": 35.0,
+            "scale": 1.0,
+            "softness": 1.0,
+            "seed": 1337,
+            "ramp_preset": "warm",
+            "blend_mode": "screen",
+            "custom_start_r": 1.0,
+            "custom_start_g": 0.45,
+            "custom_start_b": 0.10,
+            "custom_end_r": 1.0,
+            "custom_end_g": 0.86,
+            "custom_end_b": 0.42,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "strength": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "angle": ("FLOAT", {"default": 35.0, "min": 0.0, "max": 360.0, "step": 1.0}),
-                "scale": ("FLOAT", {"default": 1.0, "min": 0.2, "max": 3.0, "step": 0.01}),
-                "softness": ("FLOAT", {"default": 1.0, "min": 0.2, "max": 3.0, "step": 0.01}),
-                "seed": ("INT", {"default": 1337, "min": 0, "max": 999999, "step": 1}),
-                "ramp_preset": (["warm", "sunset", "teal_orange", "magenta_cyan", "custom"],),
-                "blend_mode": (["screen", "add", "overlay", "soft_light"],),
-                "custom_start_r": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "custom_start_g": ("FLOAT", {"default": 0.45, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "custom_start_b": ("FLOAT", {"default": 0.10, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "custom_end_r": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "custom_end_g": ("FLOAT", {"default": 0.86, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "custom_end_b": ("FLOAT", {"default": 0.42, "min": 0.0, "max": 1.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -623,23 +638,45 @@ class x1LightLeak:
     def run(
         self,
         image: torch.Tensor,
-        strength: float = 0.35,
-        angle: float = 35.0,
-        scale: float = 1.0,
-        softness: float = 1.0,
-        seed: int = 1337,
-        ramp_preset: str = "warm",
-        blend_mode: str = "screen",
-        custom_start_r: float = 1.0,
-        custom_start_g: float = 0.45,
-        custom_start_b: float = 0.10,
-        custom_end_r: float = 1.0,
-        custom_end_g: float = 0.86,
-        custom_end_b: float = 0.42,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "strength": {"min": 0.0, "max": 2.0},
+                "angle": {"min": 0.0, "max": 360.0},
+                "scale": {"min": 0.2, "max": 3.0},
+                "softness": {"min": 0.2, "max": 3.0},
+                "seed": {"min": 0.0, "max": 999999.0, "integer": True},
+                "custom_start_r": {"min": 0.0, "max": 1.0},
+                "custom_start_g": {"min": 0.0, "max": 1.0},
+                "custom_start_b": {"min": 0.0, "max": 1.0},
+                "custom_end_r": {"min": 0.0, "max": 1.0},
+                "custom_end_g": {"min": 0.0, "max": 1.0},
+                "custom_end_b": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        strength = float(settings["strength"])
+        angle = float(settings["angle"])
+        scale = float(settings["scale"])
+        softness = float(settings["softness"])
+        seed = int(settings["seed"])
+        ramp_preset = str(settings["ramp_preset"])
+        blend_mode = str(settings["blend_mode"])
+        custom_start_r = float(settings["custom_start_r"])
+        custom_start_g = float(settings["custom_start_g"])
+        custom_start_b = float(settings["custom_start_b"])
+        custom_end_r = float(settings["custom_end_r"])
+        custom_end_g = float(settings["custom_end_g"])
+        custom_end_b = float(settings["custom_end_b"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         detail = "strength={:.2f}, angle={:.1f}, scale={:.2f}, softness={:.2f}, ramp={}, blend={}, seed={}".format(
             float(max(0.0, strength)),
             float(angle),
@@ -672,19 +709,32 @@ class x1LightLeak:
 
 
 class x1SplitTone:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "shadow_hue": 210.0,
+            "shadow_sat": 0.30,
+            "highlight_hue": 36.0,
+            "highlight_sat": 0.32,
+            "balance": 0.0,
+            "pivot": 0.50,
+            "mix": 0.75,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "shadow_hue": ("FLOAT", {"default": 210.0, "min": 0.0, "max": 360.0, "step": 1.0}),
-                "shadow_sat": ("FLOAT", {"default": 0.30, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "highlight_hue": ("FLOAT", {"default": 36.0, "min": 0.0, "max": 360.0, "step": 1.0}),
-                "highlight_sat": ("FLOAT", {"default": 0.32, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "balance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "pivot": ("FLOAT", {"default": 0.50, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mix": ("FLOAT", {"default": 0.75, "min": 0.0, "max": 1.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -699,17 +749,35 @@ class x1SplitTone:
     def run(
         self,
         image: torch.Tensor,
-        shadow_hue: float = 210.0,
-        shadow_sat: float = 0.30,
-        highlight_hue: float = 36.0,
-        highlight_sat: float = 0.32,
-        balance: float = 0.0,
-        pivot: float = 0.50,
-        mix: float = 0.75,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "shadow_hue": {"min": 0.0, "max": 360.0},
+                "shadow_sat": {"min": 0.0, "max": 1.0},
+                "highlight_hue": {"min": 0.0, "max": 360.0},
+                "highlight_sat": {"min": 0.0, "max": 1.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "pivot": {"min": 0.0, "max": 1.0},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        shadow_hue = float(settings["shadow_hue"])
+        shadow_sat = float(settings["shadow_sat"])
+        highlight_hue = float(settings["highlight_hue"])
+        highlight_sat = float(settings["highlight_sat"])
+        balance = float(settings["balance"])
+        pivot = float(settings["pivot"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         detail = (
             "shadow=({:.0f},{:.2f}), highlight=({:.0f},{:.2f}), balance={:.2f}, pivot={:.2f}, mix={:.2f}"
         ).format(
@@ -742,21 +810,34 @@ class x1SplitTone:
 
 
 class x1SelectiveColor:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "range_mode": "blues",
+            "custom_hue_center": 220.0,
+            "custom_hue_width": 30.0,
+            "hue_shift": 0.0,
+            "sat_shift": 0.20,
+            "value_shift": 0.0,
+            "softness": 20.0,
+            "amount": 1.0,
+            "preserve_luma": True,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "range_mode": (["reds", "yellows", "greens", "cyans", "blues", "magentas", "custom"],),
-                "custom_hue_center": ("FLOAT", {"default": 220.0, "min": 0.0, "max": 360.0, "step": 1.0}),
-                "custom_hue_width": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 180.0, "step": 1.0}),
-                "hue_shift": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0, "step": 0.5}),
-                "sat_shift": ("FLOAT", {"default": 0.20, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "value_shift": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "softness": ("FLOAT", {"default": 20.0, "min": 0.0, "max": 120.0, "step": 0.5}),
-                "amount": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "preserve_luma": ("BOOLEAN", {"default": True}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -771,19 +852,37 @@ class x1SelectiveColor:
     def run(
         self,
         image: torch.Tensor,
-        range_mode: str = "blues",
-        custom_hue_center: float = 220.0,
-        custom_hue_width: float = 30.0,
-        hue_shift: float = 0.0,
-        sat_shift: float = 0.20,
-        value_shift: float = 0.0,
-        softness: float = 20.0,
-        amount: float = 1.0,
-        preserve_luma: bool = True,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "custom_hue_center": {"min": 0.0, "max": 360.0},
+                "custom_hue_width": {"min": 1.0, "max": 180.0},
+                "hue_shift": {"min": -180.0, "max": 180.0},
+                "sat_shift": {"min": -1.0, "max": 1.0},
+                "value_shift": {"min": -1.0, "max": 1.0},
+                "softness": {"min": 0.0, "max": 120.0},
+                "amount": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"preserve_luma", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        range_mode = str(settings["range_mode"])
+        custom_hue_center = float(settings["custom_hue_center"])
+        custom_hue_width = float(settings["custom_hue_width"])
+        hue_shift = float(settings["hue_shift"])
+        sat_shift = float(settings["sat_shift"])
+        value_shift = float(settings["value_shift"])
+        softness = float(settings["softness"])
+        amount = float(settings["amount"])
+        preserve_luma = bool(settings["preserve_luma"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         detail = "range={}, hue_shift={:.1f}, sat_shift={:.2f}, val_shift={:.2f}, softness={:.1f}, amount={:.2f}".format(
             str(range_mode),
             float(hue_shift),
@@ -815,16 +914,29 @@ class x1SelectiveColor:
 
 
 class x1LensDistort:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "distortion": 0.12,
+            "chroma_aberration": 0.05,
+            "edge_vignette": 0.22,
+            "zoom_compensation": True,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "distortion": ("FLOAT", {"default": 0.12, "min": -0.8, "max": 0.8, "step": 0.001}),
-                "chroma_aberration": ("FLOAT", {"default": 0.05, "min": 0.0, "max": 0.35, "step": 0.001}),
-                "edge_vignette": ("FLOAT", {"default": 0.22, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "zoom_compensation": ("BOOLEAN", {"default": True}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -839,14 +951,28 @@ class x1LensDistort:
     def run(
         self,
         image: torch.Tensor,
-        distortion: float = 0.12,
-        chroma_aberration: float = 0.05,
-        edge_vignette: float = 0.22,
-        zoom_compensation: bool = True,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "distortion": {"min": -0.8, "max": 0.8},
+                "chroma_aberration": {"min": 0.0, "max": 0.35},
+                "edge_vignette": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"zoom_compensation", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        distortion = float(settings["distortion"])
+        chroma_aberration = float(settings["chroma_aberration"])
+        edge_vignette = float(settings["edge_vignette"])
+        zoom_compensation = bool(settings["zoom_compensation"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         detail = "k={:.3f}, ca={:.3f}, vignette={:.2f}, zoom_comp={}".format(
             float(np.clip(distortion, -0.8, 0.8)),
             float(max(0.0, chroma_aberration)),
@@ -871,20 +997,33 @@ class x1LensDistort:
 
 
 class x1CRTScan:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "scanline_strength": 0.28,
+            "scanline_density": 1.0,
+            "phosphor_strength": 0.30,
+            "bloom_bleed": 0.22,
+            "warp_strength": 0.12,
+            "curvature": 0.18,
+            "noise_strength": 0.05,
+            "seed": 777,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "scanline_strength": ("FLOAT", {"default": 0.28, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "scanline_density": ("FLOAT", {"default": 1.0, "min": 0.2, "max": 4.0, "step": 0.01}),
-                "phosphor_strength": ("FLOAT", {"default": 0.30, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "bloom_bleed": ("FLOAT", {"default": 0.22, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "warp_strength": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "curvature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 0.8, "step": 0.01}),
-                "noise_strength": ("FLOAT", {"default": 0.05, "min": 0.0, "max": 0.25, "step": 0.005}),
-                "seed": ("INT", {"default": 777, "min": 0, "max": 999999, "step": 1}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -899,18 +1038,37 @@ class x1CRTScan:
     def run(
         self,
         image: torch.Tensor,
-        scanline_strength: float = 0.28,
-        scanline_density: float = 1.0,
-        phosphor_strength: float = 0.30,
-        bloom_bleed: float = 0.22,
-        warp_strength: float = 0.12,
-        curvature: float = 0.18,
-        noise_strength: float = 0.05,
-        seed: int = 777,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "scanline_strength": {"min": 0.0, "max": 1.0},
+                "scanline_density": {"min": 0.2, "max": 4.0},
+                "phosphor_strength": {"min": 0.0, "max": 1.0},
+                "bloom_bleed": {"min": 0.0, "max": 1.0},
+                "warp_strength": {"min": 0.0, "max": 1.0},
+                "curvature": {"min": 0.0, "max": 0.8},
+                "noise_strength": {"min": 0.0, "max": 0.25},
+                "seed": {"min": 0.0, "max": 999999.0, "integer": True},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        scanline_strength = float(settings["scanline_strength"])
+        scanline_density = float(settings["scanline_density"])
+        phosphor_strength = float(settings["phosphor_strength"])
+        bloom_bleed = float(settings["bloom_bleed"])
+        warp_strength = float(settings["warp_strength"])
+        curvature = float(settings["curvature"])
+        noise_strength = float(settings["noise_strength"])
+        seed = int(settings["seed"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         detail = "scan={:.2f}@{:.2f}, phosphor={:.2f}, bleed={:.2f}, warp={:.2f}, curve={:.2f}, noise={:.3f}, seed={}".format(
             float(np.clip(scanline_strength, 0.0, 1.0)),
             float(max(0.2, scanline_density)),
@@ -943,17 +1101,30 @@ class x1CRTScan:
 
 
 class x1WarpDisplace:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "displace_strength": 12.0,
+            "base_direction": 0.0,
+            "noise_scale": 64.0,
+            "noise_mix": 0.35,
+            "seed": 321,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "displace_strength": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 128.0, "step": 0.1}),
-                "base_direction": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 360.0, "step": 1.0}),
-                "noise_scale": ("FLOAT", {"default": 64.0, "min": 2.0, "max": 512.0, "step": 1.0}),
-                "noise_mix": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "seed": ("INT", {"default": 321, "min": 0, "max": 999999, "step": 1}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "direction_map": ("IMAGE",),
@@ -970,17 +1141,33 @@ class x1WarpDisplace:
     def run(
         self,
         image: torch.Tensor,
-        displace_strength: float = 12.0,
-        base_direction: float = 0.0,
-        noise_scale: float = 64.0,
-        noise_mix: float = 0.35,
-        seed: int = 321,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         direction_map: Optional[torch.Tensor] = None,
         strength_map: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "displace_strength": {"min": 0.0, "max": 128.0},
+                "base_direction": {"min": 0.0, "max": 360.0},
+                "noise_scale": {"min": 2.0, "max": 512.0},
+                "noise_mix": {"min": 0.0, "max": 1.0},
+                "seed": {"min": 0.0, "max": 999999.0, "integer": True},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        displace_strength = float(settings["displace_strength"])
+        base_direction = float(settings["base_direction"])
+        noise_scale = float(settings["noise_scale"])
+        noise_mix = float(settings["noise_mix"])
+        seed = int(settings["seed"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         batch = _to_image_batch(image)
         b, h, w, c = batch.shape
         rgb = batch[..., :3]
@@ -1064,21 +1251,34 @@ class x1WarpDisplace:
 
 
 class x1GlowEdges:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "edge_threshold": 0.22,
+            "edge_softness": 1.0,
+            "glow_spread": 8.0,
+            "glow_strength": 1.0,
+            "tint_r": 0.56,
+            "tint_g": 0.92,
+            "tint_b": 1.0,
+            "composite_mode": "screen",
+            "ink_amount": 0.45,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "edge_threshold": ("FLOAT", {"default": 0.22, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "edge_softness": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "glow_spread": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 64.0, "step": 0.5}),
-                "glow_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "tint_r": ("FLOAT", {"default": 0.56, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "tint_g": ("FLOAT", {"default": 0.92, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "tint_b": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "composite_mode": (["screen", "add", "soft_light", "ink"],),
-                "ink_amount": ("FLOAT", {"default": 0.45, "min": 0.0, "max": 1.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -1093,19 +1293,38 @@ class x1GlowEdges:
     def run(
         self,
         image: torch.Tensor,
-        edge_threshold: float = 0.22,
-        edge_softness: float = 1.0,
-        glow_spread: float = 8.0,
-        glow_strength: float = 1.0,
-        tint_r: float = 0.56,
-        tint_g: float = 0.92,
-        tint_b: float = 1.0,
-        composite_mode: str = "screen",
-        ink_amount: float = 0.45,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "edge_threshold": {"min": 0.0, "max": 1.0},
+                "edge_softness": {"min": 0.1, "max": 4.0},
+                "glow_spread": {"min": 0.0, "max": 64.0},
+                "glow_strength": {"min": 0.0, "max": 3.0},
+                "tint_r": {"min": 0.0, "max": 1.0},
+                "tint_g": {"min": 0.0, "max": 1.0},
+                "tint_b": {"min": 0.0, "max": 1.0},
+                "ink_amount": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        edge_threshold = float(settings["edge_threshold"])
+        edge_softness = float(settings["edge_softness"])
+        glow_spread = float(settings["glow_spread"])
+        glow_strength = float(settings["glow_strength"])
+        tint_r = float(settings["tint_r"])
+        tint_g = float(settings["tint_g"])
+        tint_b = float(settings["tint_b"])
+        composite_mode = str(settings["composite_mode"])
+        ink_amount = float(settings["ink_amount"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         detail = "thr={:.2f}, soft={:.2f}, spread={:.1f}, strength={:.2f}, tint=({:.2f},{:.2f},{:.2f}), mode={}".format(
             float(np.clip(edge_threshold, 0.0, 1.0)),
             float(max(0.1, edge_softness)),
@@ -1137,22 +1356,35 @@ class x1GlowEdges:
 
 
 class x1Depth:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "depth_mode": "luma",
+            "focal_depth": 0.5,
+            "depth_range": 0.25,
+            "near_blur": 10.0,
+            "far_blur": 18.0,
+            "depth_contrast": 1.0,
+            "haze_strength": 0.15,
+            "haze_r": 0.74,
+            "haze_g": 0.82,
+            "haze_b": 0.92,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "depth_mode": (["luma", "inverted_luma", "radial", "custom_map"],),
-                "focal_depth": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "depth_range": ("FLOAT", {"default": 0.25, "min": 0.02, "max": 1.0, "step": 0.01}),
-                "near_blur": ("FLOAT", {"default": 10.0, "min": 0.0, "max": 64.0, "step": 0.5}),
-                "far_blur": ("FLOAT", {"default": 18.0, "min": 0.0, "max": 64.0, "step": 0.5}),
-                "depth_contrast": ("FLOAT", {"default": 1.0, "min": 0.2, "max": 3.0, "step": 0.01}),
-                "haze_strength": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "haze_r": ("FLOAT", {"default": 0.74, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "haze_g": ("FLOAT", {"default": 0.82, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "haze_b": ("FLOAT", {"default": 0.92, "min": 0.0, "max": 1.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "depth_map": ("MASK",),
@@ -1168,21 +1400,31 @@ class x1Depth:
     def run(
         self,
         image: torch.Tensor,
-        depth_mode: str = "luma",
-        focal_depth: float = 0.5,
-        depth_range: float = 0.25,
-        near_blur: float = 10.0,
-        far_blur: float = 18.0,
-        depth_contrast: float = 1.0,
-        haze_strength: float = 0.15,
-        haze_r: float = 0.74,
-        haze_g: float = 0.82,
-        haze_b: float = 0.92,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         depth_map: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "focal_depth": {"min": 0.0, "max": 1.0},
+                "depth_range": {"min": 0.02, "max": 1.0},
+                "near_blur": {"min": 0.0, "max": 64.0},
+                "far_blur": {"min": 0.0, "max": 64.0},
+                "depth_contrast": {"min": 0.2, "max": 3.0},
+                "haze_strength": {"min": 0.0, "max": 1.0},
+                "haze_r": {"min": 0.0, "max": 1.0},
+                "haze_g": {"min": 0.0, "max": 1.0},
+                "haze_b": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         batch = _to_image_batch(image)
         b, h, w, c = batch.shape
         rgb = batch[..., :3]
@@ -1203,14 +1445,19 @@ class x1Depth:
         out_np = np.empty_like(src_np)
         depth_np = np.zeros((int(b), int(h), int(w)), dtype=np.float32)
 
-        mode = str(depth_mode).lower()
-        focus = float(np.clip(focal_depth, 0.0, 1.0))
-        d_range = float(max(0.02, depth_range))
-        d_contrast = float(max(0.2, depth_contrast))
-        near_r = float(max(0.0, near_blur))
-        far_r = float(max(0.0, far_blur))
-        haze = float(np.clip(haze_strength, 0.0, 1.0))
-        haze_color = np.asarray([haze_r, haze_g, haze_b], dtype=np.float32)
+        mode = str(settings["depth_mode"]).lower()
+        if mode not in {"luma", "inverted_luma", "radial", "custom_map"}:
+            mode = "luma"
+        focus = float(settings["focal_depth"])
+        d_range = float(settings["depth_range"])
+        d_contrast = float(settings["depth_contrast"])
+        near_r = float(settings["near_blur"])
+        far_r = float(settings["far_blur"])
+        haze = float(settings["haze_strength"])
+        haze_color = np.asarray(
+            [settings["haze_r"], settings["haze_g"], settings["haze_b"]],
+            dtype=np.float32,
+        )
 
         xx, yy = _centered_xy_grid(int(h), int(w))
         radial_depth = np.clip(np.sqrt((xx * xx) + (yy * yy)) / math.sqrt(2.0), 0.0, 1.0).astype(np.float32, copy=False)

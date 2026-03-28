@@ -212,21 +212,33 @@ class x1LensDirtBloom:
 
 
 class x1ShockwaveDistort:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "center_x": 0.5,
+            "center_y": 0.5,
+            "radius": 0.22,
+            "width": 0.08,
+            "amplitude_px": 14.0,
+            "ring_hardness": 1.5,
+            "chroma_split_px": 1.2,
+            "mix": 1.0,
+            "mask_feather": 4.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "center_x": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "center_y": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "radius": ("FLOAT", {"default": 0.22, "min": 0.0, "max": 1.5, "step": 0.001}),
-                "width": ("FLOAT", {"default": 0.08, "min": 0.001, "max": 0.75, "step": 0.001}),
-                "amplitude_px": ("FLOAT", {"default": 14.0, "min": -128.0, "max": 128.0, "step": 0.25}),
-                "ring_hardness": ("FLOAT", {"default": 1.5, "min": 0.5, "max": 6.0, "step": 0.05}),
-                "chroma_split_px": ("FLOAT", {"default": 1.2, "min": 0.0, "max": 16.0, "step": 0.05}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 4.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -241,18 +253,37 @@ class x1ShockwaveDistort:
     def run(
         self,
         image: torch.Tensor,
-        center_x: float = 0.5,
-        center_y: float = 0.5,
-        radius: float = 0.22,
-        width: float = 0.08,
-        amplitude_px: float = 14.0,
-        ring_hardness: float = 1.5,
-        chroma_split_px: float = 1.2,
-        mix: float = 1.0,
-        mask_feather: float = 4.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "center_x": {"min": 0.0, "max": 1.0},
+                "center_y": {"min": 0.0, "max": 1.0},
+                "radius": {"min": 0.0, "max": 1.5},
+                "width": {"min": 0.001, "max": 0.75},
+                "amplitude_px": {"min": -128.0, "max": 128.0},
+                "ring_hardness": {"min": 0.5, "max": 6.0},
+                "chroma_split_px": {"min": 0.0, "max": 16.0},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        center_x = float(settings["center_x"])
+        center_y = float(settings["center_y"])
+        radius = float(settings["radius"])
+        width = float(settings["width"])
+        amplitude_px = float(settings["amplitude_px"])
+        ring_hardness = float(settings["ring_hardness"])
+        chroma_split_px = float(settings["chroma_split_px"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         rgb = batch[..., :3]

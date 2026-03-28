@@ -761,7 +761,7 @@ const NODE_CONFIGS = {
   },
   x1TextureSeamless: {
     panelName: "mkrX1TextureSeamlessStudio",
-    size: [780, 720],
+    size: [780, 810],
     accent: "#7cf5c9",
     title: "Texture Seamless Studio",
     subtitle: "Tune cross-blend and low-frequency edge matching together so seam removal feels deliberate instead of trial and error.",
@@ -772,6 +772,8 @@ const NODE_CONFIGS = {
       detail_preserve: 0.65,
       seam_blur: 12.0,
       seam_softness: 12.0,
+      mask_feather: 8.0,
+      invert_mask: false,
     },
     numericSpecs: {
       blend_width: { min: 1.0, max: 512.0 },
@@ -780,18 +782,19 @@ const NODE_CONFIGS = {
       detail_preserve: { min: 0.0, max: 1.0 },
       seam_blur: { min: 0.0, max: 256.0 },
       seam_softness: { min: 0.5, max: 256.0 },
+      mask_feather: { min: 0.0, max: 256.0 },
     },
-    booleanKeys: [],
-    legacyNames: ["blend_width", "edge_match_strength", "edge_match_blur", "detail_preserve", "seam_blur", "seam_softness"],
+    booleanKeys: ["invert_mask"],
+    legacyNames: ["blend_width", "edge_match_strength", "edge_match_blur", "detail_preserve", "seam_blur", "seam_softness", "mask_feather", "invert_mask"],
     metrics: [
       { label: "Blend", get: (node) => `${formatNumber(getNumber(node, "blend_width", 24), 1)} px` },
       { label: "Edge Match", get: (node) => formatNumber(getNumber(node, "edge_match_strength", 0.85), 2) },
       { label: "Detail", get: (node) => formatNumber(getNumber(node, "detail_preserve", 0.65), 2) },
     ],
     presets: [
-      { label: "Balanced", tone: "accent", values: { blend_width: 24.0, edge_match_strength: 0.85, edge_match_blur: 18.0, detail_preserve: 0.65, seam_blur: 12.0, seam_softness: 12.0 } },
-      { label: "Soft Fabric", values: { blend_width: 32.0, edge_match_strength: 0.72, edge_match_blur: 26.0, detail_preserve: 0.74, seam_blur: 18.0, seam_softness: 16.0 } },
-      { label: "Hard Surface", values: { blend_width: 14.0, edge_match_strength: 0.94, edge_match_blur: 10.0, detail_preserve: 0.82, seam_blur: 6.0, seam_softness: 8.0 } },
+      { label: "Balanced", tone: "accent", values: { blend_width: 24.0, edge_match_strength: 0.85, edge_match_blur: 18.0, detail_preserve: 0.65, seam_blur: 12.0, seam_softness: 12.0, mask_feather: 8.0, invert_mask: false } },
+      { label: "Soft Fabric", values: { blend_width: 32.0, edge_match_strength: 0.72, edge_match_blur: 26.0, detail_preserve: 0.74, seam_blur: 18.0, seam_softness: 16.0, mask_feather: 10.0, invert_mask: false } },
+      { label: "Hard Surface", values: { blend_width: 14.0, edge_match_strength: 0.94, edge_match_blur: 10.0, detail_preserve: 0.82, seam_blur: 6.0, seam_softness: 8.0, mask_feather: 6.0, invert_mask: false } },
     ],
     graph: {
       title: "Cross Blend",
@@ -801,6 +804,7 @@ const NODE_CONFIGS = {
       readouts: [
         { label: "Blur", get: (node) => `${formatNumber(getNumber(node, "seam_blur", 12), 1)} px` },
         { label: "Softness", get: (node) => `${formatNumber(getNumber(node, "seam_softness", 12), 1)} px` },
+        { label: "Mask Feather", get: (node) => `${formatNumber(getNumber(node, "mask_feather", 8), 1)} px` },
       ],
       draw: drawSeamlessPreview,
     },
@@ -821,6 +825,14 @@ const NODE_CONFIGS = {
           { key: "edge_match_strength", label: "Strength", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
           { key: "edge_match_blur", label: "Blur Radius", min: 0.0, max: 64.0, step: 0.5, decimals: 1 },
           { key: "detail_preserve", label: "Detail Preserve", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Mask Output",
+        note: "selective apply",
+        controls: [
+          { key: "mask_feather", label: "Mask Feather", min: 0.0, max: 64.0, step: 0.5, decimals: 1 },
+          { key: "invert_mask", type: "toggle", label: "Invert Mask", description: "Flip the optional mask before the seamless pass blends in." },
         ],
       },
     ],

@@ -449,6 +449,8 @@ class x1TextureSeamless:
             "detail_preserve": 0.65,
             "seam_blur": 12.0,
             "seam_softness": 12.0,
+            "mask_feather": 8.0,
+            "invert_mask": False,
         }
 
     @classmethod
@@ -464,6 +466,9 @@ class x1TextureSeamless:
                     },
                 ),
             },
+            "optional": {
+                "mask": ("MASK",),
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
@@ -475,6 +480,7 @@ class x1TextureSeamless:
         self,
         image: torch.Tensor,
         settings_json: str = "{}",
+        mask: Optional[torch.Tensor] = None,
         **legacy_settings,
     ):
         settings = parse_settings_payload(
@@ -487,7 +493,9 @@ class x1TextureSeamless:
                 "detail_preserve": {"min": 0.0, "max": 1.0},
                 "seam_blur": {"min": 0.0, "max": 256.0},
                 "seam_softness": {"min": 0.5, "max": 256.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
             },
+            boolean_keys={"invert_mask"},
             legacy=legacy_settings,
         )
         batch = to_image_batch(image)
@@ -495,6 +503,19 @@ class x1TextureSeamless:
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
         out_np = np.empty_like(src_np)
         mask_np = np.zeros((int(b), int(h), int(w)), dtype=np.float32)
+
+        effect_mask_t = mask_to_batch(
+            mask=mask,
+            batch=int(b),
+            h=int(h),
+            w=int(w),
+            feather_radius=float(max(0.0, settings["mask_feather"])),
+            invert_mask=bool(settings["invert_mask"]),
+            device=batch.device,
+            dtype=batch.dtype,
+        )
+        effect_mask_np = effect_mask_t.detach().cpu().numpy().astype(np.float32, copy=False)
+        coverage = float(effect_mask_t.mean().item()) * 100.0
 
         shift_y = int(h // 2)
         shift_x = int(w // 2)
@@ -542,14 +563,21 @@ class x1TextureSeamless:
                     detail_preserve=float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
                 )
                 alpha = roll_image_np(alpha, shift_y=-shift_y, shift_x=-shift_x)
-                out_np[idx] = np.concatenate([rgb, alpha[..., None]], axis=-1).astype(np.float32, copy=False)
+                processed = np.concatenate([rgb, alpha[..., None]], axis=-1).astype(np.float32, copy=False)
             else:
-                out_np[idx] = rgb
-            mask_np[idx] = seam_mask_output
+                processed = rgb
+
+            local_mask = np.clip(effect_mask_np[idx], 0.0, 1.0).astype(np.float32, copy=False)
+            out_np[idx] = np.clip(
+                (sample * (1.0 - local_mask[..., None])) + (processed * local_mask[..., None]),
+                0.0,
+                1.0,
+            ).astype(np.float32, copy=False)
+            mask_np[idx] = np.clip(seam_mask_output * local_mask, 0.0, 1.0).astype(np.float32, copy=False)
 
         info = (
             "x1TextureSeamless: blend_width={:.1f}px, edge_match_strength={:.2f}, edge_match_blur={:.1f}px, "
-            "detail_preserve={:.2f}, seam_blur={:.1f}px, seam_softness={:.1f}px"
+            "detail_preserve={:.2f}, seam_blur={:.1f}px, seam_softness={:.1f}px, mask_feather={:.1f}px, mask_coverage={:.2f}%{}"
         ).format(
             bw,
             float(np.clip(settings["edge_match_strength"], 0.0, 1.0)),
@@ -557,6 +585,9 @@ class x1TextureSeamless:
             float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
             float(max(0.0, settings["seam_blur"])),
             float(max(0.5, settings["seam_softness"])),
+            float(max(0.0, settings["mask_feather"])),
+            coverage,
+            " (inverted)" if settings["invert_mask"] else "",
         )
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),

@@ -1385,30 +1385,42 @@ class x1ColorWarpChromaLuma:
 
 
 class x1PaletteMap:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "palette_preset": "teal_orange",
+            "mapping_mode": "soft",
+            "softness": 0.5,
+            "preserve_luma": True,
+            "amount": 1.0,
+            "c1_r": 0.08,
+            "c1_g": 0.22,
+            "c1_b": 0.28,
+            "c2_r": 0.18,
+            "c2_g": 0.52,
+            "c2_b": 0.62,
+            "c3_r": 0.84,
+            "c3_g": 0.52,
+            "c3_b": 0.22,
+            "c4_r": 1.0,
+            "c4_g": 0.80,
+            "c4_b": 0.55,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "palette_preset": (["teal_orange", "pastel_pop", "neon_night", "earth_film", "mono_tint", "custom"],),
-                "mapping_mode": (["nearest", "soft"],),
-                "softness": ("FLOAT", {"default": 0.5, "min": 0.01, "max": 4.0, "step": 0.01}),
-                "preserve_luma": ("BOOLEAN", {"default": True}),
-                "amount": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c1_r": ("FLOAT", {"default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c1_g": ("FLOAT", {"default": 0.22, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c1_b": ("FLOAT", {"default": 0.28, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c2_r": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c2_g": ("FLOAT", {"default": 0.52, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c2_b": ("FLOAT", {"default": 0.62, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c3_r": ("FLOAT", {"default": 0.84, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c3_g": ("FLOAT", {"default": 0.52, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c3_b": ("FLOAT", {"default": 0.22, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c4_r": ("FLOAT", {"default": 1.00, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c4_g": ("FLOAT", {"default": 0.80, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "c4_b": ("FLOAT", {"default": 0.55, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -1423,27 +1435,56 @@ class x1PaletteMap:
     def run(
         self,
         image: torch.Tensor,
-        palette_preset: str = "teal_orange",
-        mapping_mode: str = "soft",
-        softness: float = 0.5,
-        preserve_luma: bool = True,
-        amount: float = 1.0,
-        c1_r: float = 0.08,
-        c1_g: float = 0.22,
-        c1_b: float = 0.28,
-        c2_r: float = 0.18,
-        c2_g: float = 0.52,
-        c2_b: float = 0.62,
-        c3_r: float = 0.84,
-        c3_g: float = 0.52,
-        c3_b: float = 0.22,
-        c4_r: float = 1.00,
-        c4_g: float = 0.80,
-        c4_b: float = 0.55,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "softness": {"min": 0.01, "max": 4.0},
+                "amount": {"min": 0.0, "max": 1.0},
+                "c1_r": {"min": 0.0, "max": 1.0},
+                "c1_g": {"min": 0.0, "max": 1.0},
+                "c1_b": {"min": 0.0, "max": 1.0},
+                "c2_r": {"min": 0.0, "max": 1.0},
+                "c2_g": {"min": 0.0, "max": 1.0},
+                "c2_b": {"min": 0.0, "max": 1.0},
+                "c3_r": {"min": 0.0, "max": 1.0},
+                "c3_g": {"min": 0.0, "max": 1.0},
+                "c3_b": {"min": 0.0, "max": 1.0},
+                "c4_r": {"min": 0.0, "max": 1.0},
+                "c4_g": {"min": 0.0, "max": 1.0},
+                "c4_b": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"preserve_luma", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        palette_preset = str(settings.get("palette_preset", "teal_orange"))
+        if palette_preset not in {"teal_orange", "pastel_pop", "neon_night", "earth_film", "mono_tint", "custom"}:
+            palette_preset = "teal_orange"
+        mapping_mode = str(settings.get("mapping_mode", "soft")).lower()
+        if mapping_mode not in {"nearest", "soft"}:
+            mapping_mode = "soft"
+        softness = float(settings["softness"])
+        preserve_luma = bool(settings["preserve_luma"])
+        amount = float(settings["amount"])
+        c1_r = float(settings["c1_r"])
+        c1_g = float(settings["c1_g"])
+        c1_b = float(settings["c1_b"])
+        c2_r = float(settings["c2_r"])
+        c2_g = float(settings["c2_g"])
+        c2_b = float(settings["c2_b"])
+        c3_r = float(settings["c3_r"])
+        c3_g = float(settings["c3_g"])
+        c3_b = float(settings["c3_b"])
+        c4_r = float(settings["c4_r"])
+        c4_g = float(settings["c4_g"])
+        c4_b = float(settings["c4_b"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         custom = np.asarray(
             [
                 [c1_r, c1_g, c1_b],
@@ -1495,17 +1536,29 @@ class x1PaletteMap:
 
 
 class x1ColorMatch:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "method": "mean_std",
+            "strength": 0.85,
+            "preserve_luma": False,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
                 "reference_image": ("IMAGE",),
-                "method": (["mean_std", "mean_only"],),
-                "strength": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "preserve_luma": ("BOOLEAN", {"default": False}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -1521,13 +1574,27 @@ class x1ColorMatch:
         self,
         image: torch.Tensor,
         reference_image: torch.Tensor,
-        method: str = "mean_std",
-        strength: float = 0.85,
-        preserve_luma: bool = False,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "strength": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"preserve_luma", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        method = str(settings.get("method", "mean_std")).lower()
+        if method not in {"mean_std", "mean_only"}:
+            method = "mean_std"
+        strength = float(settings["strength"])
+        preserve_luma = bool(settings["preserve_luma"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         batch = _to_image_batch(image)
         ref_batch = _to_image_batch(reference_image)
         b, h, w, c = batch.shape
@@ -1706,19 +1773,31 @@ class x1GamutMap:
 
 
 class x1FalseColor:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "mode": "luma_ramp",
+            "overlay_opacity": 1.0,
+            "zebra_threshold": 0.95,
+            "low_clip": 0.02,
+            "high_clip": 0.98,
+            "show_zebra": True,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "mode": (["luma_ramp", "exposure_zones", "clipping"],),
-                "overlay_opacity": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "zebra_threshold": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "low_clip": ("FLOAT", {"default": 0.02, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "high_clip": ("FLOAT", {"default": 0.98, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "show_zebra": ("BOOLEAN", {"default": True}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -1733,16 +1812,33 @@ class x1FalseColor:
     def run(
         self,
         image: torch.Tensor,
-        mode: str = "luma_ramp",
-        overlay_opacity: float = 1.0,
-        zebra_threshold: float = 0.95,
-        low_clip: float = 0.02,
-        high_clip: float = 0.98,
-        show_zebra: bool = True,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "overlay_opacity": {"min": 0.0, "max": 1.0},
+                "zebra_threshold": {"min": 0.0, "max": 1.0},
+                "low_clip": {"min": 0.0, "max": 1.0},
+                "high_clip": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"show_zebra", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        mode = str(settings.get("mode", "luma_ramp")).lower()
+        if mode not in {"luma_ramp", "exposure_zones", "clipping"}:
+            mode = "luma_ramp"
+        overlay_opacity = float(settings["overlay_opacity"])
+        zebra_threshold = float(settings["zebra_threshold"])
+        low_clip = float(settings["low_clip"])
+        high_clip = float(settings["high_clip"])
+        show_zebra = bool(settings["show_zebra"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         op = float(np.clip(overlay_opacity, 0.0, 1.0))
         zb = float(np.clip(zebra_threshold, 0.0, 1.0))
         lo = float(np.clip(low_clip, 0.0, 1.0))

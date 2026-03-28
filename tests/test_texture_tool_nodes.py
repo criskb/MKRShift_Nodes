@@ -68,6 +68,41 @@ class TextureToolNodeTests(unittest.TestCase):
         self.assertGreater(float(mask[0, 0, 0].item()), 0.4)
         self.assertIn("x1TextureSeamless", info)
 
+    def test_texture_seamless_respects_optional_mask(self) -> None:
+        x = torch.linspace(0.0, 1.0, 40, dtype=torch.float32).view(1, 1, 40, 1)
+        y = torch.linspace(0.0, 1.0, 40, dtype=torch.float32).view(1, 40, 1, 1)
+        image = torch.cat(
+            [
+                x.repeat(1, 40, 1, 1),
+                y.repeat(1, 1, 40, 1),
+                torch.full((1, 40, 40, 1), 0.25, dtype=torch.float32),
+            ],
+            dim=-1,
+        )
+        mask = torch.zeros((1, 40, 40), dtype=torch.float32)
+        mask[:, :, :20] = 1.0
+
+        node = x1TextureSeamless()
+        output, seam_mask, info = node.run(
+            image=image,
+            blend_width=12.0,
+            edge_match_strength=0.9,
+            edge_match_blur=8.0,
+            detail_preserve=0.6,
+            seam_blur=6.0,
+            seam_softness=8.0,
+            mask_feather=0.0,
+            invert_mask=False,
+            mask=mask,
+        )
+
+        left_change = float(torch.mean(torch.abs(output[:, :, :20, :] - image[:, :, :20, :])).item())
+        right_change = float(torch.mean(torch.abs(output[:, :, 20:, :] - image[:, :, 20:, :])).item())
+
+        self.assertGreater(left_change, right_change * 4.0)
+        self.assertGreater(float(torch.mean(seam_mask[:, :, :20]).item()), float(torch.mean(seam_mask[:, :, 20:]).item()) * 4.0)
+        self.assertIn("mask_coverage", info)
+
     def test_texture_tile_preview_repeats_pattern(self) -> None:
         image = torch.tensor(
             [[[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], [[0.0, 0.0, 1.0], [1.0, 1.0, 0.0]]]],
