@@ -294,6 +294,16 @@ function readControlValue(node, spec) {
   return getNumber(node, spec.key, Number(spec.default || 0));
 }
 
+function controlIsVisible(node, spec) {
+  if (typeof spec.visibleWhen !== "function") return true;
+  try {
+    return spec.visibleWhen(node) !== false;
+  } catch (error) {
+    console.warn(`[${EXTENSION_NAME}] visibility check failed for ${spec.key}`, error);
+    return true;
+  }
+}
+
 function createControl(node, spec, refresh) {
   if (spec.type === "toggle") {
     const control = createGradeToggle({
@@ -384,6 +394,130 @@ function getLightLeakRamp(node) {
   return [[1.0, 0.44, 0.10], [1.0, 0.86, 0.42]];
 }
 
+function createConceptSignalSourceCanvas(width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  const bg = ctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, "rgba(14,17,22,1)");
+  bg.addColorStop(1, "rgba(30,36,44,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  const sky = ctx.createLinearGradient(0, 0, width, height);
+  sky.addColorStop(0, "rgba(76,102,156,0.22)");
+  sky.addColorStop(1, "rgba(228,176,92,0.12)");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = "rgba(248,250,252,0.08)";
+  ctx.fillRect(width * 0.10, height * 0.16, width * 0.32, height * 0.48);
+  ctx.fillRect(width * 0.56, height * 0.12, width * 0.18, height * 0.58);
+  ctx.fillRect(width * 0.74, height * 0.32, width * 0.12, height * 0.28);
+
+  ctx.strokeStyle = "rgba(18,22,28,0.55)";
+  ctx.lineWidth = Math.max(1, Math.round(width * 0.008));
+  ctx.strokeRect(width * 0.10, height * 0.16, width * 0.32, height * 0.48);
+  ctx.strokeRect(width * 0.56, height * 0.12, width * 0.18, height * 0.58);
+  ctx.strokeRect(width * 0.74, height * 0.32, width * 0.12, height * 0.28);
+
+  const warmGrad = ctx.createLinearGradient(width * 0.08, height * 0.52, width * 0.42, height * 0.24);
+  warmGrad.addColorStop(0, "rgba(230,124,74,0.94)");
+  warmGrad.addColorStop(1, "rgba(252,214,142,0.94)");
+  ctx.fillStyle = warmGrad;
+  ctx.beginPath();
+  ctx.arc(width * 0.28, height * 0.44, Math.min(width, height) * 0.12, 0, Math.PI * 2);
+  ctx.fill();
+
+  const coolGrad = ctx.createLinearGradient(width * 0.58, height * 0.10, width * 0.78, height * 0.56);
+  coolGrad.addColorStop(0, "rgba(66,152,255,0.92)");
+  coolGrad.addColorStop(1, "rgba(88,240,255,0.82)");
+  ctx.fillStyle = coolGrad;
+  ctx.fillRect(width * 0.58, height * 0.18, width * 0.14, height * 0.24);
+
+  ctx.fillStyle = "rgba(248,250,252,0.84)";
+  ctx.font = `700 ${Math.max(12, Math.round(width * 0.055))}px sans-serif`;
+  ctx.fillText("FX", width * 0.14, height * 0.28);
+  ctx.font = `600 ${Math.max(10, Math.round(width * 0.032))}px sans-serif`;
+  ctx.fillText("plate", width * 0.14, height * 0.36);
+
+  ctx.strokeStyle = "rgba(248,250,252,0.14)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 6; i += 1) {
+    const y = (i / 6) * height;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+  for (let i = 0; i <= 8; i += 1) {
+    const x = (i / 8) * width;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+
+  return canvas;
+}
+
+function pseudoRandomUnit(seed, salt = 0) {
+  const raw = Math.sin(((Number(seed) || 0) * 12.9898) + (salt * 78.233)) * 43758.5453;
+  return raw - Math.floor(raw);
+}
+
+function blendPreviewMode(src, fx, mode) {
+  const m = String(mode || "screen").toLowerCase();
+  if (m === "add") return clamp(src + fx, 0, 1);
+  if (m === "overlay") return src <= 0.5 ? (2 * src * fx) : (1 - (2 * (1 - src) * (1 - fx)));
+  if (m === "soft_light") {
+    const g = Math.sqrt(clamp(src, 0, 1));
+    return fx <= 0.5
+      ? src - ((1 - (2 * fx)) * src * (1 - src))
+      : src + (((2 * fx) - 1) * (g - src));
+  }
+  if (m === "screen") return 1 - ((1 - src) * (1 - fx));
+  return lerp(src, fx, 0.5);
+}
+
+function sampleImageRgb(data, width, height, x, y) {
+  return [
+    sampleImageChannel(data, width, height, x, y, 0),
+    sampleImageChannel(data, width, height, x, y, 1),
+    sampleImageChannel(data, width, height, x, y, 2),
+  ];
+}
+
+function rgbToHsvUnit(r, g, b) {
+  const maxc = Math.max(r, g, b);
+  const minc = Math.min(r, g, b);
+  const delta = maxc - minc;
+  let h = 0;
+  if (delta > 1e-8) {
+    if (maxc === r) h = (((g - b) / delta) % 6 + 6) % 6;
+    else if (maxc === g) h = ((b - r) / delta) + 2;
+    else h = ((r - g) / delta) + 4;
+    h /= 6;
+  }
+  const s = maxc > 1e-8 ? delta / maxc : 0;
+  return [h, s, maxc];
+}
+
+function selectiveRange(rangeMode, customCenter, customWidth) {
+  const ranges = {
+    reds: [0, 24],
+    yellows: [58, 24],
+    greens: [120, 28],
+    cyans: [180, 28],
+    blues: [230, 30],
+    magentas: [300, 28],
+  };
+  if (String(rangeMode).toLowerCase() === "custom") return [customCenter, customWidth];
+  return ranges[String(rangeMode).toLowerCase()] || ranges.blues;
+}
+
 function drawLightLeakPreview(ctx, width, height, node) {
   const frame = drawFrame(ctx, width, height, "rgba(255,170,110,0.22)");
   const [startColor, endColor] = getLightLeakRamp(node);
@@ -391,55 +525,66 @@ function drawLightLeakPreview(ctx, width, height, node) {
   const strength = clamp(getNumber(node, "strength", 0.35), 0, 2);
   const scale = clamp(getNumber(node, "scale", 1.0), 0.2, 3);
   const softness = clamp(getNumber(node, "softness", 1.0), 0.2, 3);
-  const centerX = frame.x + (frame.w * 0.52);
-  const centerY = frame.y + (frame.h * 0.48);
+  const seed = Math.round(Number(getValue(node, "seed", 1337)) || 1337);
+  const blendMode = String(getValue(node, "blend_mode", "screen"));
+  const area = { x: frame.x + 18, y: frame.y + 18, w: frame.w - 36, h: frame.h - 36 };
+  const renderScale = Math.min(1, 360 / Math.max(1, area.w), 220 / Math.max(1, area.h));
+  const renderW = Math.max(180, Math.round(area.w * renderScale));
+  const renderH = Math.max(120, Math.round(area.h * renderScale));
+  const sourceCanvas = createConceptSignalSourceCanvas(renderW, renderH);
+  const sourceCtx = sourceCanvas.getContext("2d");
+  const sourceData = sourceCtx.getImageData(0, 0, renderW, renderH);
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = renderW;
+  outCanvas.height = renderH;
+  const outCtx = outCanvas.getContext("2d");
+  const outImage = outCtx.createImageData(renderW, renderH);
+  const src = sourceData.data;
+  const out = outImage.data;
+
+  const offx = lerp(-0.35, 0.35, pseudoRandomUnit(seed, 1));
+  const offy = lerp(-0.40, 0.40, pseudoRandomUnit(seed, 2));
   const dirX = Math.cos(angle);
   const dirY = Math.sin(angle);
-  const length = Math.max(frame.w, frame.h) * 0.9 * scale;
+  const cosT = Math.cos(angle);
+  const sinT = Math.sin(angle);
+  const s = Math.max(0.15, scale);
+  const soft = Math.max(0.2, softness);
 
-  const base = ctx.createLinearGradient(frame.x, frame.y, frame.x, frame.y + frame.h);
-  base.addColorStop(0, "rgba(11,13,16,0.98)");
-  base.addColorStop(1, "rgba(28,32,38,0.98)");
-  ctx.fillStyle = base;
-  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
-
-  const grad = ctx.createLinearGradient(
-    centerX - (dirX * length),
-    centerY - (dirY * length),
-    centerX + (dirX * length),
-    centerY + (dirY * length),
-  );
-  grad.addColorStop(0, rgbToCss(startColor, 0.10 + (strength * 0.10)));
-  grad.addColorStop(0.48, "rgba(255,255,255,0.02)");
-  grad.addColorStop(0.54, rgbToCss(endColor, 0.14 + (strength * 0.10)));
-  grad.addColorStop(1, "rgba(255,255,255,0.02)");
-
-  ctx.save();
-  ctx.translate(centerX, centerY);
-  ctx.rotate(angle);
-  ctx.fillStyle = grad;
-  ctx.filter = `blur(${(16 * softness).toFixed(1)}px)`;
-  ctx.fillRect(-frame.w * 0.68, -frame.h * 0.24, frame.w * 1.36, frame.h * 0.48);
-  ctx.filter = "none";
-  ctx.restore();
-
-  for (let i = 0; i < 4; i += 1) {
-    const spread = (i - 1.5) * frame.h * 0.12;
-    ctx.save();
-    ctx.translate(centerX + (dirY * spread), centerY - (dirX * spread));
-    ctx.rotate(angle);
-    ctx.strokeStyle = i % 2 === 0 ? rgbToCss(startColor, 0.15) : rgbToCss(endColor, 0.16);
-    ctx.lineWidth = 14 - (i * 2);
-    ctx.filter = `blur(${(5 + (softness * 4)).toFixed(1)}px)`;
-    ctx.beginPath();
-    ctx.moveTo(-frame.w * 0.42, 0);
-    ctx.lineTo(frame.w * 0.42, 0);
-    ctx.stroke();
-    ctx.restore();
+  for (let py = 0; py < renderH; py += 1) {
+    const ny = ((py / Math.max(1, renderH - 1)) * 2) - 1;
+    for (let px = 0; px < renderW; px += 1) {
+      const nx = ((px / Math.max(1, renderW - 1)) * 2) - 1;
+      const xr = (nx * cosT) + (ny * sinT);
+      const yr = (-nx * sinT) + (ny * cosT);
+      const core = Math.exp(-((((xr - offx) / (0.46 * s)) ** 2) + (((yr - offy) / (0.36 * s)) ** 2)));
+      const streak = Math.exp(-(((xr - offx) / (0.18 * soft)) ** 2)) * Math.exp(-((((yr - offy) * 0.75) / (0.52 * s)) ** 2));
+      let leak = clamp((core * 0.68) + (streak * 0.88), 0, 1);
+      leak = leak ** (1 / soft);
+      const t = clamp(((xr * 0.5 / Math.max(0.1, s)) + 0.5), 0, 1);
+      const ramp = [
+        lerp(startColor[0], endColor[0], t),
+        lerp(startColor[1], endColor[1], t),
+        lerp(startColor[2], endColor[2], t),
+      ];
+      const idx = ((py * renderW) + px) * 4;
+      for (let c = 0; c < 3; c += 1) {
+        const srcV = src[idx + c] / 255;
+        const fxV = clamp(ramp[c] * leak * strength, 0, 1);
+        out[idx + c] = Math.round(clamp(blendPreviewMode(srcV, fxV, blendMode), 0, 1) * 255);
+      }
+      out[idx + 3] = 255;
+    }
   }
-
+  outCtx.putImageData(outImage, 0, 0);
+  ctx.drawImage(outCanvas, area.x, area.y, area.w, area.h);
   ctx.strokeStyle = "rgba(255,255,255,0.12)";
-  ctx.strokeRect(frame.x + 18, frame.y + 18, frame.w - 36, frame.h - 36);
+  ctx.strokeRect(area.x, area.y, area.w, area.h);
+
+  ctx.fillStyle = "rgba(255,255,255,0.68)";
+  ctx.font = "600 10px sans-serif";
+  ctx.fillText(`${Math.round((angle * 180) / Math.PI)}°`, area.x + 8, area.y + 14);
+  ctx.fillText(blendMode, area.x + area.w - 52, area.y + 14);
 }
 
 function drawSplitTonePreview(ctx, width, height, node) {
@@ -449,21 +594,47 @@ function drawSplitTonePreview(ctx, width, height, node) {
   const pivot = clamp(getNumber(node, "pivot", 0.5), 0, 1);
   const balance = clamp(getNumber(node, "balance", 0), -1, 1);
   const mix = clamp(getNumber(node, "mix", 0.75), 0, 1);
+  const area = { x: frame.x + 16, y: frame.y + 24, w: frame.w - 32, h: frame.h - 48 };
+  const renderScale = Math.min(1, 360 / Math.max(1, area.w), 220 / Math.max(1, area.h));
+  const renderW = Math.max(180, Math.round(area.w * renderScale));
+  const renderH = Math.max(120, Math.round(area.h * renderScale));
+  const sourceCanvas = createConceptSignalSourceCanvas(renderW, renderH);
+  const sourceCtx = sourceCanvas.getContext("2d");
+  const sourceData = sourceCtx.getImageData(0, 0, renderW, renderH);
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = renderW;
+  outCanvas.height = renderH;
+  const outCtx = outCanvas.getContext("2d");
+  const outImage = outCtx.createImageData(renderW, renderH);
+  const src = sourceData.data;
+  const out = outImage.data;
+  const p = clamp(pivot + (balance * 0.35), 0.02, 0.98);
 
-  const ramp = ctx.createLinearGradient(frame.x, frame.y, frame.x + frame.w, frame.y);
-  ramp.addColorStop(0, rgbToCss(shadowColor, 0.88 * mix));
-  ramp.addColorStop(clamp(pivot + (balance * 0.18), 0, 1), "rgba(229,232,236,0.92)");
-  ramp.addColorStop(1, rgbToCss(highlightColor, 0.88 * mix));
-  ctx.fillStyle = ramp;
-  ctx.fillRect(frame.x + 16, frame.y + 24, frame.w - 32, frame.h - 48);
+  for (let py = 0; py < renderH; py += 1) {
+    for (let px = 0; px < renderW; px += 1) {
+      const idx = ((py * renderW) + px) * 4;
+      const sr = src[idx] / 255;
+      const sg = src[idx + 1] / 255;
+      const sb = src[idx + 2] / 255;
+      const luma = (0.2126 * sr) + (0.7152 * sg) + (0.0722 * sb);
+      const sh = clamp((p - luma) / Math.max(1e-6, p), 0, 1);
+      const hi = clamp((luma - p) / Math.max(1e-6, 1 - p), 0, 1);
+      let tr = lerp(sr, shadowColor[0], sh * clamp(getNumber(node, "shadow_sat", 0.3), 0, 1));
+      let tg = lerp(sg, shadowColor[1], sh * clamp(getNumber(node, "shadow_sat", 0.3), 0, 1));
+      let tb = lerp(sb, shadowColor[2], sh * clamp(getNumber(node, "shadow_sat", 0.3), 0, 1));
+      tr = lerp(tr, highlightColor[0], hi * clamp(getNumber(node, "highlight_sat", 0.32), 0, 1));
+      tg = lerp(tg, highlightColor[1], hi * clamp(getNumber(node, "highlight_sat", 0.32), 0, 1));
+      tb = lerp(tb, highlightColor[2], hi * clamp(getNumber(node, "highlight_sat", 0.32), 0, 1));
+      out[idx] = Math.round(clamp(lerp(sr, tr, mix), 0, 1) * 255);
+      out[idx + 1] = Math.round(clamp(lerp(sg, tg, mix), 0, 1) * 255);
+      out[idx + 2] = Math.round(clamp(lerp(sb, tb, mix), 0, 1) * 255);
+      out[idx + 3] = 255;
+    }
+  }
+  outCtx.putImageData(outImage, 0, 0);
+  ctx.drawImage(outCanvas, area.x, area.y, area.w, area.h);
 
-  const luma = ctx.createLinearGradient(frame.x, frame.y, frame.x, frame.y + frame.h);
-  luma.addColorStop(0, "rgba(255,255,255,0.12)");
-  luma.addColorStop(1, "rgba(0,0,0,0.46)");
-  ctx.fillStyle = luma;
-  ctx.fillRect(frame.x + 16, frame.y + 24, frame.w - 32, frame.h - 48);
-
-  const pivotX = frame.x + 16 + ((frame.w - 32) * pivot);
+  const pivotX = area.x + (area.w * p);
   ctx.strokeStyle = "rgba(255,255,255,0.92)";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -481,16 +652,68 @@ function drawSelectiveColorPreview(ctx, width, height, node) {
   const frame = drawFrame(ctx, width, height, "rgba(124,235,184,0.20)");
   const bandX = frame.x + 20;
   const bandW = frame.w - 40;
-  const topY = frame.y + 30;
-  const bandH = 40;
-  const shiftY = topY + 66;
+  const topY = frame.y + frame.h - 50;
+  const bandH = 18;
   const currentCenter = clamp(getNumber(node, "custom_hue_center", 220), 0, 360);
   const currentWidth = clamp(getNumber(node, "custom_hue_width", 30), 1, 180);
   const hueShift = getNumber(node, "hue_shift", 0);
   const satShift = getNumber(node, "sat_shift", 0.2);
   const valueShift = getNumber(node, "value_shift", 0);
   const softness = clamp(getNumber(node, "softness", 20), 0, 120);
+  const amount = clamp(getNumber(node, "amount", 0.75), 0, 1);
+  const preserveLuma = getBoolean(node, "preserve_luma", true);
   const rangeMode = String(getValue(node, "range_mode", "blues"));
+  const [rangeCenter, rangeWidth] = selectiveRange(rangeMode, currentCenter, currentWidth);
+  const area = { x: frame.x + 18, y: frame.y + 18, w: frame.w - 36, h: frame.h - 84 };
+  const renderScale = Math.min(1, 360 / Math.max(1, area.w), 200 / Math.max(1, area.h));
+  const renderW = Math.max(180, Math.round(area.w * renderScale));
+  const renderH = Math.max(108, Math.round(area.h * renderScale));
+  const sourceCanvas = createConceptSignalSourceCanvas(renderW, renderH);
+  const sourceCtx = sourceCanvas.getContext("2d");
+  const sourceData = sourceCtx.getImageData(0, 0, renderW, renderH);
+  const src = sourceData.data;
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = renderW;
+  outCanvas.height = renderH;
+  const outCtx = outCanvas.getContext("2d");
+  const outImage = outCtx.createImageData(renderW, renderH);
+  const out = outImage.data;
+  const center = ((rangeCenter % 360) + 360) % 360 / 360;
+  const widthNorm = clamp(rangeWidth, 1, 180) / 360;
+  const softNorm = Math.max(1 / 360, softness / 360);
+
+  for (let py = 0; py < renderH; py += 1) {
+    for (let px = 0; px < renderW; px += 1) {
+      const idx = ((py * renderW) + px) * 4;
+      const sr = src[idx] / 255;
+      const sg = src[idx + 1] / 255;
+      const sb = src[idx + 2] / 255;
+      const [h, s, v] = rgbToHsvUnit(sr, sg, sb);
+      const dist = Math.abs((((h - center) + 0.5) % 1) - 0.5);
+      const t = clamp((dist - widthNorm) / Math.max(1e-6, softNorm), 0, 1);
+      const sel = 1 - ((t * t) * (3 - (2 * t)));
+      const hh = (((h + (sel * (hueShift / 360))) % 1) + 1) % 1;
+      const ss = clamp(s + (sel * satShift), 0, 1);
+      const vv = clamp(v + (sel * valueShift), 0, 1);
+      let [tr, tg, tb] = hueToRgb(hh * 360, ss, vv);
+      if (preserveLuma) {
+        const srcL = (0.2126 * sr) + (0.7152 * sg) + (0.0722 * sb);
+        const outL = Math.max(1e-6, (0.2126 * tr) + (0.7152 * tg) + (0.0722 * tb));
+        const gain = srcL / outL;
+        tr = clamp(tr * gain, 0, 1);
+        tg = clamp(tg * gain, 0, 1);
+        tb = clamp(tb * gain, 0, 1);
+      }
+      out[idx] = Math.round(clamp(lerp(sr, tr, amount), 0, 1) * 255);
+      out[idx + 1] = Math.round(clamp(lerp(sg, tg, amount), 0, 1) * 255);
+      out[idx + 2] = Math.round(clamp(lerp(sb, tb, amount), 0, 1) * 255);
+      out[idx + 3] = 255;
+    }
+  }
+  outCtx.putImageData(outImage, 0, 0);
+  ctx.drawImage(outCanvas, area.x, area.y, area.w, area.h);
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.strokeRect(area.x, area.y, area.w, area.h);
 
   const hueGrad = ctx.createLinearGradient(bandX, 0, bandX + bandW, 0);
   for (let step = 0; step <= 12; step += 1) {
@@ -499,48 +722,145 @@ function drawSelectiveColorPreview(ctx, width, height, node) {
   }
   ctx.fillStyle = hueGrad;
   ctx.fillRect(bandX, topY, bandW, bandH);
-
-  ctx.fillStyle = "rgba(255,255,255,0.12)";
-  ctx.fillRect(bandX, shiftY, bandW, bandH);
-  const shiftedGrad = ctx.createLinearGradient(bandX, 0, bandX + bandW, 0);
-  for (let step = 0; step <= 12; step += 1) {
-    const t = step / 12;
-    shiftedGrad.addColorStop(
-      t,
-      rgbToCss(hueToRgb((t * 360) + hueShift, clamp(0.72 + satShift * 0.22, 0.1, 1), clamp(0.86 + valueShift * 0.18, 0.2, 1)), 1),
-    );
-  }
-  ctx.fillStyle = shiftedGrad;
-  ctx.fillRect(bandX, shiftY, bandW, bandH);
-
-  const centerX = bandX + ((currentCenter / 360) * bandW);
-  const widthPx = (currentWidth / 360) * bandW;
+  const centerX = bandX + ((rangeCenter / 360) * bandW);
+  const widthPx = (rangeWidth / 360) * bandW;
   ctx.strokeStyle = "rgba(255,255,255,0.95)";
   ctx.lineWidth = 2;
   ctx.strokeRect(centerX - (widthPx * 0.5), topY - 3, widthPx, bandH + 6);
   ctx.fillStyle = "rgba(255,255,255,0.90)";
   ctx.font = "600 12px sans-serif";
-  ctx.fillText(rangeMode === "custom" ? "Custom Hue Range" : `Target: ${rangeMode}`, bandX, frame.y + frame.h - 32);
-  ctx.fillText(`Softness ${softness.toFixed(0)}°`, bandX + bandW - 80, frame.y + frame.h - 32);
+  ctx.fillText(rangeMode === "custom" ? "Custom Hue Range" : `Target: ${rangeMode}`, bandX, frame.y + frame.h - 58);
+  ctx.fillText(`Softness ${softness.toFixed(0)}°`, bandX + bandW - 80, frame.y + frame.h - 58);
+  ctx.font = "11px sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.62)";
+  ctx.fillText(preserveLuma ? "preserve luma" : "free luma", bandX, frame.y + frame.h - 12);
+  ctx.fillText(`mix ${amount.toFixed(2)}`, bandX + bandW - 54, frame.y + frame.h - 12);
 }
 
-function distortPoint(x, y, centerX, centerY, amount) {
-  const dx = x - centerX;
-  const dy = y - centerY;
-  const r2 = (dx * dx) + (dy * dy);
-  const scale = 1 + (amount * r2);
-  return [centerX + (dx * scale), centerY + (dy * scale)];
+function lensDistortFactor(k, r2, zoomComp) {
+  let factor = 1 + (k * r2);
+  if (zoomComp) {
+    factor *= 1 / Math.max(0.2, 1 + (Math.abs(k) * 0.38));
+  }
+  return factor;
+}
+
+function sampleImageChannel(data, width, height, x, y, channel) {
+  const clampedX = clamp(x, 0, width - 1);
+  const clampedY = clamp(y, 0, height - 1);
+  const x0 = Math.floor(clampedX);
+  const y0 = Math.floor(clampedY);
+  const x1 = Math.min(width - 1, x0 + 1);
+  const y1 = Math.min(height - 1, y0 + 1);
+  const tx = clampedX - x0;
+  const ty = clampedY - y0;
+
+  const idx00 = ((y0 * width) + x0) * 4 + channel;
+  const idx10 = ((y0 * width) + x1) * 4 + channel;
+  const idx01 = ((y1 * width) + x0) * 4 + channel;
+  const idx11 = ((y1 * width) + x1) * 4 + channel;
+
+  const top = lerp(data[idx00], data[idx10], tx);
+  const bottom = lerp(data[idx01], data[idx11], tx);
+  return lerp(top, bottom, ty) / 255;
+}
+
+function sampleLensPreviewColor(data, width, height, nx, ny, distortion, chroma, zoomComp) {
+  const sampleAt = (k, channel) => {
+    const r2 = (nx * nx) + (ny * ny);
+    const factor = lensDistortFactor(k, r2, zoomComp);
+    const sx = ((((nx * factor) + 1) * 0.5) * (width - 1));
+    const sy = ((((ny * factor) + 1) * 0.5) * (height - 1));
+    return sampleImageChannel(data, width, height, sx, sy, channel);
+  };
+
+  const caShift = chroma * 0.45;
+  return [
+    sampleAt(distortion + caShift, 0),
+    sampleAt(distortion, 1),
+    sampleAt(distortion - caShift, 2),
+  ];
+}
+
+function createLensDistortSourceCanvas(width, height) {
+  const source = document.createElement("canvas");
+  source.width = width;
+  source.height = height;
+  const sctx = source.getContext("2d");
+
+  const bg = sctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, "rgba(10,14,20,1)");
+  bg.addColorStop(1, "rgba(27,31,38,1)");
+  sctx.fillStyle = bg;
+  sctx.fillRect(0, 0, width, height);
+
+  const vignette = sctx.createRadialGradient(width * 0.5, height * 0.46, width * 0.08, width * 0.5, height * 0.5, width * 0.62);
+  vignette.addColorStop(0, "rgba(78,96,124,0.10)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.00)");
+  sctx.fillStyle = vignette;
+  sctx.fillRect(0, 0, width, height);
+
+  sctx.strokeStyle = "rgba(238,244,250,0.18)";
+  sctx.lineWidth = 1;
+  for (let i = 0; i <= 8; i += 1) {
+    const x = (i / 8) * width;
+    sctx.beginPath();
+    sctx.moveTo(x, 0);
+    sctx.lineTo(x, height);
+    sctx.stroke();
+  }
+  for (let i = 0; i <= 6; i += 1) {
+    const y = (i / 6) * height;
+    sctx.beginPath();
+    sctx.moveTo(0, y);
+    sctx.lineTo(width, y);
+    sctx.stroke();
+  }
+
+  const insetX = width * 0.10;
+  const insetY = height * 0.12;
+  const insetW = width * 0.80;
+  const insetH = height * 0.70;
+  sctx.strokeStyle = "rgba(248,250,252,0.82)";
+  sctx.lineWidth = 2;
+  sctx.strokeRect(insetX, insetY, insetW, insetH);
+
+  sctx.strokeStyle = "rgba(248,250,252,0.56)";
+  sctx.lineWidth = 1.5;
+  sctx.beginPath();
+  sctx.moveTo(width * 0.5, insetY);
+  sctx.lineTo(width * 0.5, insetY + insetH);
+  sctx.stroke();
+  sctx.beginPath();
+  sctx.moveTo(insetX, height * 0.5);
+  sctx.lineTo(insetX + insetW, height * 0.5);
+  sctx.stroke();
+
+  sctx.beginPath();
+  sctx.arc(width * 0.5, height * 0.5, Math.min(width, height) * 0.12, 0, Math.PI * 2);
+  sctx.strokeStyle = "rgba(248,250,252,0.54)";
+  sctx.stroke();
+
+  sctx.fillStyle = "rgba(255,104,104,0.92)";
+  sctx.fillRect(insetX - 6, height * 0.5 - 12, 10, 24);
+  sctx.fillStyle = "rgba(102,196,255,0.92)";
+  sctx.fillRect(insetX + insetW - 4, height * 0.5 - 12, 10, 24);
+
+  sctx.fillStyle = "rgba(248,250,252,0.84)";
+  sctx.font = `600 ${Math.max(11, Math.round(width * 0.04))}px sans-serif`;
+  sctx.fillText("LENS", insetX + 8, insetY + 18);
+  sctx.fillText("GRID", insetX + 8, insetY + 34);
+
+  return source;
 }
 
 function drawLensDistortPreview(ctx, width, height, node) {
   const frame = drawFrame(ctx, width, height, "rgba(124,196,255,0.20)");
-  const amount = getNumber(node, "distortion", 0.12) * 0.12;
+  const distortion = clamp(getNumber(node, "distortion", 0.12), -0.8, 0.8);
   const chroma = clamp(getNumber(node, "chroma_aberration", 0.05), 0, 0.35);
   const vignette = clamp(getNumber(node, "edge_vignette", 0.22), 0, 1);
   const zoomComp = getBoolean(node, "zoom_compensation", true);
   const area = { x: frame.x + 26, y: frame.y + 26, w: frame.w - 52, h: frame.h - 52 };
-  const centerX = area.x + (area.w * 0.5);
-  const centerY = area.y + (area.h * 0.5);
 
   const bg = ctx.createLinearGradient(area.x, area.y, area.x, area.y + area.h);
   bg.addColorStop(0, "rgba(8,10,14,0.98)");
@@ -548,42 +868,49 @@ function drawLensDistortPreview(ctx, width, height, node) {
   ctx.fillStyle = bg;
   ctx.fillRect(area.x, area.y, area.w, area.h);
 
-  const drawGrid = (offset, color, alpha) => {
-    ctx.strokeStyle = color.replace(", 1)", `, ${alpha})`);
-    ctx.lineWidth = 1;
-    for (let step = 0; step <= 8; step += 1) {
-      ctx.beginPath();
-      for (let t = 0; t <= 24; t += 1) {
-        const p = t / 24;
-        const x = area.x + ((area.w * step) / 8);
-        const y = area.y + (area.h * p);
-        const [dx, dy] = distortPoint(x + offset, y, centerX, centerY, amount);
-        if (t === 0) ctx.moveTo(dx, dy);
-        else ctx.lineTo(dx, dy);
-      }
-      ctx.stroke();
-      ctx.beginPath();
-      for (let t = 0; t <= 24; t += 1) {
-        const p = t / 24;
-        const x = area.x + (area.w * p);
-        const y = area.y + ((area.h * step) / 8);
-        const [dx, dy] = distortPoint(x + offset, y, centerX, centerY, amount);
-        if (t === 0) ctx.moveTo(dx, dy);
-        else ctx.lineTo(dx, dy);
-      }
-      ctx.stroke();
+  const renderScale = Math.min(1, 360 / Math.max(1, area.w), 220 / Math.max(1, area.h));
+  const renderW = Math.max(180, Math.round(area.w * renderScale));
+  const renderH = Math.max(120, Math.round(area.h * renderScale));
+  const sourceCanvas = createLensDistortSourceCanvas(renderW, renderH);
+  const sourceCtx = sourceCanvas.getContext("2d");
+  const sourceData = sourceCtx.getImageData(0, 0, renderW, renderH).data;
+  const outputCanvas = document.createElement("canvas");
+  outputCanvas.width = renderW;
+  outputCanvas.height = renderH;
+  const outputCtx = outputCanvas.getContext("2d");
+  const imageData = outputCtx.createImageData(renderW, renderH);
+  const out = imageData.data;
+
+  for (let py = 0; py < renderH; py += 1) {
+    const ny = ((py / Math.max(1, renderH - 1)) * 2) - 1;
+    for (let px = 0; px < renderW; px += 1) {
+      const nx = ((px / Math.max(1, renderW - 1)) * 2) - 1;
+      const [r, g, b] = sampleLensPreviewColor(sourceData, renderW, renderH, nx, ny, distortion, chroma, zoomComp);
+      const radius = Math.sqrt((nx * nx) + (ny * ny));
+      const edge = clamp((radius - 0.12) / 0.95, 0, 1);
+      const coupling = Math.min(1, Math.abs(distortion) + (chroma * 0.8));
+      const vig = 1 - (vignette * coupling * edge);
+      const idx = ((py * renderW) + px) * 4;
+      out[idx] = Math.round(clamp(r * vig, 0, 1) * 255);
+      out[idx + 1] = Math.round(clamp(g * vig, 0, 1) * 255);
+      out[idx + 2] = Math.round(clamp(b * vig, 0, 1) * 255);
+      out[idx + 3] = 255;
     }
-  };
+  }
 
-  drawGrid(-chroma * 24, "rgba(255,98,98,1)", 0.28);
-  drawGrid(chroma * 24, "rgba(88,186,255,1)", 0.28);
-  drawGrid(0, "rgba(240,244,248,1)", 0.34);
+  outputCtx.putImageData(imageData, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(outputCanvas, area.x, area.y, area.w, area.h);
 
-  const vignetteGrad = ctx.createRadialGradient(centerX, centerY, area.w * 0.12, centerX, centerY, area.w * 0.68);
-  vignetteGrad.addColorStop(0, "rgba(0,0,0,0)");
-  vignetteGrad.addColorStop(1, `rgba(0,0,0,${(vignette * 0.72).toFixed(3)})`);
-  ctx.fillStyle = vignetteGrad;
-  ctx.fillRect(area.x, area.y, area.w, area.h);
+  if (distortion > 0.01) {
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.font = "600 10px sans-serif";
+    ctx.fillText("barrel", area.x + 10, area.y + 14);
+  } else if (distortion < -0.01) {
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.font = "600 10px sans-serif";
+    ctx.fillText("pincushion", area.x + 10, area.y + 14);
+  }
 
   if (zoomComp) {
     ctx.strokeStyle = "rgba(255,255,255,0.15)";
@@ -605,89 +932,72 @@ function drawCRTScanPreview(ctx, width, height, node) {
   const noise = clamp(getNumber(node, "noise_strength", 0.05), 0, 0.25);
   const centerX = area.x + (area.w * 0.5);
   const centerY = area.y + (area.h * 0.5);
+  const renderScale = Math.min(1, 360 / Math.max(1, area.w), 220 / Math.max(1, area.h));
+  const renderW = Math.max(180, Math.round(area.w * renderScale));
+  const renderH = Math.max(120, Math.round(area.h * renderScale));
+  const sourceCanvas = createConceptSignalSourceCanvas(renderW, renderH);
+  const sourceCtx = sourceCanvas.getContext("2d");
+  const sourceData = sourceCtx.getImageData(0, 0, renderW, renderH).data;
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = renderW;
+  outCanvas.height = renderH;
+  const outCtx = outCanvas.getContext("2d");
+  const outImage = outCtx.createImageData(renderW, renderH);
+  const out = outImage.data;
 
-  const bg = ctx.createLinearGradient(area.x, area.y, area.x, area.y + area.h);
-  bg.addColorStop(0, "rgba(6,12,10,0.98)");
-  bg.addColorStop(1, "rgba(16,22,18,0.98)");
-  ctx.fillStyle = bg;
-  ctx.fillRect(area.x, area.y, area.w, area.h);
-
-  const content = ctx.createLinearGradient(area.x, area.y, area.x, area.y + area.h);
-  content.addColorStop(0, "rgba(108,255,180,0.08)");
-  content.addColorStop(0.52, "rgba(54,196,255,0.10)");
-  content.addColorStop(1, "rgba(255,170,104,0.09)");
-  ctx.fillStyle = content;
-  ctx.fillRect(area.x, area.y, area.w, area.h);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(area.x, area.y, area.w, area.h);
-  ctx.clip();
-
-  ctx.strokeStyle = "rgba(160,255,218,0.18)";
-  ctx.lineWidth = 1;
-  const rows = Math.max(18, Math.round(area.h / (10 / density)));
-  for (let i = 0; i <= rows; i += 1) {
-    const t = i / rows;
-    const y = area.y + (area.h * t);
-    const phase = Math.sin((t * Math.PI * 2) + (warp * 6.0)) * warp * 12;
-    ctx.globalAlpha = 0.28 + ((Math.sin(t * Math.PI * rows * density) * 0.5 + 0.5) * scanStrength * 0.65);
-    ctx.beginPath();
-    ctx.moveTo(area.x + (curvature * 18) + phase, y);
-    ctx.bezierCurveTo(
-      area.x + (area.w * 0.28) - (curvature * 30),
-      y - (curvature * 24),
-      area.x + (area.w * 0.72) + (curvature * 30),
-      y + (curvature * 24),
-      area.x + area.w - (curvature * 18) - phase,
-      y,
-    );
-    ctx.stroke();
+  for (let py = 0; py < renderH; py += 1) {
+    const ny = ((py / Math.max(1, renderH - 1)) * 2) - 1;
+    const scan = 1 - (scanStrength * (0.5 + (0.5 * Math.sin((py * Math.max(0.2, density) * Math.PI) / Math.max(1, renderH / 2)))));
+    for (let px = 0; px < renderW; px += 1) {
+      const nx = ((px / Math.max(1, renderW - 1)) * 2) - 1;
+      const gx = nx * (1 + (curvature * ny * ny)) + (Math.sin((ny + 1) * Math.PI) * (warp * 0.02));
+      const gy = ny * (1 + (curvature * nx * nx));
+      let [r, g, b] = sampleImageRgb(
+        sourceData,
+        renderW,
+        renderH,
+        (((gx + 1) * 0.5) * (renderW - 1)),
+        (((gy + 1) * 0.5) * (renderH - 1)),
+      );
+      const phosphorBoost = phosphor * 0.22;
+      if (px % 3 === 0) {
+        r *= 1 + phosphorBoost;
+        g *= 1 - (phosphor * 0.06);
+        b *= 1 - (phosphor * 0.06);
+      } else if (px % 3 === 1) {
+        g *= 1 + phosphorBoost;
+        r *= 1 - (phosphor * 0.06);
+        b *= 1 - (phosphor * 0.06);
+      } else {
+        b *= 1 + phosphorBoost;
+        r *= 1 - (phosphor * 0.06);
+        g *= 1 - (phosphor * 0.06);
+      }
+      const grain = noise > 0.001 ? ((pseudoRandomUnit((px + 1) * (py + 7), 11) - 0.5) * noise * 0.18) : 0;
+      const idx = ((py * renderW) + px) * 4;
+      out[idx] = Math.round(clamp((r * scan) + grain, 0, 1) * 255);
+      out[idx + 1] = Math.round(clamp((g * scan) + grain, 0, 1) * 255);
+      out[idx + 2] = Math.round(clamp((b * scan) + grain, 0, 1) * 255);
+      out[idx + 3] = 255;
+    }
   }
-  ctx.globalAlpha = 1;
-
-  const bands = 36;
-  for (let i = 0; i < bands; i += 1) {
-    const x = area.x + ((area.w * i) / bands);
-    const bandW = area.w / bands;
-    const color = i % 3 === 0
-      ? "rgba(255,92,92,0.10)"
-      : i % 3 === 1
-        ? "rgba(88,255,140,0.10)"
-        : "rgba(88,186,255,0.10)";
-    ctx.fillStyle = color;
-    ctx.fillRect(x, area.y, bandW * phosphor, area.h);
+  outCtx.putImageData(outImage, 0, 0);
+  if (bloom > 0.001) {
+    ctx.save();
+    ctx.filter = `blur(${(4 + (bloom * 10)).toFixed(1)}px)`;
+    ctx.globalAlpha = 0.18 + (bloom * 0.14);
+    ctx.drawImage(outCanvas, area.x, area.y, area.w, area.h);
+    ctx.restore();
   }
+  ctx.drawImage(outCanvas, area.x, area.y, area.w, area.h);
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.strokeRect(area.x, area.y, area.w, area.h);
 
   ctx.fillStyle = "rgba(255,255,255,0.86)";
   ctx.font = "700 18px sans-serif";
-  ctx.fillText("CRT", area.x + 22, area.y + 34);
+  ctx.fillText("CRT", area.x + 18, area.y + 28);
   ctx.font = "600 12px sans-serif";
-  ctx.fillText("scanline + phosphor", area.x + 22, area.y + 52);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.26)";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(area.x + 18, area.y + 22, area.w - 36, area.h - 44);
-
-  if (bloom > 0.001) {
-    ctx.filter = `blur(${(10 + (bloom * 16)).toFixed(1)}px)`;
-    ctx.strokeStyle = `rgba(118,255,176,${(0.06 + bloom * 0.10).toFixed(3)})`;
-    ctx.lineWidth = 10 + (bloom * 12);
-    ctx.strokeRect(area.x + 18, area.y + 22, area.w - 36, area.h - 44);
-    ctx.filter = "none";
-  }
-
-  if (noise > 0.001) {
-    ctx.fillStyle = `rgba(255,255,255,${(0.05 + noise * 0.35).toFixed(3)})`;
-    const count = Math.round(32 + (noise * 260));
-    for (let i = 0; i < count; i += 1) {
-      const rx = area.x + ((i * 37) % Math.max(1, Math.floor(area.w - 2)));
-      const ry = area.y + ((i * 53) % Math.max(1, Math.floor(area.h - 2)));
-      ctx.fillRect(rx, ry, 1.5, 1.5);
-    }
-  }
-
-  ctx.restore();
+  ctx.fillText("scanline + phosphor", area.x + 18, area.y + 46);
 
   const vignette = ctx.createRadialGradient(centerX, centerY, area.w * 0.18, centerX, centerY, area.w * 0.72);
   vignette.addColorStop(0, "rgba(0,0,0,0)");
@@ -706,55 +1016,40 @@ function drawWarpDisplacePreview(ctx, width, height, node) {
   const hasDirectionMap = hasInputLink(node, "direction_map");
   const hasStrengthMap = hasInputLink(node, "strength_map");
 
-  const bg = ctx.createLinearGradient(area.x, area.y, area.x + area.w, area.y + area.h);
-  bg.addColorStop(0, "rgba(10,14,20,0.98)");
-  bg.addColorStop(1, "rgba(19,28,38,0.98)");
-  ctx.fillStyle = bg;
-  ctx.fillRect(area.x, area.y, area.w, area.h);
-
-  const cols = 10;
-  const rows = 7;
-  const amp = (strength / 128) * 20;
+  const renderScale = Math.min(1, 360 / Math.max(1, area.w), 220 / Math.max(1, area.h));
+  const renderW = Math.max(180, Math.round(area.w * renderScale));
+  const renderH = Math.max(120, Math.round(area.h * renderScale));
+  const sourceCanvas = createConceptSignalSourceCanvas(renderW, renderH);
+  const sourceCtx = sourceCanvas.getContext("2d");
+  const sourceData = sourceCtx.getImageData(0, 0, renderW, renderH).data;
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = renderW;
+  outCanvas.height = renderH;
+  const outCtx = outCanvas.getContext("2d");
+  const outImage = outCtx.createImageData(renderW, renderH);
+  const out = outImage.data;
+  const amp = (strength / 128) * 14;
   const scale = noiseScale / 58;
 
-  ctx.strokeStyle = "rgba(114,194,255,0.34)";
-  ctx.lineWidth = 1.2;
-  for (let col = 0; col <= cols; col += 1) {
-    ctx.beginPath();
-    for (let step = 0; step <= 36; step += 1) {
-      const t = step / 36;
-      const x = area.x + ((area.w * col) / cols);
-      const y = area.y + (area.h * t);
-      const wave = Math.sin((t * 6.3 * scale) + (col * 0.8) + baseDirection);
-      const swirl = Math.cos((t * 4.8 * scale) - (col * 0.35) + (baseDirection * 0.6));
+  for (let py = 0; py < renderH; py += 1) {
+    const tY = py / Math.max(1, renderH - 1);
+    for (let px = 0; px < renderW; px += 1) {
+      const tX = px / Math.max(1, renderW - 1);
+      const wave = Math.sin((tY * 6.3 * scale) + (tX * 3.2) + baseDirection);
+      const swirl = Math.cos((tX * 5.1 * scale) - (tY * 2.7) + (baseDirection * 0.8));
       const dx = (Math.cos(baseDirection) * amp * (1 - noiseMix)) + (wave * amp * noiseMix);
       const dy = (Math.sin(baseDirection) * amp * (1 - noiseMix)) + (swirl * amp * noiseMix * 0.7);
-      const px = x + dx;
-      const py = y + dy;
-      if (step === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+      const idx = ((py * renderW) + px) * 4;
+      out[idx] = Math.round(clamp(sampleImageChannel(sourceData, renderW, renderH, px + dx, py + dy, 0), 0, 1) * 255);
+      out[idx + 1] = Math.round(clamp(sampleImageChannel(sourceData, renderW, renderH, px + dx, py + dy, 1), 0, 1) * 255);
+      out[idx + 2] = Math.round(clamp(sampleImageChannel(sourceData, renderW, renderH, px + dx, py + dy, 2), 0, 1) * 255);
+      out[idx + 3] = 255;
     }
-    ctx.stroke();
   }
-
-  ctx.strokeStyle = "rgba(218,234,255,0.22)";
-  for (let row = 0; row <= rows; row += 1) {
-    ctx.beginPath();
-    for (let step = 0; step <= 42; step += 1) {
-      const t = step / 42;
-      const x = area.x + (area.w * t);
-      const y = area.y + ((area.h * row) / rows);
-      const wave = Math.sin((t * 5.4 * scale) + (row * 0.7) + (baseDirection * 0.8));
-      const swirl = Math.cos((t * 4.1 * scale) - (row * 0.5) + baseDirection);
-      const dx = (Math.cos(baseDirection) * amp * (1 - noiseMix)) + (wave * amp * noiseMix);
-      const dy = (Math.sin(baseDirection) * amp * (1 - noiseMix)) + (swirl * amp * noiseMix * 0.7);
-      const px = x + dx;
-      const py = y + dy;
-      if (step === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.stroke();
-  }
+  outCtx.putImageData(outImage, 0, 0);
+  ctx.drawImage(outCanvas, area.x, area.y, area.w, area.h);
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.strokeRect(area.x, area.y, area.w, area.h);
 
   const arrowX = area.x + 34;
   const arrowY = area.y + area.h - 30;
@@ -802,46 +1097,77 @@ function drawGlowEdgesPreview(ctx, width, height, node) {
     clamp(getNumber(node, "tint_b", 1.0), 0, 1),
   ];
 
-  const bg = ctx.createLinearGradient(area.x, area.y, area.x, area.y + area.h);
-  bg.addColorStop(0, "rgba(10,12,18,0.98)");
-  bg.addColorStop(1, "rgba(24,29,37,0.98)");
-  ctx.fillStyle = bg;
-  ctx.fillRect(area.x, area.y, area.w, area.h);
+  const renderScale = Math.min(1, 360 / Math.max(1, area.w), 220 / Math.max(1, area.h));
+  const renderW = Math.max(180, Math.round(area.w * renderScale));
+  const renderH = Math.max(120, Math.round(area.h * renderScale));
+  const sourceCanvas = createConceptSignalSourceCanvas(renderW, renderH);
+  const sourceCtx = sourceCanvas.getContext("2d");
+  const sourceData = sourceCtx.getImageData(0, 0, renderW, renderH);
+  const src = sourceData.data;
+  const edgeField = new Float32Array(renderW * renderH);
+  let maxMag = 1e-6;
 
-  const shapeX = area.x + 52;
-  const shapeY = area.y + 30;
-  const shapeW = area.w - 104;
-  const shapeH = area.h - 60;
-
-  ctx.save();
-  ctx.fillStyle = "rgba(32,38,48,0.96)";
-  ctx.beginPath();
-  ctx.roundRect(shapeX, shapeY, shapeW, shapeH, 22);
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(shapeX + shapeW * 0.28, shapeY + shapeH * 0.42, shapeH * 0.18, 0, Math.PI * 2);
-  ctx.rect(shapeX + shapeW * 0.50, shapeY + shapeH * 0.24, shapeW * 0.18, shapeH * 0.42);
-  ctx.strokeStyle = rgbToCss(tint, 0.72);
-  ctx.lineWidth = 2.5 + (threshold * 2.5);
-  ctx.filter = `blur(${(6 + spread * 0.3 * softness).toFixed(1)}px)`;
-  ctx.stroke();
-
-  ctx.filter = "none";
-  if (mode === "ink") {
-    ctx.globalAlpha = clamp(getNumber(node, "ink_amount", 0.45), 0, 1) * 0.75;
-    ctx.fillStyle = "rgba(0,0,0,0.65)";
-    ctx.fillRect(shapeX, shapeY, shapeW, shapeH);
-    ctx.globalAlpha = 1;
-  } else {
-    ctx.globalAlpha = 0.12 + (strength * 0.08);
-    ctx.fillStyle = rgbToCss(tint, 1);
-    ctx.beginPath();
-    ctx.roundRect(shapeX, shapeY, shapeW, shapeH, 22);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+  for (let py = 1; py < renderH - 1; py += 1) {
+    for (let px = 1; px < renderW - 1; px += 1) {
+      const idx = (py * renderW) + px;
+      const sampleLuma = (x, y) => {
+        const base = ((y * renderW) + x) * 4;
+        return ((0.2126 * src[base]) + (0.7152 * src[base + 1]) + (0.0722 * src[base + 2])) / 255;
+      };
+      const gx = sampleLuma(px + 1, py) - sampleLuma(px - 1, py);
+      const gy = sampleLuma(px, py + 1) - sampleLuma(px, py - 1);
+      const mag = Math.sqrt((gx * gx) + (gy * gy));
+      edgeField[idx] = mag;
+      if (mag > maxMag) maxMag = mag;
+    }
   }
-  ctx.restore();
+
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = renderW;
+  outCanvas.height = renderH;
+  const outCtx = outCanvas.getContext("2d");
+  const outImage = outCtx.createImageData(renderW, renderH);
+  const out = outImage.data;
+  const inkAmount = clamp(getNumber(node, "ink_amount", 0.45), 0, 1);
+
+  for (let py = 0; py < renderH; py += 1) {
+    for (let px = 0; px < renderW; px += 1) {
+      const idxFlat = (py * renderW) + px;
+      const idx = idxFlat * 4;
+      const srcRgb = [src[idx] / 255, src[idx + 1] / 255, src[idx + 2] / 255];
+      let edge = clamp(edgeField[idxFlat] / maxMag, 0, 1);
+      edge = edge ** (1 / Math.max(0.1, softness));
+      const glow = edge * clamp(strength, 0, 3);
+      let rgb;
+      if (mode === "ink") {
+        const dark = 1 - (inkAmount * edge);
+        rgb = [
+          clamp((srcRgb[0] * dark) + (tint[0] * edge * 0.25), 0, 1),
+          clamp((srcRgb[1] * dark) + (tint[1] * edge * 0.25), 0, 1),
+          clamp((srcRgb[2] * dark) + (tint[2] * edge * 0.25), 0, 1),
+        ];
+      } else {
+        rgb = [
+          clamp(blendPreviewMode(srcRgb[0], tint[0] * glow, mode), 0, 1),
+          clamp(blendPreviewMode(srcRgb[1], tint[1] * glow, mode), 0, 1),
+          clamp(blendPreviewMode(srcRgb[2], tint[2] * glow, mode), 0, 1),
+        ];
+      }
+      out[idx] = Math.round(rgb[0] * 255);
+      out[idx + 1] = Math.round(rgb[1] * 255);
+      out[idx + 2] = Math.round(rgb[2] * 255);
+      out[idx + 3] = 255;
+    }
+  }
+  outCtx.putImageData(outImage, 0, 0);
+  if (spread > 0.001) {
+    outCtx.filter = `blur(${(spread * 0.15).toFixed(2)}px)`;
+    outCtx.drawImage(outCanvas, 0, 0);
+    outCtx.filter = "none";
+  }
+  ctx.drawImage(outCanvas, area.x, area.y, area.w, area.h);
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.strokeRect(area.x, area.y, area.w, area.h);
 
   ctx.fillStyle = "rgba(255,255,255,0.90)";
   ctx.font = "700 15px sans-serif";
@@ -963,12 +1289,12 @@ const NODE_CONFIGS = {
         controls: [
           { type: "select", key: "ramp_preset", label: "Ramp Preset", options: [{ label: "warm", value: "warm" }, { label: "sunset", value: "sunset" }, { label: "teal_orange", value: "teal_orange" }, { label: "magenta_cyan", value: "magenta_cyan" }, { label: "custom", value: "custom" }] },
           { type: "select", key: "blend_mode", label: "Blend Mode", options: [{ label: "screen", value: "screen" }, { label: "add", value: "add" }, { label: "overlay", value: "overlay" }, { label: "soft_light", value: "soft_light" }] },
-          { key: "custom_start_r", label: "Start R", min: 0, max: 1, step: 0.01 },
-          { key: "custom_start_g", label: "Start G", min: 0, max: 1, step: 0.01 },
-          { key: "custom_start_b", label: "Start B", min: 0, max: 1, step: 0.01 },
-          { key: "custom_end_r", label: "End R", min: 0, max: 1, step: 0.01 },
-          { key: "custom_end_g", label: "End G", min: 0, max: 1, step: 0.01 },
-          { key: "custom_end_b", label: "End B", min: 0, max: 1, step: 0.01 },
+          { key: "custom_start_r", label: "Start R", min: 0, max: 1, step: 0.01, visibleWhen: (node) => String(getValue(node, "ramp_preset", "warm")) === "custom" },
+          { key: "custom_start_g", label: "Start G", min: 0, max: 1, step: 0.01, visibleWhen: (node) => String(getValue(node, "ramp_preset", "warm")) === "custom" },
+          { key: "custom_start_b", label: "Start B", min: 0, max: 1, step: 0.01, visibleWhen: (node) => String(getValue(node, "ramp_preset", "warm")) === "custom" },
+          { key: "custom_end_r", label: "End R", min: 0, max: 1, step: 0.01, visibleWhen: (node) => String(getValue(node, "ramp_preset", "warm")) === "custom" },
+          { key: "custom_end_g", label: "End G", min: 0, max: 1, step: 0.01, visibleWhen: (node) => String(getValue(node, "ramp_preset", "warm")) === "custom" },
+          { key: "custom_end_b", label: "End B", min: 0, max: 1, step: 0.01, visibleWhen: (node) => String(getValue(node, "ramp_preset", "warm")) === "custom" },
         ],
       },
       {
@@ -1113,8 +1439,8 @@ const NODE_CONFIGS = {
         note: "selection",
         controls: [
           { type: "select", key: "range_mode", label: "Range", options: [{ label: "reds", value: "reds" }, { label: "yellows", value: "yellows" }, { label: "greens", value: "greens" }, { label: "cyans", value: "cyans" }, { label: "blues", value: "blues" }, { label: "magentas", value: "magentas" }, { label: "custom", value: "custom" }] },
-          { key: "custom_hue_center", label: "Custom Center", min: 0, max: 360, step: 1, decimals: 0 },
-          { key: "custom_hue_width", label: "Custom Width", min: 1, max: 180, step: 1, decimals: 0 },
+          { key: "custom_hue_center", label: "Custom Center", min: 0, max: 360, step: 1, decimals: 0, visibleWhen: (node) => String(getValue(node, "range_mode", "blues")) === "custom" },
+          { key: "custom_hue_width", label: "Custom Width", min: 1, max: 180, step: 1, decimals: 0, visibleWhen: (node) => String(getValue(node, "range_mode", "blues")) === "custom" },
           { key: "softness", label: "Softness", min: 0, max: 120, step: 0.5, decimals: 1 },
         ],
       },
@@ -1273,7 +1599,7 @@ const NODE_CONFIGS = {
           { key: "warp_strength", label: "Warp Strength", min: 0, max: 1, step: 0.01 },
           { key: "curvature", label: "Curvature", min: 0, max: 0.8, step: 0.01 },
           { key: "noise_strength", label: "Noise Strength", min: 0, max: 0.25, step: 0.005, decimals: 3 },
-          { type: "seed", key: "seed", label: "Seed", min: 0, max: 999999 },
+          { type: "seed", key: "seed", label: "Seed", min: 0, max: 999999, visibleWhen: (node) => getNumber(node, "noise_strength", 0.05) > 0.001 },
         ],
       },
       {
@@ -1340,9 +1666,9 @@ const NODE_CONFIGS = {
         controls: [
           { key: "displace_strength", label: "Strength", min: 0, max: 128, step: 0.1, decimals: 1 },
           { key: "base_direction", label: "Base Direction", min: 0, max: 360, step: 1, decimals: 0 },
-          { key: "noise_scale", label: "Noise Scale", min: 2, max: 512, step: 1, decimals: 0 },
-          { key: "noise_mix", label: "Noise Mix", min: 0, max: 1, step: 0.01 },
-          { type: "seed", key: "seed", label: "Seed", min: 0, max: 999999 },
+          { key: "noise_scale", label: "Noise Scale", min: 2, max: 512, step: 1, decimals: 0, visibleWhen: (node) => !hasInputLink(node, "direction_map") },
+          { key: "noise_mix", label: "Noise Mix", min: 0, max: 1, step: 0.01, visibleWhen: (node) => !hasInputLink(node, "direction_map") },
+          { type: "seed", key: "seed", label: "Seed", min: 0, max: 999999, visibleWhen: (node) => !hasInputLink(node, "direction_map") },
         ],
       },
       {
@@ -1428,7 +1754,7 @@ const NODE_CONFIGS = {
           { key: "tint_g", label: "Tint G", min: 0, max: 1, step: 0.01 },
           { key: "tint_b", label: "Tint B", min: 0, max: 1, step: 0.01 },
           { type: "select", key: "composite_mode", label: "Composite Mode", options: [{ label: "screen", value: "screen" }, { label: "add", value: "add" }, { label: "soft_light", value: "soft_light" }, { label: "ink", value: "ink" }] },
-          { key: "ink_amount", label: "Ink Amount", min: 0, max: 1, step: 0.01 },
+          { key: "ink_amount", label: "Ink Amount", min: 0, max: 1, step: 0.01, visibleWhen: (node) => String(getValue(node, "composite_mode", "screen")) === "ink" },
         ],
       },
       {
@@ -1517,6 +1843,7 @@ function buildPanel(node, config) {
       const spec = { ...controlSpec };
       if (spec.default === undefined) spec.default = config.defaults[spec.key];
       const control = createControl(node, spec, refresh);
+      control.element.style.display = controlIsVisible(node, spec) ? "" : "none";
       grid.appendChild(control.element);
       controlViews.push({ spec, control });
     }
@@ -1551,6 +1878,7 @@ function buildPanel(node, config) {
     controlViews.forEach(({ spec, control }) => {
       try {
         control.setValue(readControlValue(node, spec));
+        control.element.style.display = controlIsVisible(node, spec) ? "" : "none";
       } catch (error) {
         console.warn(`[${EXTENSION_NAME}] control refresh failed for ${spec.key}`, error);
       }
