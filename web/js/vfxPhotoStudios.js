@@ -43,6 +43,32 @@ function average(values) {
   return values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length;
 }
 
+function safeViewText(getter, node, fallback = "--") {
+  try {
+    const value = getter?.(node);
+    return value ?? fallback;
+  } catch (error) {
+    console.warn(`[${EXTENSION_NAME}] view getter failed`, error);
+    return fallback;
+  }
+}
+
+function drawFallbackPreview(ctx, width, height, accent, title = "Preview") {
+  const graph = drawGraphFrame(ctx, width, height);
+  ctx.fillStyle = "rgba(255,255,255,0.05)";
+  ctx.fillRect(graph.x + 18, graph.y + 18, graph.w - 36, graph.h - 36);
+  ctx.strokeStyle = accent || "rgba(255,255,255,0.18)";
+  ctx.setLineDash([6, 6]);
+  ctx.strokeRect(graph.x + 18, graph.y + 18, graph.w - 36, graph.h - 36);
+  ctx.setLineDash([]);
+  ctx.fillStyle = "rgba(255,255,255,0.88)";
+  ctx.font = "600 13px sans-serif";
+  ctx.fillText(title, graph.x + 30, graph.y + 42);
+  ctx.fillStyle = "rgba(255,255,255,0.56)";
+  ctx.font = "11px sans-serif";
+  ctx.fillText("Preview ready. Controls remain active.", graph.x + 30, graph.y + 64);
+}
+
 function drawGraphFrame(ctx, width, height) {
   const graph = { x: 18, y: 18, w: width - 36, h: height - 36 };
   const bg = ctx.createLinearGradient(graph.x, graph.y, graph.x, graph.y + graph.h);
@@ -327,6 +353,259 @@ function drawSharpenGraph(ctx, width, height, node) {
   ctx.fillStyle = "rgba(239,243,247,0.86)";
   ctx.font = "600 12px sans-serif";
   ctx.fillText(mode === "highpass" ? "High Pass" : "Unsharp", graph.x + 12, graph.y + 18);
+}
+
+function drawVignettePreview(ctx, width, height, node) {
+  const graph = drawGraphFrame(ctx, width, height);
+  const amount = getNumber(node, "amount", 0.42);
+  const midpoint = getNumber(node, "midpoint", 0.58);
+  const feather = getNumber(node, "feather", 0.24);
+  const roundness = getNumber(node, "roundness", 0.78);
+  const centerX = getNumber(node, "center_x", 0.50);
+  const centerY = getNumber(node, "center_y", 0.50);
+  const saturationShift = getNumber(node, "saturation_shift", -0.06);
+
+  const bg = ctx.createLinearGradient(graph.x, graph.y, graph.x, graph.y + graph.h);
+  bg.addColorStop(0, "rgba(52,43,34,0.98)");
+  bg.addColorStop(1, "rgba(24,20,18,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  const warm = ctx.createRadialGradient(
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * 0.02,
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * (0.20 + (midpoint * 0.35)),
+  );
+  warm.addColorStop(0, "rgba(255,225,172,0.28)");
+  warm.addColorStop(1, "rgba(255,225,172,0)");
+  ctx.fillStyle = warm;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  const vignette = ctx.createRadialGradient(
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * clamp(midpoint * 0.28, 0.02, 0.32),
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * clamp((midpoint * 0.84) + (roundness * 0.12) + (feather * 0.18), 0.18, 0.82),
+  );
+  const edgeAlpha = clamp(0.14 + (Math.abs(amount) * 0.42), 0.10, 0.64);
+  if (amount >= 0) {
+    vignette.addColorStop(0, "rgba(0,0,0,0)");
+    vignette.addColorStop(0.58, "rgba(0,0,0,0)");
+    vignette.addColorStop(1, `rgba(0,0,0,${edgeAlpha})`);
+  } else {
+    vignette.addColorStop(0, "rgba(255,244,220,0)");
+    vignette.addColorStop(0.60, "rgba(255,244,220,0)");
+    vignette.addColorStop(1, `rgba(255,244,220,${edgeAlpha * 0.68})`);
+  }
+  ctx.fillStyle = vignette;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  ctx.strokeStyle = "rgba(255,245,228,0.28)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.ellipse(
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * clamp((midpoint * 0.34) / Math.max(0.4, roundness), 0.10, 0.42),
+    graph.h * clamp(midpoint * 0.28, 0.10, 0.38),
+    0,
+    0,
+    Math.PI * 2,
+  );
+  ctx.stroke();
+
+  if (Math.abs(saturationShift) > 1e-6) {
+    ctx.fillStyle = saturationShift > 0 ? "rgba(255,202,136,0.14)" : "rgba(199,214,255,0.12)";
+    ctx.fillRect(graph.x + 12, graph.y + graph.h - 22, graph.w - 24, 10);
+  }
+
+  ctx.fillStyle = "rgba(245,247,250,0.78)";
+  ctx.font = "600 11px sans-serif";
+  ctx.fillText(amount >= 0 ? "Darken" : "Lift", graph.x + 12, graph.y + 18);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(245,247,250,0.62)";
+  ctx.fillText(`${formatNumber(roundness, 2)} round`, graph.x + graph.w - 12, graph.y + 18);
+  ctx.textAlign = "left";
+}
+
+function drawOrtonPreview(ctx, width, height, node) {
+  const graph = drawGraphFrame(ctx, width, height);
+  const blurRadius = getNumber(node, "blur_radius", 18.0);
+  const glowStrength = getNumber(node, "glow_strength", 0.52);
+  const contrastSoftness = getNumber(node, "contrast_softness", 0.22);
+  const detailPreserve = getNumber(node, "detail_preserve", 0.48);
+  const highlightBias = getNumber(node, "highlight_bias", 0.34);
+  const blackLift = getNumber(node, "black_lift", 0.05);
+
+  const veil = ctx.createLinearGradient(graph.x, graph.y, graph.x, graph.y + graph.h);
+  veil.addColorStop(0, "rgba(64,53,46,0.98)");
+  veil.addColorStop(1, "rgba(28,24,22,0.98)");
+  ctx.fillStyle = veil;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  const x = graph.x + (graph.w * 0.50);
+  const y = graph.y + (graph.h * 0.42);
+  const bloom = ctx.createRadialGradient(x, y, 0, x, y, graph.w * clamp(0.14 + (blurRadius / 170), 0.12, 0.46));
+  bloom.addColorStop(0, `rgba(255,239,212,${clamp(0.32 + (glowStrength * 0.18), 0.16, 0.58)})`);
+  bloom.addColorStop(0.55, `rgba(255,224,188,${clamp(0.10 + (highlightBias * 0.22), 0.06, 0.30)})`);
+  bloom.addColorStop(1, "rgba(255,224,188,0)");
+  ctx.fillStyle = bloom;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  const softLayer = ctx.createLinearGradient(graph.x, graph.y, graph.x, graph.y + graph.h);
+  softLayer.addColorStop(0, `rgba(255,230,206,${clamp(0.04 + (contrastSoftness * 0.22), 0.03, 0.26)})`);
+  softLayer.addColorStop(1, `rgba(255,230,206,${clamp(0.02 + (blackLift * 0.40), 0.02, 0.18)})`);
+  ctx.fillStyle = softLayer;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  ctx.strokeStyle = "rgba(255,248,236,0.40)";
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 4; i += 1) {
+    const ring = 12 + (i * 12) + (blurRadius * 0.22);
+    ctx.beginPath();
+    ctx.arc(x, y, ring, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "rgba(255,255,255,0.94)";
+  ctx.beginPath();
+  ctx.arc(x, y, 9 + (detailPreserve * 2.5), 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(245,247,250,0.78)";
+  ctx.font = "600 11px sans-serif";
+  ctx.fillText("Dream Glow", graph.x + 12, graph.y + 18);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(245,247,250,0.62)";
+  ctx.fillText(`${formatNumber(glowStrength, 2)} glow`, graph.x + graph.w - 12, graph.y + 18);
+  ctx.textAlign = "left";
+}
+
+function drawFlashPopPreview(ctx, width, height, node) {
+  const graph = drawGraphFrame(ctx, width, height);
+  const amount = getNumber(node, "amount", 0.56);
+  const edgeFalloff = getNumber(node, "edge_falloff", 0.46);
+  const centerX = getNumber(node, "center_x", 0.50);
+  const centerY = getNumber(node, "center_y", 0.50);
+  const shadowLift = getNumber(node, "shadow_lift", 0.34);
+  const warmth = getNumber(node, "warmth", 0.08);
+  const clarity = getNumber(node, "clarity", 0.18);
+
+  const bg = ctx.createLinearGradient(graph.x, graph.y, graph.x, graph.y + graph.h);
+  bg.addColorStop(0, "rgba(33,34,38,0.98)");
+  bg.addColorStop(1, "rgba(18,19,22,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  const flash = ctx.createRadialGradient(
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * 0.04,
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * clamp(0.18 + (edgeFalloff * 0.42), 0.18, 0.62),
+  );
+  flash.addColorStop(0, `rgba(255,244,222,${clamp(0.34 + (amount * 0.30), 0.18, 0.72)})`);
+  flash.addColorStop(0.32, `rgba(255,228,182,${clamp(0.14 + (shadowLift * 0.30), 0.08, 0.40)})`);
+  flash.addColorStop(1, "rgba(255,216,176,0)");
+  ctx.fillStyle = flash;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  const edgeShade = ctx.createRadialGradient(
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * clamp(0.30 + (edgeFalloff * 0.10), 0.24, 0.48),
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * 0.76,
+  );
+  edgeShade.addColorStop(0, "rgba(0,0,0,0)");
+  edgeShade.addColorStop(1, "rgba(0,0,0,0.24)");
+  ctx.fillStyle = edgeShade;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  ctx.strokeStyle = warmth >= 0 ? "rgba(255,212,146,0.38)" : "rgba(173,204,255,0.32)";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.ellipse(
+    graph.x + (graph.w * centerX),
+    graph.y + (graph.h * centerY),
+    graph.w * clamp(0.14 + (edgeFalloff * 0.22), 0.12, 0.34),
+    graph.h * clamp(0.16 + (edgeFalloff * 0.22), 0.12, 0.34),
+    0,
+    0,
+    Math.PI * 2,
+  );
+  ctx.stroke();
+
+  const barX = graph.x + 14;
+  const barY = graph.y + graph.h - 18;
+  const barW = graph.w - 28;
+  const clarityW = barW * clamp(clarity, 0, 1);
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(barX, barY, barW, 8);
+  ctx.fillStyle = warmth >= 0 ? "rgba(255,192,112,0.78)" : "rgba(136,183,255,0.76)";
+  ctx.fillRect(barX, barY, clarityW, 8);
+
+  ctx.fillStyle = "rgba(245,247,250,0.82)";
+  ctx.font = "600 11px sans-serif";
+  ctx.fillText("Flash Core", graph.x + 12, graph.y + 18);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(245,247,250,0.60)";
+  ctx.fillText(`${formatNumber(shadowLift, 2)} lift`, graph.x + graph.w - 12, graph.y + 18);
+  ctx.textAlign = "left";
+}
+
+function drawPhotoMattePreview(ctx, width, height, node) {
+  const graph = drawGraphFrame(ctx, width, height);
+  const blackLift = getNumber(node, "black_lift", 0.10);
+  const whiteCompress = getNumber(node, "white_compress", 0.14);
+  const contrastSoftness = getNumber(node, "contrast_softness", 0.22);
+  const saturationSoften = getNumber(node, "saturation_soften", 0.14);
+  const warmth = getNumber(node, "warmth", 0.04);
+
+  const matte = ctx.createLinearGradient(graph.x, graph.y, graph.x, graph.y + graph.h);
+  matte.addColorStop(0, "rgba(62,58,52,0.98)");
+  matte.addColorStop(1, "rgba(36,33,30,0.98)");
+  ctx.fillStyle = matte;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  const paper = ctx.createLinearGradient(graph.x, graph.y, graph.x + graph.w, graph.y + graph.h);
+  const warmR = warmth >= 0 ? 244 : 226;
+  const warmG = warmth >= 0 ? 232 : 232;
+  const warmB = warmth >= 0 ? 214 : 244;
+  paper.addColorStop(0, `rgba(${warmR},${warmG},${warmB},0.16)`);
+  paper.addColorStop(1, "rgba(255,255,255,0.02)");
+  ctx.fillStyle = paper;
+  ctx.fillRect(graph.x, graph.y, graph.w, graph.h);
+
+  plotCurve(ctx, graph, "rgba(255,255,255,0.20)", (x) => x, 96, 1.4);
+  plotCurve(ctx, graph, "rgba(241,216,184,0.96)", (x) => {
+    const lifted = x + ((1 - x) * blackLift);
+    const compressed = lifted - (smoothstep(0.55, 1.0, lifted) * whiteCompress * 0.42);
+    return clamp(((compressed - 0.5) * (1 - (contrastSoftness * 0.72))) + 0.5, 0, 1);
+  }, 120, 2.2);
+
+  const satBarX = graph.x + 14;
+  const satBarY = graph.y + graph.h - 18;
+  const satBarW = graph.w - 28;
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(satBarX, satBarY, satBarW, 8);
+  ctx.fillStyle = "rgba(230,196,140,0.84)";
+  ctx.fillRect(satBarX, satBarY, satBarW * clamp(1 - saturationSoften, 0, 1), 8);
+
+  ctx.fillStyle = "rgba(245,247,250,0.82)";
+  ctx.font = "600 11px sans-serif";
+  ctx.fillText("Matte Curve", graph.x + 12, graph.y + 18);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(245,247,250,0.60)";
+  ctx.fillText(`${formatNumber(saturationSoften, 2)} sat soften`, graph.x + graph.w - 12, graph.y + 18);
+  ctx.textAlign = "left";
 }
 
 function drawSpotPreview(ctx, width, height, options) {
@@ -664,6 +943,339 @@ const NODE_CONFIGS = {
       },
     ],
   },
+  x1VignettePro: {
+    panelName: "mkr_vfx_vignette_pro_studio",
+    size: [780, 840],
+    accent: "#cfa16f",
+    title: "Vignette Pro Studio",
+    subtitle: "Shape photographic edge falloff with center control, roundness, highlight protection, and a gentle saturation response.",
+    defaults: {
+      amount: 0.42,
+      midpoint: 0.58,
+      feather: 0.24,
+      roundness: 0.78,
+      center_x: 0.50,
+      center_y: 0.50,
+      highlight_protect: 0.35,
+      saturation_shift: -0.06,
+      mix: 1.0,
+      mask_feather: 12.0,
+      invert_mask: false,
+    },
+    numericSpecs: {
+      amount: { min: -1.0, max: 1.0 },
+      midpoint: { min: 0.0, max: 1.0 },
+      feather: { min: 0.0, max: 1.0 },
+      roundness: { min: 0.1, max: 1.5 },
+      center_x: { min: 0.0, max: 1.0 },
+      center_y: { min: 0.0, max: 1.0 },
+      highlight_protect: { min: 0.0, max: 1.0 },
+      saturation_shift: { min: -1.0, max: 1.0 },
+      mix: { min: 0.0, max: 1.0 },
+      mask_feather: { min: 0.0, max: 256.0 },
+    },
+    booleanKeys: ["invert_mask"],
+    legacyNames: ["amount", "midpoint", "feather", "roundness", "center_x", "center_y", "highlight_protect", "saturation_shift", "mix", "mask_feather", "invert_mask"],
+    metrics: [
+      { label: "Amount", get: (node) => formatNumber(getNumber(node, "amount", 0.42)) },
+      { label: "Midpoint", get: (node) => formatNumber(getNumber(node, "midpoint", 0.58)) },
+      { label: "Center", get: (node) => `${formatNumber(getNumber(node, "center_x", 0.50), 2)},${formatNumber(getNumber(node, "center_y", 0.50), 2)}` },
+    ],
+    presets: [
+      { label: "Classic", tone: "accent", values: { amount: 0.42, midpoint: 0.58, feather: 0.24, roundness: 0.78, center_x: 0.50, center_y: 0.50, highlight_protect: 0.35, saturation_shift: -0.06 } },
+      { label: "Portrait", values: { amount: 0.28, midpoint: 0.66, feather: 0.32, roundness: 0.92, center_x: 0.50, center_y: 0.46, highlight_protect: 0.52, saturation_shift: -0.02 } },
+      { label: "Lifted", values: { amount: -0.26, midpoint: 0.56, feather: 0.28, roundness: 0.84, center_x: 0.50, center_y: 0.50, highlight_protect: 0.24, saturation_shift: 0.05 } },
+    ],
+    graph: {
+      title: "Framing Preview",
+      note: "edge falloff",
+      height: 228,
+      draw: drawVignettePreview,
+      readouts: [
+        { label: "Feather", get: (node) => formatNumber(getNumber(node, "feather", 0.24), 2) },
+        { label: "Round", get: (node) => formatNumber(getNumber(node, "roundness", 0.78), 2) },
+        { label: "Sat", get: (node) => formatNumber(getNumber(node, "saturation_shift", -0.06), 2) },
+      ],
+      help: "The guide ellipse shows where the falloff begins to feel present. Highlight protect keeps bright areas from collapsing too aggressively near the edges.",
+    },
+    sections: [
+      {
+        title: "Falloff Core",
+        note: "primary",
+        controls: [
+          { type: "slider", key: "amount", label: "Amount", min: -1, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "midpoint", label: "Midpoint", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "feather", label: "Feather", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "roundness", label: "Roundness", min: 0.1, max: 1.5, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Center And Bias",
+        note: "placement",
+        controls: [
+          { type: "slider", key: "center_x", label: "Center X", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "center_y", label: "Center Y", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "highlight_protect", label: "Hi Protect", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "saturation_shift", label: "Sat Shift", min: -1, max: 1, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Mask Finish",
+        note: "delivery",
+        controls: [
+          { type: "slider", key: "mix", label: "Mix", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "mask_feather", label: "Mask Feather", min: 0, max: 256, step: 0.5, decimals: 1 },
+          { type: "toggle", key: "invert_mask", label: "Invert Mask", description: "Flip the external mask before the vignette is blended." },
+        ],
+      },
+    ],
+  },
+  x1OrtonGlow: {
+    panelName: "mkr_vfx_orton_glow_studio",
+    size: [790, 860],
+    accent: "#e1b692",
+    title: "Orton Glow Studio",
+    subtitle: "Build dreamy photographic glow with blurred screen lift, highlight bias, preserved detail, and softer contrast response.",
+    defaults: {
+      blur_radius: 18.0,
+      glow_strength: 0.52,
+      contrast_softness: 0.22,
+      detail_preserve: 0.48,
+      highlight_bias: 0.34,
+      black_lift: 0.05,
+      mix: 1.0,
+      mask_feather: 12.0,
+      invert_mask: false,
+    },
+    numericSpecs: {
+      blur_radius: { min: 0.0, max: 128.0 },
+      glow_strength: { min: 0.0, max: 2.0 },
+      contrast_softness: { min: 0.0, max: 1.0 },
+      detail_preserve: { min: 0.0, max: 1.0 },
+      highlight_bias: { min: 0.0, max: 1.0 },
+      black_lift: { min: 0.0, max: 0.5 },
+      mix: { min: 0.0, max: 1.0 },
+      mask_feather: { min: 0.0, max: 256.0 },
+    },
+    booleanKeys: ["invert_mask"],
+    legacyNames: ["blur_radius", "glow_strength", "contrast_softness", "detail_preserve", "highlight_bias", "black_lift", "mix", "mask_feather", "invert_mask"],
+    metrics: [
+      { label: "Blur", get: (node) => `${formatNumber(getNumber(node, "blur_radius", 18), 1)}px` },
+      { label: "Glow", get: (node) => formatNumber(getNumber(node, "glow_strength", 0.52)) },
+      { label: "Detail", get: (node) => formatNumber(getNumber(node, "detail_preserve", 0.48)) },
+    ],
+    presets: [
+      { label: "Classic", tone: "accent", values: { blur_radius: 18, glow_strength: 0.52, contrast_softness: 0.22, detail_preserve: 0.48, highlight_bias: 0.34, black_lift: 0.05 } },
+      { label: "Portrait", values: { blur_radius: 14, glow_strength: 0.38, contrast_softness: 0.18, detail_preserve: 0.62, highlight_bias: 0.28, black_lift: 0.03 } },
+      { label: "Dream", values: { blur_radius: 28, glow_strength: 0.74, contrast_softness: 0.38, detail_preserve: 0.28, highlight_bias: 0.46, black_lift: 0.08 } },
+    ],
+    graph: {
+      title: "Glow Preview",
+      note: "soft screen",
+      height: 230,
+      draw: drawOrtonPreview,
+      readouts: [
+        { label: "Soft", get: (node) => formatNumber(getNumber(node, "contrast_softness", 0.22), 2) },
+        { label: "Hi Bias", get: (node) => formatNumber(getNumber(node, "highlight_bias", 0.34), 2) },
+        { label: "Lift", get: (node) => formatNumber(getNumber(node, "black_lift", 0.05), 2) },
+      ],
+      help: "This preview emphasizes glow spread, contrast softening, and the amount of core detail retained in the center of the effect.",
+    },
+    sections: [
+      {
+        title: "Glow Core",
+        note: "primary",
+        controls: [
+          { type: "slider", key: "blur_radius", label: "Blur Radius", min: 0, max: 128, step: 0.5, decimals: 1 },
+          { type: "slider", key: "glow_strength", label: "Glow Strength", min: 0, max: 2, step: 0.01, decimals: 2 },
+          { type: "slider", key: "contrast_softness", label: "Contrast Soft", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "detail_preserve", label: "Detail Preserve", min: 0, max: 1, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Photographic Bias",
+        note: "tonal feel",
+        controls: [
+          { type: "slider", key: "highlight_bias", label: "Highlight Bias", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "black_lift", label: "Black Lift", min: 0, max: 0.5, step: 0.01, decimals: 2 },
+          { type: "slider", key: "mix", label: "Mix", min: 0, max: 1, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Mask Finish",
+        note: "delivery",
+        controls: [
+          { type: "slider", key: "mask_feather", label: "Mask Feather", min: 0, max: 256, step: 0.5, decimals: 1 },
+          { type: "toggle", key: "invert_mask", label: "Invert Mask", description: "Flip the external mask before Orton glow is blended." },
+        ],
+      },
+    ],
+  },
+  x1FlashPop: {
+    panelName: "mkr_vfx_flash_pop_studio",
+    size: [790, 880],
+    accent: "#f0bf78",
+    title: "Flash Pop Studio",
+    subtitle: "Build a direct-flash style lift with center weighting, cleaner shadow pop, warmer bias, and crisp editorial clarity.",
+    defaults: {
+      amount: 0.56,
+      edge_falloff: 0.46,
+      center_x: 0.50,
+      center_y: 0.50,
+      shadow_lift: 0.34,
+      highlight_rolloff: 0.22,
+      warmth: 0.08,
+      clarity: 0.18,
+      mix: 1.0,
+      mask_feather: 12.0,
+      invert_mask: false,
+    },
+    numericSpecs: {
+      amount: { min: 0.0, max: 1.0 },
+      edge_falloff: { min: 0.05, max: 1.0 },
+      center_x: { min: 0.0, max: 1.0 },
+      center_y: { min: 0.0, max: 1.0 },
+      shadow_lift: { min: 0.0, max: 1.0 },
+      highlight_rolloff: { min: 0.0, max: 1.0 },
+      warmth: { min: -1.0, max: 1.0 },
+      clarity: { min: 0.0, max: 1.0 },
+      mix: { min: 0.0, max: 1.0 },
+      mask_feather: { min: 0.0, max: 256.0 },
+    },
+    booleanKeys: ["invert_mask"],
+    legacyNames: ["amount", "edge_falloff", "center_x", "center_y", "shadow_lift", "highlight_rolloff", "warmth", "clarity", "mix", "mask_feather", "invert_mask"],
+    metrics: [
+      { label: "Amount", get: (node) => formatNumber(getNumber(node, "amount", 0.56)) },
+      { label: "Clarity", get: (node) => formatNumber(getNumber(node, "clarity", 0.18)) },
+      { label: "Center", get: (node) => `${formatNumber(getNumber(node, "center_x", 0.50), 2)},${formatNumber(getNumber(node, "center_y", 0.50), 2)}` },
+    ],
+    presets: [
+      { label: "Disposable", tone: "accent", values: { amount: 0.64, edge_falloff: 0.42, center_x: 0.50, center_y: 0.48, shadow_lift: 0.42, highlight_rolloff: 0.18, warmth: 0.14, clarity: 0.16 } },
+      { label: "Editorial", values: { amount: 0.44, edge_falloff: 0.56, center_x: 0.50, center_y: 0.50, shadow_lift: 0.26, highlight_rolloff: 0.28, warmth: 0.04, clarity: 0.28 } },
+      { label: "Cool Pop", values: { amount: 0.52, edge_falloff: 0.48, center_x: 0.54, center_y: 0.44, shadow_lift: 0.32, highlight_rolloff: 0.24, warmth: -0.10, clarity: 0.22 } },
+    ],
+    graph: {
+      title: "Flash Falloff",
+      note: "capture feel",
+      height: 228,
+      draw: drawFlashPopPreview,
+      readouts: [
+        { label: "Falloff", get: (node) => formatNumber(getNumber(node, "edge_falloff", 0.46), 2) },
+        { label: "Warmth", get: (node) => formatNumber(getNumber(node, "warmth", 0.08), 2) },
+        { label: "Lift", get: (node) => formatNumber(getNumber(node, "shadow_lift", 0.34), 2) },
+      ],
+      help: "This preview sketches the center flash cone, edge dropoff, and the clarity bar so the node feels more like an on-camera flash tool than a generic brighten effect.",
+    },
+    sections: [
+      {
+        title: "Flash Core",
+        note: "primary",
+        controls: [
+          { type: "slider", key: "amount", label: "Amount", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "edge_falloff", label: "Edge Falloff", min: 0.05, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "shadow_lift", label: "Shadow Lift", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "highlight_rolloff", label: "Hi Rolloff", min: 0, max: 1, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Placement And Tone",
+        note: "capture bias",
+        controls: [
+          { type: "slider", key: "center_x", label: "Center X", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "center_y", label: "Center Y", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "warmth", label: "Warmth", min: -1, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "clarity", label: "Clarity", min: 0, max: 1, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Mask Finish",
+        note: "delivery",
+        controls: [
+          { type: "slider", key: "mix", label: "Mix", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "mask_feather", label: "Mask Feather", min: 0, max: 256, step: 0.5, decimals: 1 },
+          { type: "toggle", key: "invert_mask", label: "Invert Mask", description: "Flip the external mask before Flash Pop is blended." },
+        ],
+      },
+    ],
+  },
+  x1PhotoMatte: {
+    panelName: "mkr_vfx_photo_matte_studio",
+    size: [790, 860],
+    accent: "#d2b48a",
+    title: "Photo Matte Studio",
+    subtitle: "Build a softer print-style finish with lifted blacks, compressed whites, flatter contrast, and gentle paper warmth.",
+    defaults: {
+      black_lift: 0.10,
+      white_compress: 0.14,
+      contrast_softness: 0.22,
+      saturation_soften: 0.14,
+      warmth: 0.04,
+      mix: 1.0,
+      mask_feather: 12.0,
+      invert_mask: false,
+    },
+    numericSpecs: {
+      black_lift: { min: 0.0, max: 0.5 },
+      white_compress: { min: 0.0, max: 0.5 },
+      contrast_softness: { min: 0.0, max: 1.0 },
+      saturation_soften: { min: 0.0, max: 1.0 },
+      warmth: { min: -1.0, max: 1.0 },
+      mix: { min: 0.0, max: 1.0 },
+      mask_feather: { min: 0.0, max: 256.0 },
+    },
+    booleanKeys: ["invert_mask"],
+    legacyNames: ["black_lift", "white_compress", "contrast_softness", "saturation_soften", "warmth", "mix", "mask_feather", "invert_mask"],
+    metrics: [
+      { label: "Lift", get: (node) => formatNumber(getNumber(node, "black_lift", 0.10)) },
+      { label: "Compress", get: (node) => formatNumber(getNumber(node, "white_compress", 0.14)) },
+      { label: "Warmth", get: (node) => formatNumber(getNumber(node, "warmth", 0.04)) },
+    ],
+    presets: [
+      { label: "Soft Print", tone: "accent", values: { black_lift: 0.10, white_compress: 0.14, contrast_softness: 0.22, saturation_soften: 0.14, warmth: 0.04 } },
+      { label: "Faded", values: { black_lift: 0.16, white_compress: 0.20, contrast_softness: 0.36, saturation_soften: 0.22, warmth: 0.08 } },
+      { label: "Cool Matte", values: { black_lift: 0.08, white_compress: 0.12, contrast_softness: 0.18, saturation_soften: 0.10, warmth: -0.06 } },
+    ],
+    graph: {
+      title: "Print Response",
+      note: "matte curve",
+      height: 228,
+      draw: drawPhotoMattePreview,
+      readouts: [
+        { label: "Contrast", get: (node) => formatNumber(getNumber(node, "contrast_softness", 0.22), 2) },
+        { label: "Sat", get: (node) => formatNumber(getNumber(node, "saturation_soften", 0.14), 2) },
+        { label: "Mix", get: (node) => formatNumber(getNumber(node, "mix", 1.0), 2) },
+      ],
+      help: "The matte curve shows the lifted toe and softened shoulder. The lower bar gives a quick read on how much saturation is still being held onto.",
+    },
+    sections: [
+      {
+        title: "Matte Core",
+        note: "primary",
+        controls: [
+          { type: "slider", key: "black_lift", label: "Black Lift", min: 0, max: 0.5, step: 0.01, decimals: 2 },
+          { type: "slider", key: "white_compress", label: "White Compress", min: 0, max: 0.5, step: 0.01, decimals: 2 },
+          { type: "slider", key: "contrast_softness", label: "Contrast Soft", min: 0, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "saturation_soften", label: "Sat Soften", min: 0, max: 1, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Print Tone",
+        note: "paper bias",
+        controls: [
+          { type: "slider", key: "warmth", label: "Warmth", min: -1, max: 1, step: 0.01, decimals: 2 },
+          { type: "slider", key: "mix", label: "Mix", min: 0, max: 1, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Mask Finish",
+        note: "delivery",
+        controls: [
+          { type: "slider", key: "mask_feather", label: "Mask Feather", min: 0, max: 256, step: 0.5, decimals: 1 },
+          { type: "toggle", key: "invert_mask", label: "Invert Mask", description: "Flip the external mask before Photo Matte is blended." },
+        ],
+      },
+    ],
+  },
   x1Halation: {
     panelName: "mkr_vfx_halation_studio",
     size: [790, 860],
@@ -931,6 +1543,40 @@ const NODE_CONFIGS = {
 };
 
 const TARGET_NAMES = new Set(Object.keys(NODE_CONFIGS));
+const DISPLAY_NAME_ALIASES = new Map([
+  ["Highlight Recovery", "x1HighlightRecovery"],
+  ["Local Contrast", "x1LocalContrast"],
+  ["Sharpen Pro", "x1SharpenPro"],
+  ["Vignette Pro", "x1VignettePro"],
+  ["Orton Glow", "x1OrtonGlow"],
+  ["Flash Pop", "x1FlashPop"],
+  ["Photo Matte", "x1PhotoMatte"],
+  ["Halation", "x1Halation"],
+  ["Diffusion", "x1Diffusion"],
+  ["Lens Dirt Bloom", "x1LensDirtBloom"],
+]);
+
+function resolveNodeKey(value) {
+  const key = String(value || "");
+  if (!key) return null;
+  return NODE_CONFIGS[key] ? key : (DISPLAY_NAME_ALIASES.get(key) || null);
+}
+
+function resolveNodeConfig(node) {
+  const candidates = [
+    node?.comfyClass,
+    node?.constructor?.comfyClass,
+    node?.type,
+    node?.title,
+  ];
+  for (const candidate of candidates) {
+    const nodeKey = resolveNodeKey(candidate);
+    if (nodeKey) {
+      return { nodeKey, config: NODE_CONFIGS[nodeKey] };
+    }
+  }
+  return null;
+}
 
 function readControlValue(node, spec) {
   if (spec.type === "toggle") return getBoolean(node, spec.key, !!spec.default);
@@ -1018,7 +1664,7 @@ function buildPanel(node, config) {
   const metricsWrap = document.createElement("div");
   metricsWrap.className = "mkr-grade-metrics";
   const metricViews = (config.metrics || []).map((metric) => {
-    const view = createGradeMetric(metric.label, metric.get(node));
+    const view = createGradeMetric(metric.label, safeViewText(metric.get, node));
     metricsWrap.appendChild(view.element);
     return { ...metric, view };
   });
@@ -1043,7 +1689,7 @@ function buildPanel(node, config) {
   const readoutWrap = document.createElement("div");
   readoutWrap.className = "mkr-grade-inline";
   const readoutViews = (config.graph.readouts || []).map((readout) => {
-    const view = createGradeReadout(readout.label, readout.get(node));
+    const view = createGradeReadout(readout.label, safeViewText(readout.get, node));
     readoutWrap.appendChild(view.element);
     return { ...readout, view };
   });
@@ -1090,14 +1736,25 @@ function buildPanel(node, config) {
 
   function drawCanvas() {
     const { ctx, width, height } = ensureCanvasResolution(canvas);
-    ctx.clearRect(0, 0, width, height);
-    config.graph.draw(ctx, width, height, node, config);
+    try {
+      ctx.clearRect(0, 0, width, height);
+      config.graph.draw(ctx, width, height, node, config);
+    } catch (error) {
+      console.error(`[${EXTENSION_NAME}] preview draw failed for ${config.title}`, error);
+      drawFallbackPreview(ctx, width, height, config.accent, config.graph.title || config.title);
+    }
   }
 
   function refresh() {
-    metricViews.forEach((metric) => metric.view.setValue(metric.get(node)));
-    readoutViews.forEach((readout) => readout.view.setValue(readout.get(node)));
-    controlViews.forEach(({ spec, control }) => control.setValue(readControlValue(node, spec)));
+    metricViews.forEach((metric) => metric.view.setValue(safeViewText(metric.get, node)));
+    readoutViews.forEach((readout) => readout.view.setValue(safeViewText(readout.get, node)));
+    controlViews.forEach(({ spec, control }) => {
+      try {
+        control.setValue(readControlValue(node, spec));
+      } catch (error) {
+        console.warn(`[${EXTENSION_NAME}] control refresh failed for ${spec.key}`, error);
+      }
+    });
     drawCanvas();
   }
 
@@ -1106,9 +1763,9 @@ function buildPanel(node, config) {
 }
 
 function prepareNode(node) {
-  const nodeName = String(node?.comfyClass || node?.type || "");
-  const config = NODE_CONFIGS[nodeName];
-  if (!config) return;
+  const resolved = resolveNodeConfig(node);
+  if (!resolved) return;
+  const { config } = resolved;
 
   installBundledSettingsAdapter(node, {
     widgetName: SETTINGS_WIDGET_NAME,
@@ -1118,25 +1775,39 @@ function prepareNode(node) {
     legacyNames: config.legacyNames,
   });
 
-  if (node.__mkrVfxPhotoPanelInstalled) {
+  if (node.__mkrVfxPhotoPanelInstalled && typeof node.__mkrVfxPhotoRefresh === "function") {
     node.__mkrVfxPhotoRefresh?.();
     normalizePanelNode(node, [SETTINGS_WIDGET_NAME, ...config.legacyNames], config.panelName);
     return;
   }
 
-  node.__mkrVfxPhotoPanelInstalled = true;
-  const { panel, refresh } = buildPanel(node, config);
-  node.__mkrVfxPhotoRefresh = refresh;
-  attachPanel(node, config.panelName, panel, config.size[0], config.size[1]);
-  normalizePanelNode(node, [SETTINGS_WIDGET_NAME, ...config.legacyNames], config.panelName);
-  installRefreshHooks(node, "__mkrVfxPhotoRefreshHooksInstalled", refresh);
-  requestAnimationFrame(() => refresh());
+  try {
+    const { panel, refresh } = buildPanel(node, config);
+    node.__mkrVfxPhotoRefresh = refresh;
+    node.__mkrVfxPhotoPanelInstalled = true;
+    attachPanel(node, config.panelName, panel, config.size[0], config.size[1]);
+    normalizePanelNode(node, [SETTINGS_WIDGET_NAME, ...config.legacyNames], config.panelName);
+    installRefreshHooks(node, "__mkrVfxPhotoRefreshHooksInstalled", refresh);
+    requestAnimationFrame(() => {
+      try {
+        refresh();
+      } catch (error) {
+        console.error(`[${EXTENSION_NAME}] delayed refresh failed for ${config.title}`, error);
+      }
+    });
+  } catch (error) {
+    node.__mkrVfxPhotoPanelInstalled = false;
+    delete node.__mkrVfxPhotoRefresh;
+    console.error(`[${EXTENSION_NAME}] failed to build photo studio for ${config.title}`, error);
+  }
 }
 
 app.registerExtension({
   name: EXTENSION_NAME,
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    if (!TARGET_NAMES.has(String(nodeData?.name || nodeData?.type || ""))) return;
+    const candidates = [nodeData?.name, nodeData?.type, nodeData?.display_name, nodeData?.title];
+    const shouldAttach = candidates.some((candidate) => !!resolveNodeKey(candidate));
+    if (!shouldAttach) return;
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function onNodeCreated() {
       const result = typeof originalOnNodeCreated === "function"
@@ -1151,7 +1822,7 @@ app.registerExtension({
   },
   async afterConfigureGraph() {
     for (const node of app.graph?._nodes || []) {
-      if (TARGET_NAMES.has(String(node?.comfyClass || node?.type || "")) || TARGET_NAMES.has(String(node?.type || ""))) {
+      if (resolveNodeConfig(node)) {
         prepareNode(node);
       }
     }

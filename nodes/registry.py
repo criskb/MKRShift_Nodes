@@ -115,20 +115,32 @@ from .material_map_nodes import (
     x1ThicknessMap,
     x1TransmissionMap,
 )
+from .material_surface_fx_nodes import (
+    x1SurfaceDustMask,
+    x1SurfaceRustBloomMask,
+    x1SurfaceStreakMask,
+    x1SurfaceWaterlineMask,
+)
 from .material_pack_nodes import x1PBRPack
 from .material_preview_nodes import x1PreviewMaterial
 from .tech_art_nodes import x1ChannelBreakout, x1ChannelPack, x1CurvatureFromNormal, x1NormalBlend, x1UVCheckerOverlay
 from .tech_art_surface_nodes import x1AOFromHeight, x1IDMapQuantize, x1IDMaskExtract, x1NormalTweak, x1SlopeMaskFromNormal
 from .texture_tool_nodes import (
     x1TextureAlbedoSafe,
+    x1TextureCausticField,
     x1TextureCellPattern,
+    x1TextureCrackleField,
+    x1TextureContourLines,
     x1TextureDetileBlend,
     x1TextureDelight,
+    x1TextureDuneField,
     x1TextureEdgePad,
     x1TextureHexTiles,
     x1TextureMacroVariation,
+    x1TextureMarbleVein,
     x1TextureNoiseField,
     x1TextureOffset,
+    x1TextureRippleField,
     x1TextureSeamless,
     x1TextureStrata,
     x1TextureTilePreview,
@@ -175,7 +187,17 @@ from .xcolor import (
     x1LUTStack,
     x1PaletteMap,
 )
-from .xcolor_analyze_nodes import x1GamutWarning, x1HistogramScope, x1SkinToneCheck, x1Vectorscope, x1WaveformScope
+from .xcolor_analyze_nodes import (
+    x1GamutWarning,
+    x1HistogramScope,
+    x1HueBandScope,
+    x1NeutralityMap,
+    x1RGBBalanceScope,
+    x1SatLumaScope,
+    x1SkinToneCheck,
+    x1Vectorscope,
+    x1WaveformScope,
+)
 from .xprocess import (
     x1Bloom,
     x1Bokeh,
@@ -211,7 +233,7 @@ from .vfx_finishing_nodes import x1AnamorphicStreaks, x1HeatHaze
 from .vfx_optics_nodes import x1LensDirtBloom, x1ShockwaveDistort
 from .vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite
 from .layer_stack_nodes import MKRLayerStackComposite
-from .xphoto import x1HighlightRecovery, x1LocalContrast, x1SharpenPro
+from .xphoto import x1FlashPop, x1HighlightRecovery, x1LocalContrast, x1OrtonGlow, x1PhotoMatte, x1SharpenPro, x1VignettePro
 from .xshader import xShader
 from .xplay import x1AuraFlow, x1Glitch, x1Kaleido, x1PrismEcho, x1RippleWarp
 from .mask_nodes import x1MaskGen
@@ -434,6 +456,10 @@ NODE_CLASS_MAPPINGS = {
     "x1EmissiveMap": x1EmissiveMap,
     "x1EdgeWearMask": x1EdgeWearMask,
     "x1NormalMap": x1NormalMap,
+    "x1SurfaceDustMask": x1SurfaceDustMask,
+    "x1SurfaceStreakMask": x1SurfaceStreakMask,
+    "x1SurfaceRustBloomMask": x1SurfaceRustBloomMask,
+    "x1SurfaceWaterlineMask": x1SurfaceWaterlineMask,
     "x1PBRPack": x1PBRPack,
     "x1PreviewMaterial": x1PreviewMaterial,
     "x1ChannelPack": x1ChannelPack,
@@ -456,6 +482,12 @@ NODE_CLASS_MAPPINGS = {
     "x1TextureDetileBlend": x1TextureDetileBlend,
     "x1TextureNoiseField": x1TextureNoiseField,
     "x1TextureCellPattern": x1TextureCellPattern,
+    "x1TextureRippleField": x1TextureRippleField,
+    "x1TextureContourLines": x1TextureContourLines,
+    "x1TextureMarbleVein": x1TextureMarbleVein,
+    "x1TextureDuneField": x1TextureDuneField,
+    "x1TextureCausticField": x1TextureCausticField,
+    "x1TextureCrackleField": x1TextureCrackleField,
     "x1TextureHexTiles": x1TextureHexTiles,
     "x1TextureStrata": x1TextureStrata,
     "x1TextureWeavePattern": x1TextureWeavePattern,
@@ -489,6 +521,10 @@ NODE_CLASS_MAPPINGS = {
     "x1Vectorscope": x1Vectorscope,
     "x1GamutWarning": x1GamutWarning,
     "x1HistogramScope": x1HistogramScope,
+    "x1HueBandScope": x1HueBandScope,
+    "x1RGBBalanceScope": x1RGBBalanceScope,
+    "x1NeutralityMap": x1NeutralityMap,
+    "x1SatLumaScope": x1SatLumaScope,
     "x1SkinToneCheck": x1SkinToneCheck,
     "x1Tone": x1Tone,
     "x1Stylize": x1Stylize,
@@ -525,6 +561,10 @@ NODE_CLASS_MAPPINGS = {
     "x1HighlightRecovery": x1HighlightRecovery,
     "x1LocalContrast": x1LocalContrast,
     "x1SharpenPro": x1SharpenPro,
+    "x1VignettePro": x1VignettePro,
+    "x1OrtonGlow": x1OrtonGlow,
+    "x1FlashPop": x1FlashPop,
+    "x1PhotoMatte": x1PhotoMatte,
     "xShader": xShader,
     "x1MaskGen": x1MaskGen,
     "x1DenoiseDetail": x1DenoiseDetail,
@@ -737,6 +777,10 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "x1EmissiveMap": "Emissive Map • MKRShift Nodes",
     "x1EdgeWearMask": "Edge Wear Mask • MKRShift Nodes",
     "x1NormalMap": "Normal Map • MKRShift Nodes",
+    "x1SurfaceDustMask": "Surface Dust Mask • MKRShift Nodes",
+    "x1SurfaceStreakMask": "Surface Streak Mask • MKRShift Nodes",
+    "x1SurfaceRustBloomMask": "Surface Rust Bloom Mask • MKRShift Nodes",
+    "x1SurfaceWaterlineMask": "Surface Waterline Mask • MKRShift Nodes",
     "x1PBRPack": "PBR Pack • MKRShift Nodes",
     "x1PreviewMaterial": "Preview Material • MKRShift Nodes",
     "x1ChannelPack": "Channel Pack • MKRShift Nodes",
@@ -759,6 +803,12 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "x1TextureDetileBlend": "Texture Detile Blend • MKRShift Nodes",
     "x1TextureNoiseField": "Texture Noise Field • MKRShift Nodes",
     "x1TextureCellPattern": "Texture Cell Pattern • MKRShift Nodes",
+    "x1TextureRippleField": "Texture Ripple Field • MKRShift Nodes",
+    "x1TextureContourLines": "Texture Contour Lines • MKRShift Nodes",
+    "x1TextureMarbleVein": "Texture Marble Vein • MKRShift Nodes",
+    "x1TextureDuneField": "Texture Dune Field • MKRShift Nodes",
+    "x1TextureCausticField": "Texture Caustic Field • MKRShift Nodes",
+    "x1TextureCrackleField": "Texture Crackle Field • MKRShift Nodes",
     "x1TextureHexTiles": "Texture Hex Tiles • MKRShift Nodes",
     "x1TextureStrata": "Texture Strata • MKRShift Nodes",
     "x1TextureWeavePattern": "Texture Weave Pattern • MKRShift Nodes",
@@ -792,6 +842,10 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "x1Vectorscope": "Vectorscope • MKRShift Nodes",
     "x1GamutWarning": "Gamut Warning • MKRShift Nodes",
     "x1HistogramScope": "Histogram Scope • MKRShift Nodes",
+    "x1HueBandScope": "Hue Band Scope • MKRShift Nodes",
+    "x1RGBBalanceScope": "RGB Balance Scope • MKRShift Nodes",
+    "x1NeutralityMap": "Neutrality Map • MKRShift Nodes",
+    "x1SatLumaScope": "Sat / Luma Scope • MKRShift Nodes",
     "x1SkinToneCheck": "Skin Tone Check • MKRShift Nodes",
     "x1Tone": "Tone • MKRShift Nodes",
     "x1Stylize": "Stylize • MKRShift Nodes",
@@ -828,6 +882,10 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "x1HighlightRecovery": "Highlight Recovery • MKRShift Nodes",
     "x1LocalContrast": "Local Contrast • MKRShift Nodes",
     "x1SharpenPro": "Sharpen Pro • MKRShift Nodes",
+    "x1VignettePro": "Vignette Pro • MKRShift Nodes",
+    "x1OrtonGlow": "Orton Glow • MKRShift Nodes",
+    "x1FlashPop": "Flash Pop • MKRShift Nodes",
+    "x1PhotoMatte": "Photo Matte • MKRShift Nodes",
     "xShader": "xShader • MKRShift Nodes",
     "x1MaskGen": "Mask Gen • MKRShift Nodes",
     "x1DenoiseDetail": "Denoise + Detail • MKRShift Nodes",

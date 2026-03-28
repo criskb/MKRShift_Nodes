@@ -358,11 +358,449 @@ def procedural_weave_pattern(
     return _enforce_tile_edges(field.astype(np.float32, copy=False))
 
 
+def procedural_ripple_pattern(
+    h: int,
+    w: int,
+    ripple_scale_px: float,
+    direction_deg: float,
+    radial_mix: float,
+    interference: float,
+    warp_strength: float,
+    seed: int,
+    pattern_mode: str = "interference",
+) -> np.ndarray:
+    resolved_scale = float(max(4.0, ripple_scale_px))
+    cycles = max(1.0, float(max(int(h), int(w))) / resolved_scale)
+    theta = math.radians(float(direction_deg))
+
+    u = np.arange(int(w), dtype=np.float32) / float(max(1, int(w)))
+    v = np.arange(int(h), dtype=np.float32) / float(max(1, int(h)))
+    vv, uu = np.meshgrid(v, u, indexing="ij")
+
+    torus_x = np.sin(uu * (2.0 * math.pi))
+    torus_y = np.sin(vv * (2.0 * math.pi))
+    torus_r = np.sqrt((torus_x * torus_x) + (torus_y * torus_y)).astype(np.float32, copy=False)
+
+    directional = (
+        (math.cos(theta) * np.sin(uu * (2.0 * math.pi * cycles)))
+        + (math.sin(theta) * np.sin(vv * (2.0 * math.pi * cycles)))
+    ).astype(np.float32, copy=False)
+    radial = np.sin((torus_r * math.pi * cycles * 1.5) + (math.cos(theta) * 0.7)).astype(np.float32, copy=False)
+    cross = np.sin(((uu + vv) * 2.0 * math.pi * cycles * 0.5) + (directional * 1.2)).astype(np.float32, copy=False)
+
+    warp = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, resolved_scale * 0.65),
+        octaves=4,
+        lacunarity=2.0,
+        gain=0.56,
+        seed=int(seed) + 701,
+        variant="fbm",
+    )
+    warped = ((warp - 0.5) * float(np.clip(warp_strength, 0.0, 1.0)) * 2.2).astype(np.float32, copy=False)
+
+    resolved_mode = str(pattern_mode).lower()
+    radial_mix = float(np.clip(radial_mix, 0.0, 1.0))
+    interference = float(np.clip(interference, 0.0, 1.0))
+
+    if resolved_mode == "rings":
+        phase = radial + warped
+    elif resolved_mode == "directional":
+        phase = directional + warped
+    else:
+        phase = (
+            (directional * (1.0 - radial_mix))
+            + (radial * radial_mix)
+            + (cross * interference * 0.65)
+            + warped
+        ).astype(np.float32, copy=False)
+
+    out = (0.5 + (0.5 * np.sin(phase * math.pi))).astype(np.float32, copy=False)
+    return _enforce_tile_edges(np.clip(out, 0.0, 1.0).astype(np.float32, copy=False))
+
+
+def procedural_contour_pattern(
+    h: int,
+    w: int,
+    contour_scale_px: float,
+    line_width: float,
+    terrace_strength: float,
+    warp_strength: float,
+    seed: int,
+    pattern_mode: str = "lines",
+) -> np.ndarray:
+    base = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, float(contour_scale_px)),
+        octaves=5,
+        lacunarity=2.0,
+        gain=0.56,
+        seed=int(seed),
+        variant="fbm",
+    )
+    warp = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, float(contour_scale_px) * 0.52),
+        octaves=4,
+        lacunarity=2.15,
+        gain=0.58,
+        seed=int(seed) + 313,
+        variant="ridged",
+    )
+    terrain = np.clip(base + ((warp - 0.5) * float(np.clip(warp_strength, 0.0, 1.0)) * 0.55), 0.0, 1.0).astype(
+        np.float32,
+        copy=False,
+    )
+
+    levels = max(4.0, float(max(int(h), int(w))) / float(max(6.0, contour_scale_px)) * 3.0)
+    contour_phase = np.mod(terrain * levels, 1.0).astype(np.float32, copy=False)
+    width = float(np.clip(line_width, 0.01, 1.0))
+    line = 1.0 - smoothstep_np(0.0, max(1e-4, width), np.abs(contour_phase - 0.5) * 2.0)
+    line = np.clip(line, 0.0, 1.0).astype(np.float32, copy=False)
+
+    terraces = np.floor(terrain * levels) / max(levels - 1.0, 1.0)
+    terraces = np.clip(terraces, 0.0, 1.0).astype(np.float32, copy=False)
+    bevel = np.clip((terraces * (1.0 - float(np.clip(terrace_strength, 0.0, 1.0)))) + (line * 0.85), 0.0, 1.0)
+
+    resolved_mode = str(pattern_mode).lower()
+    if resolved_mode == "height":
+        return _enforce_tile_edges(terrain)
+    if resolved_mode == "terrace":
+        return _enforce_tile_edges(np.clip((terraces * 0.78) + (line * 0.35), 0.0, 1.0).astype(np.float32, copy=False))
+    if resolved_mode == "bevel":
+        return _enforce_tile_edges(bevel.astype(np.float32, copy=False))
+    return _enforce_tile_edges(line.astype(np.float32, copy=False))
+
+
+def procedural_marble_pattern(
+    h: int,
+    w: int,
+    vein_scale_px: float,
+    direction_deg: float,
+    flow_strength: float,
+    mineral_mix: float,
+    seed: int,
+    pattern_mode: str = "classic",
+) -> np.ndarray:
+    resolved_scale = float(max(4.0, vein_scale_px))
+    cycles = max(1.0, float(max(int(h), int(w))) / resolved_scale)
+    theta = math.radians(float(direction_deg))
+
+    u = np.arange(int(w), dtype=np.float32) / float(max(1, int(w)))
+    v = np.arange(int(h), dtype=np.float32) / float(max(1, int(h)))
+    vv, uu = np.meshgrid(v, u, indexing="ij")
+
+    flow = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, resolved_scale * 0.82),
+        octaves=5,
+        lacunarity=2.0,
+        gain=0.57,
+        seed=int(seed) + 211,
+        variant="fbm",
+    )
+    mineral = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, resolved_scale * 0.36),
+        octaves=4,
+        lacunarity=2.15,
+        gain=0.54,
+        seed=int(seed) + 577,
+        variant="ridged",
+    )
+    swirl = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, resolved_scale * 1.55),
+        octaves=3,
+        lacunarity=1.9,
+        gain=0.60,
+        seed=int(seed) + 887,
+        variant="turbulence",
+    )
+
+    phase = (
+        (uu * math.cos(theta) * cycles)
+        + (vv * math.sin(theta) * cycles)
+        + ((flow - 0.5) * float(np.clip(flow_strength, 0.0, 1.0)) * 1.55)
+        + ((swirl - 0.5) * 0.55)
+    )
+    wave = np.sin(phase * (2.0 * math.pi)).astype(np.float32, copy=False)
+    mineral_mix = float(np.clip(mineral_mix, 0.0, 1.0))
+    resolved_mode = str(pattern_mode).lower()
+
+    if resolved_mode == "vein":
+        veins = np.power(1.0 - np.abs(wave), 1.45).astype(np.float32, copy=False)
+        field = np.clip((veins * 0.88) + (mineral * (0.12 + (mineral_mix * 0.32))), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
+    elif resolved_mode == "onyx":
+        cloud = (0.5 + (0.5 * np.sin((phase * (2.0 * math.pi * 0.64)) + ((mineral - 0.5) * 2.2)))).astype(
+            np.float32,
+            copy=False,
+        )
+        band = np.power(0.5 + (0.5 * wave), 0.82).astype(np.float32, copy=False)
+        field = np.clip((cloud * 0.74) + (band * 0.26) + (mineral * mineral_mix * 0.18), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
+    else:
+        band = (0.5 + (0.5 * wave)).astype(np.float32, copy=False)
+        wisps = (0.5 + (0.5 * np.sin((phase * (2.0 * math.pi * 1.55)) + ((mineral - 0.5) * 1.8)))).astype(
+            np.float32,
+            copy=False,
+        )
+        field = np.clip((band * 0.74) + (wisps * 0.16) + (mineral * mineral_mix * 0.24), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
+
+    return _enforce_tile_edges(field)
+
+
+def procedural_dune_pattern(
+    h: int,
+    w: int,
+    dune_scale_px: float,
+    direction_deg: float,
+    wind_skew: float,
+    crest_sharpness: float,
+    ripple_detail: float,
+    drift_strength: float,
+    seed: int,
+    pattern_mode: str = "ridges",
+) -> np.ndarray:
+    resolved_scale = float(max(4.0, dune_scale_px))
+    cycles = max(1.0, float(max(int(h), int(w))) / resolved_scale)
+    theta = math.radians(float(direction_deg))
+
+    u = np.arange(int(w), dtype=np.float32) / float(max(1, int(w)))
+    v = np.arange(int(h), dtype=np.float32) / float(max(1, int(h)))
+    vv, uu = np.meshgrid(v, u, indexing="ij")
+
+    along = (uu * math.cos(theta)) + (vv * math.sin(theta))
+    across = (-uu * math.sin(theta)) + (vv * math.cos(theta))
+    drift = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, resolved_scale * 0.76),
+        octaves=4,
+        lacunarity=2.0,
+        gain=0.57,
+        seed=int(seed) + 401,
+        variant="fbm",
+    )
+    ripple = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, resolved_scale * 0.26),
+        octaves=3,
+        lacunarity=2.1,
+        gain=0.55,
+        seed=int(seed) + 613,
+        variant="ridged",
+    )
+
+    path = (
+        along
+        + ((across - 0.5) * float(np.clip(wind_skew, 0.0, 1.0)) * 0.48)
+        + ((drift - 0.5) * float(np.clip(drift_strength, 0.0, 1.0)) * 0.55)
+    )
+    dune_wave = np.sin(path * (2.0 * math.pi * cycles)).astype(np.float32, copy=False)
+    ridge_base = (0.5 + (0.5 * dune_wave)).astype(np.float32, copy=False)
+    sharpness = 0.55 + (float(np.clip(crest_sharpness, 0.0, 1.0)) * 2.6)
+    ridges = np.power(np.clip(ridge_base, 0.0, 1.0), sharpness).astype(np.float32, copy=False)
+    sheets = (0.5 + (0.5 * np.sin((path * (2.0 * math.pi * cycles * 0.72)) + ((ripple - 0.5) * 1.4)))).astype(
+        np.float32,
+        copy=False,
+    )
+    detail = np.sin((path * (2.0 * math.pi * cycles * 3.6)) + (ripple * math.pi * 1.8)).astype(np.float32, copy=False)
+    detail = ((detail * 0.5) + 0.5).astype(np.float32, copy=False)
+    detail_mix = float(np.clip(ripple_detail, 0.0, 1.0)) * 0.24
+    resolved_mode = str(pattern_mode).lower()
+
+    if resolved_mode == "sheet":
+        field = np.clip((sheets * 0.82) + (detail * detail_mix), 0.0, 1.0).astype(np.float32, copy=False)
+    elif resolved_mode == "crescent":
+        crescent_gate = smoothstep_np(
+            0.18,
+            0.86,
+            0.5 + (0.5 * np.sin(((across * 2.1) + ((drift - 0.5) * 0.72)) * (2.0 * math.pi))),
+        ).astype(np.float32, copy=False)
+        field = np.clip(
+            (ridges * (1.0 - (crescent_gate * 0.28)))
+            + (sheets * crescent_gate * 0.44)
+            + (detail * detail_mix),
+            0.0,
+            1.0,
+        ).astype(np.float32, copy=False)
+    else:
+        field = np.clip((ridges * 0.88) + (detail * detail_mix), 0.0, 1.0).astype(np.float32, copy=False)
+
+    return _enforce_tile_edges(field)
+
+
+def procedural_caustic_pattern(
+    h: int,
+    w: int,
+    caustic_scale_px: float,
+    focus: float,
+    shimmer: float,
+    warp_strength: float,
+    seed: int,
+    pattern_mode: str = "web",
+) -> np.ndarray:
+    scale = float(max(4.0, caustic_scale_px))
+    web = procedural_cell_pattern(
+        int(h),
+        int(w),
+        cell_scale_px=scale,
+        jitter=0.82,
+        edge_width=0.18,
+        seed=int(seed),
+        pattern_mode="cracks",
+    )
+    pool = procedural_cell_pattern(
+        int(h),
+        int(w),
+        cell_scale_px=scale * 1.08,
+        jitter=0.76,
+        edge_width=0.18,
+        seed=int(seed) + 31,
+        pattern_mode="distance",
+    )
+    ripple = procedural_ripple_pattern(
+        int(h),
+        int(w),
+        ripple_scale_px=max(4.0, scale * 0.88),
+        direction_deg=18.0,
+        radial_mix=0.62,
+        interference=0.58,
+        warp_strength=float(np.clip(warp_strength, 0.0, 1.0)),
+        seed=int(seed) + 83,
+        pattern_mode="interference",
+    )
+    shimmer_field = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, scale * 0.24),
+        octaves=4,
+        lacunarity=2.2,
+        gain=0.54,
+        seed=int(seed) + 127,
+        variant="ridged",
+    )
+    focus_power = 1.0 + (float(np.clip(focus, 0.0, 1.0)) * 3.4)
+    web_focus = np.power(np.clip(web, 0.0, 1.0), focus_power).astype(np.float32, copy=False)
+    shimmer_mix = float(np.clip(shimmer, 0.0, 1.0))
+    resolved_mode = str(pattern_mode).lower()
+
+    if resolved_mode == "pool":
+        field = np.clip((pool * 0.76) + (web_focus * 0.36) + (shimmer_field * shimmer_mix * 0.18), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
+    elif resolved_mode == "flare":
+        field = np.clip((web_focus * 0.58) + (ripple * 0.34) + (pool * 0.18) + (shimmer_field * shimmer_mix * 0.20), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
+    else:
+        field = np.clip((web_focus * 0.82) + (ripple * 0.16) + (shimmer_field * shimmer_mix * 0.14), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
+
+    return _enforce_tile_edges(field)
+
+
+def procedural_crackle_pattern(
+    h: int,
+    w: int,
+    plate_scale_px: float,
+    crack_width: float,
+    plate_variation: float,
+    relief: float,
+    seed: int,
+    pattern_mode: str = "plates",
+) -> np.ndarray:
+    scale = float(max(4.0, plate_scale_px))
+    variation = float(np.clip(plate_variation, 0.0, 1.0))
+    resolved_width = float(np.clip(crack_width, 0.01, 1.0))
+    fill = procedural_cell_pattern(
+        int(h),
+        int(w),
+        cell_scale_px=scale,
+        jitter=0.28 + (variation * 0.58),
+        edge_width=resolved_width,
+        seed=int(seed),
+        pattern_mode="fill",
+    )
+    cracks = procedural_cell_pattern(
+        int(h),
+        int(w),
+        cell_scale_px=scale,
+        jitter=0.32 + (variation * 0.62),
+        edge_width=resolved_width,
+        seed=int(seed),
+        pattern_mode="cracks",
+    )
+    bevel = procedural_cell_pattern(
+        int(h),
+        int(w),
+        cell_scale_px=scale,
+        jitter=0.30 + (variation * 0.60),
+        edge_width=resolved_width,
+        seed=int(seed) + 17,
+        pattern_mode="bevel",
+    )
+    dust = procedural_noise_field(
+        int(h),
+        int(w),
+        scale_px=max(8.0, scale * 0.22),
+        octaves=4,
+        lacunarity=2.05,
+        gain=0.55,
+        seed=int(seed) + 97,
+        variant="fbm",
+    )
+    relief_mix = float(np.clip(relief, 0.0, 1.0))
+    resolved_mode = str(pattern_mode).lower()
+
+    if resolved_mode == "cracks":
+        field = np.clip(np.power(cracks, 1.18) + (dust * 0.10), 0.0, 1.0).astype(np.float32, copy=False)
+    elif resolved_mode == "mud":
+        baked = np.clip((fill * (0.54 + (relief_mix * 0.18))) + (bevel * 0.34) + (dust * 0.12) - (cracks * 0.18), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
+        field = baked
+    else:
+        field = np.clip((fill * 0.62) + (bevel * (0.20 + (relief_mix * 0.20))) + (cracks * 0.22) + (dust * 0.08), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
+
+    return _enforce_tile_edges(field)
+
+
 __all__ = [
     "grayscale_to_rgb",
     "procedural_cell_pattern",
+    "procedural_contour_pattern",
+    "procedural_crackle_pattern",
+    "procedural_caustic_pattern",
+    "procedural_dune_pattern",
     "procedural_hex_pattern",
+    "procedural_marble_pattern",
     "procedural_noise_field",
+    "procedural_ripple_pattern",
     "procedural_strata_pattern",
     "procedural_weave_pattern",
     "shape_scalar_field",

@@ -29,6 +29,36 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function drawPreviewFallback(ctx, width, height, title, detail) {
+  ctx.clearRect(0, 0, width, height);
+  const bg = ctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, "rgba(18,21,26,1)");
+  bg.addColorStop(1, "rgba(28,32,38,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  const frame = {
+    x: 18,
+    y: 18,
+    w: Math.max(0, width - 36),
+    h: Math.max(0, height - 36),
+  };
+  fillChecker(ctx, frame, 18, "rgba(255,255,255,0.028)", "rgba(255,255,255,0.012)");
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(frame.x + 0.5, frame.y + 0.5, Math.max(0, frame.w - 1), Math.max(0, frame.h - 1));
+
+  drawLabel(ctx, title || "Preview Unavailable", frame.x + 12, frame.y + (frame.h * 0.42), "rgba(245,247,250,0.92)", 12);
+  drawLabel(
+    ctx,
+    detail || "The studio controls are still active. Adjust settings or rerun after reload.",
+    frame.x + 12,
+    frame.y + (frame.h * 0.56),
+    "rgba(223,229,236,0.62)",
+    10,
+  );
+}
+
 function lerp(a, b, t) {
   return a + ((b - a) * t);
 }
@@ -105,6 +135,60 @@ function drawLabel(ctx, text, x, y, color = "rgba(244,248,252,0.88)", size = 11,
   ctx.fillStyle = color;
   ctx.fillText(text, x, y);
   ctx.restore();
+}
+
+function smoothstep01(edge0, edge1, value) {
+  if (edge0 === edge1) {
+    return value < edge0 ? 0 : 1;
+  }
+  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - (2 * t));
+}
+
+function lerpColor(a, b, t) {
+  return [
+    Math.round(lerp(a[0], b[0], t)),
+    Math.round(lerp(a[1], b[1], t)),
+    Math.round(lerp(a[2], b[2], t)),
+  ];
+}
+
+function rgbString(rgb, alpha = 1) {
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+}
+
+function drawVignette(ctx, frame, opacity = 0.16) {
+  const vignette = ctx.createRadialGradient(
+    frame.x + (frame.w * 0.5),
+    frame.y + (frame.h * 0.48),
+    frame.w * 0.18,
+    frame.x + (frame.w * 0.5),
+    frame.y + (frame.h * 0.5),
+    frame.w * 0.72,
+  );
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, `rgba(0,0,0,${opacity})`);
+  ctx.fillStyle = vignette;
+  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
+}
+
+function paintField(ctx, frame, cols, rows, sampler, colorizer) {
+  const cellW = frame.w / cols;
+  const cellH = frame.h / rows;
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const u = (col + 0.5) / cols;
+      const v = (row + 0.5) / rows;
+      const value = clamp(sampler(u, v), 0, 1);
+      ctx.fillStyle = colorizer(value, u, v);
+      ctx.fillRect(
+        frame.x + (col * cellW),
+        frame.y + (row * cellH),
+        Math.ceil(cellW) + 1,
+        Math.ceil(cellH) + 1,
+      );
+    }
+  }
 }
 
 function ensureLocalStyles() {
@@ -615,29 +699,69 @@ function drawNoisePreview(ctx, width, height, node, config) {
   const detailMix = getNumber(node, "detail_mix", config.defaults.detail_mix);
   const invert = getBoolean(node, "invert", config.defaults.invert);
   const variant = String(getValue(node, "variant", config.defaults.variant));
+  const dark = variant === "ridged" ? [24, 28, 36] : [26, 30, 34];
+  const light = variant === "turbulence" ? [215, 226, 235] : [205, 216, 228];
+  const highlight = variant === "ridged" ? [244, 249, 252] : [219, 232, 245];
 
-  const cells = 18;
-  const cellW = frame.w / cells;
-  const cellH = frame.h / cells;
-  for (let y = 0; y < cells; y += 1) {
-    for (let x = 0; x < cells; x += 1) {
-      const base = noise2D(x * 0.8, y * 0.8, seed);
-      const fine = noise2D((x * 2.4) + 0.3, (y * 2.4) + 0.8, seed + 17);
+  const bg = ctx.createLinearGradient(frame.x, frame.y, frame.x + frame.w, frame.y + frame.h);
+  bg.addColorStop(0, "rgba(10,14,18,0.88)");
+  bg.addColorStop(1, "rgba(26,31,38,0.92)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
+
+  paintField(
+    ctx,
+    frame,
+    64,
+    42,
+    (u, v) => {
+      const sx = u * 18;
+      const sy = v * 18;
+      let base = noise2D(sx * 0.8, sy * 0.8, seed);
+      const fine = noise2D((sx * 2.4) + 0.3, (sy * 2.4) + 0.8, seed + 17);
+      const broad = noise2D((sx * 0.35) + 2.1, (sy * 0.35) + 5.7, seed + 9);
+      if (variant === "ridged") base = 1 - Math.abs((base * 2) - 1);
+      else if (variant === "turbulence") base = Math.abs((base * 2) - 1);
+      else if (variant === "value") base = broad;
       let value = lerp(base, fine, detailMix * 0.65);
       value = clamp(((value - 0.5) * contrast) + 0.5 + (balance * 0.2), 0, 1);
       if (invert) value = 1 - value;
-      const shade = Math.round(value * 255);
-      ctx.fillStyle = `rgb(${shade}, ${shade}, ${shade})`;
-      ctx.fillRect(frame.x + (x * cellW), frame.y + (y * cellH), Math.ceil(cellW) + 1, Math.ceil(cellH) + 1);
+      return value;
+    },
+    (value, u, v) => {
+      const tint = 0.18 + (noise2D((u * 12) + 1.4, (v * 12) + 2.8, seed + 31) * 0.2);
+      const baseColor = lerpColor(dark, light, value);
+      return rgbString(lerpColor(baseColor, highlight, tint * value));
+    },
+  );
+
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 1;
+  for (let band = 0; band < 5; band += 1) {
+    const v = (band + 1) / 6;
+    ctx.beginPath();
+    for (let step = 0; step <= 64; step += 1) {
+      const u = step / 64;
+      const sx = u * 18;
+      const sy = v * 18;
+      const base = noise2D(sx * 0.8, sy * 0.8, seed);
+      const fine = noise2D((sx * 2.4) + 0.3, (sy * 2.4) + 0.8, seed + 17);
+      const field = lerp(base, fine, detailMix * 0.45);
+      const y = frame.y + (frame.h * v) + ((field - 0.5) * 16 * contrast);
+      const x = frame.x + (frame.w * u);
+      if (step === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
+    ctx.stroke();
   }
 
+  drawVignette(ctx, frame, 0.18);
   drawLabel(ctx, variant, frame.x + 10, frame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawLabel(ctx, `detail ${formatNumber(detailMix, 2)}`, frame.x + frame.w - 10, frame.y + 14, "rgba(245,247,250,0.62)", 10, "right");
 }
 
 function drawCellPreview(ctx, width, height, node, config) {
   const frame = drawFrame(ctx, width, height, "rgba(122,245,201,0.28)");
-  fillChecker(ctx, frame, 22, "rgba(255,255,255,0.03)", "rgba(255,255,255,0.012)");
   const seed = Math.round(getNumber(node, "seed", config.defaults.seed));
   const jitter = getNumber(node, "jitter", config.defaults.jitter);
   const edge = getNumber(node, "edge_width", config.defaults.edge_width);
@@ -652,48 +776,579 @@ function drawCellPreview(ctx, width, height, node, config) {
     });
   }
 
-  ctx.strokeStyle = `rgba(244,248,252,${0.34 + (edge * 0.45)})`;
-  ctx.lineWidth = 1 + (edge * 5);
+  const bg = ctx.createLinearGradient(frame.x, frame.y, frame.x + frame.w, frame.y + frame.h);
+  bg.addColorStop(0, "rgba(24,29,24,0.94)");
+  bg.addColorStop(1, "rgba(34,39,33,0.96)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
+
+  paintField(
+    ctx,
+    frame,
+    72,
+    46,
+    (u, v) => {
+      const px = frame.x + (u * frame.w);
+      const py = frame.y + (v * frame.h);
+      let nearest = 1e9;
+      let second = 1e9;
+      for (const point of points) {
+        const dx = px - point.x;
+        const dy = py - point.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < nearest) {
+          second = nearest;
+          nearest = dist;
+        } else if (dist < second) {
+          second = dist;
+        }
+      }
+      const edgeDelta = clamp((second - nearest) / Math.max(8, 42 - (edge * 20)), 0, 1);
+      let value;
+      if (mode === "edge" || mode === "cracks") {
+        value = 1 - smoothstep01(0.0, 0.28 + (softness * 0.24), edgeDelta);
+      } else if (mode === "distance") {
+        value = clamp(nearest / 58, 0, 1);
+      } else if (mode === "bevel") {
+        const cell = smoothstep01(0.02, 0.48 + (softness * 0.2), edgeDelta);
+        value = clamp((cell * 0.78) + ((1 - clamp(nearest / 60, 0, 1)) * 0.22), 0, 1);
+      } else {
+        value = smoothstep01(0.02, 0.42 + (softness * 0.28), edgeDelta);
+      }
+      if (mode === "cracks") value = Math.pow(value, 2.6);
+      return value;
+    },
+    (value, u, v) => {
+      const warm = lerpColor([34, 38, 34], [135, 160, 128], value);
+      const bright = lerpColor(warm, [223, 234, 218], value * (0.42 + (softness * 0.24)));
+      const speck = noise2D((u * 28) + 4.2, (v * 28) + 0.7, seed + 19);
+      return rgbString(lerpColor(warm, bright, speck * 0.35));
+    },
+  );
+
+  ctx.strokeStyle = `rgba(244,248,252,${0.16 + (edge * 0.28)})`;
+  ctx.lineWidth = 1 + (edge * 3.5);
   for (let i = 0; i < points.length; i += 1) {
     const point = points[i];
-    const radius = 28 + (noise2D(i, 0.7, seed + 9) * 30);
     ctx.beginPath();
-    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(244,248,252,0.88)";
+    ctx.fill();
     ctx.stroke();
-    if (mode === "fill" || mode === "bevel") {
-      ctx.fillStyle = `rgba(122,245,201,${0.04 + (softness * 0.14)})`;
-      ctx.fill();
-    }
   }
 
+  drawVignette(ctx, frame, 0.16);
   drawLabel(ctx, mode, frame.x + 10, frame.y + 14, "rgba(245,247,250,0.78)", 10);
+}
+
+function sampleStrataProfile(profile, u, v, seed, direction, warp, breakup, micro, contrast, balance) {
+  const angle = (direction * Math.PI) / 180;
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const dx = (u - 0.5) * 2;
+  const dy = (v - 0.5) * 2;
+  const along = (dx * cosA) + (dy * sinA);
+  const across = (-dx * sinA) + (dy * cosA);
+  const seedOffset = seed * 0.013;
+  const lowWarp = (noise2D((u * 8) + 1.7 + seedOffset, (v * 8) + 0.8 + seedOffset, seed) - 0.5) * (1.4 + (breakup * 2.2));
+  const highWarp = (noise2D((u * 22) + 4.1 + seedOffset, (v * 22) + 2.6 + seedOffset, seed + 18) - 0.5) * (0.7 + (micro * 1.8));
+  const mineral = noise2D((u * 24) + 3.2 + seedOffset, (v * 24) + 7.4 + seedOffset, seed + 39);
+
+  let field;
+  if (profile === "veins") {
+    const ridge = Math.abs(Math.sin((along * 17.5 * Math.PI) + (across * (1.8 + (warp * 7.2))) + (lowWarp * 1.5) + (highWarp * 1.2)));
+    field = 1 - Math.pow(ridge, 0.24 + (breakup * 0.72));
+    field *= 0.82 + (mineral * 0.18);
+  } else if (profile === "terrace") {
+    const steppedBase = 0.5 + (0.5 * Math.sin((along * 8.5 * Math.PI) + (across * (0.7 + (warp * 3.4))) + (lowWarp * 0.8)));
+    const steps = 4 + Math.round(breakup * 4);
+    field = Math.round(steppedBase * steps) / Math.max(1, steps);
+    field = clamp(field + (highWarp * 0.08) + ((mineral - 0.5) * micro * 0.12), 0, 1);
+  } else {
+    const softBase = 0.5 + (0.5 * Math.sin((along * 10.5 * Math.PI) + (across * (1.2 + (warp * 5.4))) + lowWarp + highWarp));
+    field = smoothstep01(0.08, 0.92, softBase);
+    field = clamp((field * 0.9) + (mineral * 0.1 * breakup), 0, 1);
+  }
+
+  return clamp(((field - 0.5) * contrast) + 0.5 + (balance * 0.18), 0, 1);
 }
 
 function drawStrataPreview(ctx, width, height, node, config) {
   const frame = drawFrame(ctx, width, height, "rgba(255,181,113,0.28)");
+  const previewFrame = { x: frame.x, y: frame.y, w: frame.w, h: frame.h - 34 };
   const direction = getNumber(node, "direction_deg", config.defaults.direction_deg);
   const warp = getNumber(node, "warp_strength", config.defaults.warp_strength);
   const breakup = getNumber(node, "breakup_strength", config.defaults.breakup_strength);
   const micro = getNumber(node, "micro_breakup", config.defaults.micro_breakup);
+  const contrast = getNumber(node, "contrast", config.defaults.contrast);
+  const balance = getNumber(node, "balance", config.defaults.balance);
+  const seed = Math.round(getNumber(node, "seed", config.defaults.seed));
   const profile = String(getValue(node, "profile", config.defaults.profile));
 
+  const bg = ctx.createLinearGradient(previewFrame.x, previewFrame.y, previewFrame.x + previewFrame.w, previewFrame.y + previewFrame.h);
+  bg.addColorStop(0, "rgba(38,30,24,0.96)");
+  bg.addColorStop(1, "rgba(26,22,18,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(previewFrame.x, previewFrame.y, previewFrame.w, previewFrame.h);
+
+  const angle = (direction * Math.PI) / 180;
+  paintField(
+    ctx,
+    previewFrame,
+    88,
+    46,
+    (u, v) => sampleStrataProfile(profile, u, v, seed, direction, warp, breakup, micro, contrast, balance),
+    (value, u, v) => {
+      const dark = [56, 42, 32];
+      const mid = profile === "veins" ? [130, 104, 86] : [144, 114, 82];
+      const light = profile === "terrace" ? [228, 210, 172] : [213, 188, 150];
+      const first = lerpColor(dark, mid, Math.min(1, value * 1.35));
+      const base = lerpColor(first, light, Math.max(0, (value - 0.38) / 0.62));
+      const mineral = noise2D((u * 24) + 3.2 + (seed * 0.013), (v * 24) + 7.4 + (seed * 0.013), seed + 39) * micro;
+      return rgbString(lerpColor(base, [242, 233, 210], mineral * 0.28));
+    },
+  );
+
   ctx.save();
-  ctx.translate(frame.x + (frame.w / 2), frame.y + (frame.h / 2));
-  ctx.rotate((direction * Math.PI) / 180);
-  ctx.translate(-(frame.x + (frame.w / 2)), -(frame.y + (frame.h / 2)));
-  for (let i = -3; i < 8; i += 1) {
-    const y = frame.y + (i * 24);
-    const offset = Math.sin((i * 0.65) + warp * 4.2) * 16;
-    ctx.strokeStyle = `rgba(245,208,142,${0.18 + (breakup * 0.28)})`;
-    ctx.lineWidth = 8 + (micro * 8);
-    ctx.beginPath();
-    ctx.moveTo(frame.x - 30, y + offset);
-    ctx.bezierCurveTo(frame.x + (frame.w * 0.35), y - offset, frame.x + (frame.w * 0.65), y + offset, frame.x + frame.w + 30, y - offset);
-    ctx.stroke();
-  }
+  ctx.translate(previewFrame.x + (previewFrame.w * 0.82), previewFrame.y + 22);
+  ctx.rotate(angle);
+  ctx.strokeStyle = "rgba(255,236,196,0.58)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-18, 0);
+  ctx.lineTo(18, 0);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(11, -5);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(11, 5);
+  ctx.stroke();
   ctx.restore();
 
-  drawLabel(ctx, profile, frame.x + 10, frame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawVignette(ctx, previewFrame, 0.18);
+
+  const swatchProfiles = [
+    { key: "soft", label: "Soft" },
+    { key: "veins", label: "Veins" },
+    { key: "terrace", label: "Terrace" },
+  ];
+  const swatchGap = 6;
+  const swatchW = Math.floor((frame.w - 16 - (swatchGap * 2)) / 3);
+  const swatchH = 22;
+  const swatchY = frame.y + frame.h - swatchH - 8;
+  for (let index = 0; index < swatchProfiles.length; index += 1) {
+    const swatch = swatchProfiles[index];
+    const swatchX = frame.x + 8 + (index * (swatchW + swatchGap));
+    ctx.fillStyle = swatch.key === profile ? "rgba(255,212,160,0.18)" : "rgba(255,255,255,0.045)";
+    ctx.fillRect(swatchX, swatchY, swatchW, swatchH);
+    ctx.strokeStyle = swatch.key === profile ? "rgba(255,218,168,0.62)" : "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(swatchX + 0.5, swatchY + 0.5, swatchW - 1, swatchH - 1);
+
+    paintField(
+      ctx,
+      { x: swatchX + 3, y: swatchY + 3, w: swatchW - 6, h: 9 },
+      18,
+      2,
+      (u, v) => sampleStrataProfile(swatch.key, u, v, seed, direction, warp, breakup, micro, contrast, balance),
+      (value) => rgbString(lerpColor([64, 50, 38], [232, 216, 178], value)),
+    );
+    drawLabel(ctx, swatch.label, swatchX + 5, swatchY + 16, swatch.key === profile ? "rgba(255,240,220,0.94)" : "rgba(245,247,250,0.72)", 9);
+  }
+
+  drawLabel(ctx, profile, previewFrame.x + 10, previewFrame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawLabel(ctx, `${formatNumber(direction, 0)} deg`, previewFrame.x + previewFrame.w - 10, previewFrame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
+}
+
+function drawRipplePreview(ctx, width, height, node, config) {
+  const frame = drawFrame(ctx, width, height, "rgba(115,214,255,0.28)");
+  const previewFrame = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
+  const mode = String(getValue(node, "pattern_mode", config.defaults.pattern_mode));
+  const direction = getNumber(node, "direction_deg", config.defaults.direction_deg);
+  const radialMix = getNumber(node, "radial_mix", config.defaults.radial_mix);
+  const interference = getNumber(node, "interference", config.defaults.interference);
+  const warp = getNumber(node, "warp_strength", config.defaults.warp_strength);
+  const contrast = getNumber(node, "contrast", config.defaults.contrast);
+  const balance = getNumber(node, "balance", config.defaults.balance);
+  const seed = Math.round(getNumber(node, "seed", config.defaults.seed));
+
+  const bg = ctx.createLinearGradient(previewFrame.x, previewFrame.y, previewFrame.x + previewFrame.w, previewFrame.y + previewFrame.h);
+  bg.addColorStop(0, "rgba(18,28,34,0.98)");
+  bg.addColorStop(1, "rgba(10,16,22,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(previewFrame.x, previewFrame.y, previewFrame.w, previewFrame.h);
+
+  const angle = (direction * Math.PI) / 180;
+  paintField(
+    ctx,
+    previewFrame,
+    92,
+    52,
+    (u, v) => {
+      const centeredU = (u - 0.5) * 2;
+      const centeredV = (v - 0.5) * 2;
+      const directional = (Math.cos(angle) * centeredU) + (Math.sin(angle) * centeredV);
+      const torus = Math.sqrt(
+        Math.pow(Math.sin(u * Math.PI * 2), 2) + Math.pow(Math.sin(v * Math.PI * 2), 2),
+      );
+      const radial = Math.sin((torus * 10.4) + (Math.cos(angle) * 0.8));
+      const cross = Math.sin(((u + v) * 16.0) + (directional * 4.5));
+      const lowWarp = (noise2D((u * 10) + 1.3, (v * 10) + 3.7, seed + 17) - 0.5) * warp * 1.8;
+      let phase;
+      if (mode === "rings") phase = radial + lowWarp;
+      else if (mode === "directional") phase = directional * 2.8 + lowWarp;
+      else phase = (directional * 2.2 * (1 - radialMix)) + (radial * 2.2 * radialMix) + (cross * interference * 0.9) + lowWarp;
+      const value = 0.5 + (0.5 * Math.sin(phase * Math.PI * 1.4));
+      return clamp(((value - 0.5) * contrast) + 0.5 + (balance * 0.18), 0, 1);
+    },
+    (value, u, v) => {
+      const deep = [26, 64, 84];
+      const mid = [76, 170, 198];
+      const bright = [220, 247, 255];
+      const first = lerpColor(deep, mid, Math.min(1, value * 1.2));
+      const final = lerpColor(first, bright, Math.max(0, (value - 0.42) / 0.58));
+      const shimmer = noise2D((u * 28) + 4.1, (v * 28) + 0.9, seed + 83) * interference;
+      return rgbString(lerpColor(final, [255, 255, 255], shimmer * 0.18));
+    },
+  );
+
+  ctx.save();
+  ctx.translate(previewFrame.x + (previewFrame.w * 0.82), previewFrame.y + 22);
+  ctx.rotate(angle);
+  ctx.strokeStyle = "rgba(210,245,255,0.58)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-18, 0);
+  ctx.lineTo(18, 0);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(11, -5);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(11, 5);
+  ctx.stroke();
+  ctx.restore();
+
+  drawVignette(ctx, previewFrame, 0.16);
+  drawLabel(ctx, mode, previewFrame.x + 10, previewFrame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawLabel(ctx, `${formatNumber(direction, 0)} deg`, previewFrame.x + previewFrame.w - 10, previewFrame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
+}
+
+function drawContourPreview(ctx, width, height, node, config) {
+  const frame = drawFrame(ctx, width, height, "rgba(182,244,164,0.28)");
+  const previewFrame = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
+  const mode = String(getValue(node, "pattern_mode", config.defaults.pattern_mode));
+  const lineWidth = getNumber(node, "line_width", config.defaults.line_width);
+  const terrace = getNumber(node, "terrace_strength", config.defaults.terrace_strength);
+  const warp = getNumber(node, "warp_strength", config.defaults.warp_strength);
+  const contrast = getNumber(node, "contrast", config.defaults.contrast);
+  const balance = getNumber(node, "balance", config.defaults.balance);
+  const seed = Math.round(getNumber(node, "seed", config.defaults.seed));
+
+  const bg = ctx.createLinearGradient(previewFrame.x, previewFrame.y, previewFrame.x, previewFrame.y + previewFrame.h);
+  bg.addColorStop(0, "rgba(24,28,22,0.98)");
+  bg.addColorStop(1, "rgba(16,20,15,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(previewFrame.x, previewFrame.y, previewFrame.w, previewFrame.h);
+
+  paintField(
+    ctx,
+    previewFrame,
+    96,
+    52,
+    (u, v) => {
+      const base = (
+        (noise2D((u * 8) + 1.7, (v * 8) + 0.8, seed) * 0.55)
+        + (noise2D((u * 14) + 5.1, (v * 14) + 2.6, seed + 31) * 0.30)
+        + (noise2D((u * 26) + 3.3, (v * 26) + 7.2, seed + 57) * 0.15)
+      );
+      const warped = base + ((noise2D((u * 12) + 4.8, (v * 12) + 1.9, seed + 81) - 0.5) * warp * 0.5);
+      const levels = 9.5;
+      const phase = (warped * levels) % 1;
+      const line = 1 - smoothstep01(0.0, Math.max(0.015, lineWidth), Math.abs(phase - 0.5) * 2);
+      const terraceField = Math.floor(warped * levels) / Math.max(levels - 1, 1);
+      let value;
+      if (mode === "height") value = warped;
+      else if (mode === "terrace") value = clamp((terraceField * (1 - terrace)) + (line * 0.32), 0, 1);
+      else if (mode === "bevel") value = clamp((terraceField * 0.62) + (line * 0.72), 0, 1);
+      else value = line;
+      return clamp(((value - 0.5) * contrast) + 0.5 + (balance * 0.18), 0, 1);
+    },
+    (value, u, v) => {
+      const dark = [40, 54, 34];
+      const mid = [118, 148, 92];
+      const light = [222, 236, 184];
+      const first = lerpColor(dark, mid, Math.min(1, value * 1.15));
+      const final = lerpColor(first, light, Math.max(0, (value - 0.38) / 0.62));
+      const speck = noise2D((u * 24) + 2.1, (v * 24) + 6.2, seed + 44) * terrace;
+      return rgbString(lerpColor(final, [248, 250, 230], speck * 0.14));
+    },
+  );
+
+  drawVignette(ctx, previewFrame, 0.14);
+  drawLabel(ctx, mode, previewFrame.x + 10, previewFrame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawLabel(ctx, `${formatNumber(lineWidth, 2)} line`, previewFrame.x + previewFrame.w - 10, previewFrame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
+}
+
+function drawMarblePreview(ctx, width, height, node, config) {
+  const frame = drawFrame(ctx, width, height, "rgba(223,202,166,0.28)");
+  const previewFrame = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
+  const mode = String(getValue(node, "pattern_mode", config.defaults.pattern_mode));
+  const direction = getNumber(node, "direction_deg", config.defaults.direction_deg);
+  const flow = getNumber(node, "flow_strength", config.defaults.flow_strength);
+  const mineralMix = getNumber(node, "mineral_mix", config.defaults.mineral_mix);
+  const contrast = getNumber(node, "contrast", config.defaults.contrast);
+  const balance = getNumber(node, "balance", config.defaults.balance);
+  const seed = Math.round(getNumber(node, "seed", config.defaults.seed));
+  const angle = (direction * Math.PI) / 180;
+
+  const bg = ctx.createLinearGradient(previewFrame.x, previewFrame.y, previewFrame.x + previewFrame.w, previewFrame.y + previewFrame.h);
+  bg.addColorStop(0, "rgba(30,27,24,0.98)");
+  bg.addColorStop(1, "rgba(18,16,14,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(previewFrame.x, previewFrame.y, previewFrame.w, previewFrame.h);
+
+  paintField(
+    ctx,
+    previewFrame,
+    96,
+    52,
+    (u, v) => {
+      const directional = (u * Math.cos(angle) * 7.2) + (v * Math.sin(angle) * 7.2);
+      const flowNoise = (
+        (noise2D((u * 8) + 1.1, (v * 8) + 2.9, seed) * 0.56)
+        + (noise2D((u * 18) + 5.7, (v * 18) + 4.4, seed + 19) * 0.28)
+        + (noise2D((u * 34) + 8.6, (v * 34) + 1.7, seed + 41) * 0.16)
+      );
+      const mineral = noise2D((u * 26) + 3.2, (v * 26) + 6.7, seed + 83);
+      const swirl = noise2D((u * 6) + 7.8, (v * 6) + 1.4, seed + 107);
+      const phase = directional + ((flowNoise - 0.5) * flow * 3.2) + ((swirl - 0.5) * 0.9);
+      const wave = Math.sin(phase * Math.PI * 2.0);
+      let value;
+      if (mode === "vein") {
+        value = Math.min(1, Math.max(0, Math.pow(1 - Math.abs(wave), 1.45) + (mineral * mineralMix * 0.22)));
+      } else if (mode === "onyx") {
+        const cloud = 0.5 + (0.5 * Math.sin((phase * Math.PI * 1.24) + ((mineral - 0.5) * 2.1)));
+        value = Math.min(1, Math.max(0, (cloud * 0.74) + ((0.5 + (0.5 * wave)) * 0.26) + (mineral * mineralMix * 0.18)));
+      } else {
+        const wisps = 0.5 + (0.5 * Math.sin((phase * Math.PI * 3.0) + ((mineral - 0.5) * 1.7)));
+        value = Math.min(1, Math.max(0, ((0.5 + (0.5 * wave)) * 0.74) + (wisps * 0.16) + (mineral * mineralMix * 0.24)));
+      }
+      return clamp(((value - 0.5) * contrast) + 0.5 + (balance * 0.18), 0, 1);
+    },
+    (value, u, v) => {
+      const palette = mode === "onyx"
+        ? [[32, 32, 36], [88, 95, 108], [220, 223, 230]]
+        : [[58, 46, 39], [146, 122, 98], [239, 230, 215]];
+      const first = lerpColor(palette[0], palette[1], Math.min(1, value * 1.2));
+      const base = lerpColor(first, palette[2], Math.max(0, (value - 0.38) / 0.62));
+      const sparkle = noise2D((u * 28) + 2.6, (v * 28) + 7.1, seed + 141) * mineralMix;
+      return rgbString(lerpColor(base, [248, 245, 238], sparkle * 0.14));
+    },
+  );
+
+  ctx.save();
+  ctx.translate(previewFrame.x + (previewFrame.w * 0.82), previewFrame.y + 22);
+  ctx.rotate(angle);
+  ctx.strokeStyle = "rgba(255,235,210,0.50)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-18, 0);
+  ctx.lineTo(18, 0);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(11, -5);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(11, 5);
+  ctx.stroke();
+  ctx.restore();
+
+  drawVignette(ctx, previewFrame, 0.17);
+  drawLabel(ctx, mode, previewFrame.x + 10, previewFrame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawLabel(ctx, `${formatNumber(direction, 0)} deg`, previewFrame.x + previewFrame.w - 10, previewFrame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
+}
+
+function drawDunePreview(ctx, width, height, node, config) {
+  const frame = drawFrame(ctx, width, height, "rgba(248,209,130,0.28)");
+  const previewFrame = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
+  const mode = String(getValue(node, "pattern_mode", config.defaults.pattern_mode));
+  const direction = getNumber(node, "direction_deg", config.defaults.direction_deg);
+  const windSkew = getNumber(node, "wind_skew", config.defaults.wind_skew);
+  const crest = getNumber(node, "crest_sharpness", config.defaults.crest_sharpness);
+  const rippleDetail = getNumber(node, "ripple_detail", config.defaults.ripple_detail);
+  const drift = getNumber(node, "drift_strength", config.defaults.drift_strength);
+  const contrast = getNumber(node, "contrast", config.defaults.contrast);
+  const balance = getNumber(node, "balance", config.defaults.balance);
+  const seed = Math.round(getNumber(node, "seed", config.defaults.seed));
+  const angle = (direction * Math.PI) / 180;
+
+  const bg = ctx.createLinearGradient(previewFrame.x, previewFrame.y, previewFrame.x, previewFrame.y + previewFrame.h);
+  bg.addColorStop(0, "rgba(37,29,19,0.98)");
+  bg.addColorStop(1, "rgba(22,17,12,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(previewFrame.x, previewFrame.y, previewFrame.w, previewFrame.h);
+
+  paintField(
+    ctx,
+    previewFrame,
+    96,
+    52,
+    (u, v) => {
+      const along = (u * Math.cos(angle) * 8.4) + (v * Math.sin(angle) * 8.4);
+      const across = (-u * Math.sin(angle)) + (v * Math.cos(angle));
+      const driftNoise = (
+        (noise2D((u * 8) + 1.8, (v * 8) + 4.1, seed) * 0.60)
+        + (noise2D((u * 18) + 6.1, (v * 18) + 1.7, seed + 31) * 0.25)
+        + (noise2D((u * 36) + 0.9, (v * 36) + 8.8, seed + 59) * 0.15)
+      );
+      const ripple = noise2D((u * 24) + 3.7, (v * 24) + 7.3, seed + 101);
+      const path = along + ((across - 0.5) * windSkew * 2.2) + ((driftNoise - 0.5) * drift * 2.4);
+      const duneWave = Math.sin(path * Math.PI * 2.0);
+      const ridgeBase = 0.5 + (0.5 * duneWave);
+      const ridges = Math.pow(Math.max(0, ridgeBase), 0.55 + (crest * 2.6));
+      const sheets = 0.5 + (0.5 * Math.sin((path * Math.PI * 1.42) + ((ripple - 0.5) * 1.5)));
+      const detail = (0.5 + (0.5 * Math.sin((path * Math.PI * 7.2) + (ripple * Math.PI * 1.8)))) * rippleDetail * 0.24;
+      let value;
+      if (mode === "sheet") {
+        value = (sheets * 0.82) + detail;
+      } else if (mode === "crescent") {
+        const gate = smoothstep01(0.18, 0.86, 0.5 + (0.5 * Math.sin(((across * 2.1) + ((driftNoise - 0.5) * 0.9)) * Math.PI * 2.0)));
+        value = (ridges * (1.0 - (gate * 0.28))) + (sheets * gate * 0.44) + detail;
+      } else {
+        value = (ridges * 0.88) + detail;
+      }
+      return clamp(((value - 0.5) * contrast) + 0.5 + (balance * 0.18), 0, 1);
+    },
+    (value, u, v) => {
+      const dark = [76, 54, 28];
+      const mid = [171, 126, 72];
+      const light = [243, 218, 154];
+      const first = lerpColor(dark, mid, Math.min(1, value * 1.15));
+      const final = lerpColor(first, light, Math.max(0, (value - 0.34) / 0.66));
+      const warm = noise2D((u * 24) + 5.5, (v * 24) + 1.1, seed + 139) * rippleDetail;
+      return rgbString(lerpColor(final, [255, 236, 188], warm * 0.12));
+    },
+  );
+
+  ctx.save();
+  ctx.translate(previewFrame.x + (previewFrame.w * 0.82), previewFrame.y + 22);
+  ctx.rotate(angle);
+  ctx.strokeStyle = "rgba(255,233,189,0.54)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-18, 0);
+  ctx.lineTo(18, 0);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(11, -5);
+  ctx.moveTo(18, 0);
+  ctx.lineTo(11, 5);
+  ctx.stroke();
+  ctx.restore();
+
+  drawVignette(ctx, previewFrame, 0.14);
+  drawLabel(ctx, mode, previewFrame.x + 10, previewFrame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawLabel(ctx, `${formatNumber(direction, 0)} deg`, previewFrame.x + previewFrame.w - 10, previewFrame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
+}
+
+function drawCausticPreview(ctx, width, height, node, config) {
+  const frame = drawFrame(ctx, width, height, "rgba(162,234,255,0.28)");
+  const previewFrame = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
+  const mode = String(getValue(node, "pattern_mode", config.defaults.pattern_mode));
+  const focus = getNumber(node, "focus", config.defaults.focus);
+  const shimmer = getNumber(node, "shimmer", config.defaults.shimmer);
+  const warp = getNumber(node, "warp_strength", config.defaults.warp_strength);
+  const contrast = getNumber(node, "contrast", config.defaults.contrast);
+  const balance = getNumber(node, "balance", config.defaults.balance);
+  const seed = Math.round(getNumber(node, "seed", config.defaults.seed));
+
+  const bg = ctx.createLinearGradient(previewFrame.x, previewFrame.y, previewFrame.x, previewFrame.y + previewFrame.h);
+  bg.addColorStop(0, "rgba(13,20,24,0.98)");
+  bg.addColorStop(1, "rgba(7,12,17,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(previewFrame.x, previewFrame.y, previewFrame.w, previewFrame.h);
+
+  paintField(
+    ctx,
+    previewFrame,
+    96,
+    52,
+    (u, v) => {
+      const webA = 1.0 - Math.abs((noise2D((u * 7) + 1.1, (v * 7) + 0.8, seed) * 2.0) - 1.0);
+      const webB = 1.0 - Math.abs((noise2D((u * 13) + 4.7, (v * 13) + 3.9, seed + 19) * 2.0) - 1.0);
+      const pool = (
+        (noise2D((u * 6) + 2.7, (v * 6) + 7.3, seed + 31) * 0.60)
+        + (noise2D((u * 12) + 5.5, (v * 12) + 1.4, seed + 41) * 0.40)
+      );
+      const ripple = 0.5 + (0.5 * Math.sin((((u + v) * 14.0) + ((webA - 0.5) * warp * 4.5)) * Math.PI));
+      const web = Math.pow(Math.max(0, (webA * webB)), 0.35 + (focus * 1.8));
+      const sparkle = noise2D((u * 28) + 8.9, (v * 28) + 6.2, seed + 103) * shimmer;
+      let value;
+      if (mode === "pool") value = (pool * 0.76) + (web * 0.34) + (sparkle * 0.16);
+      else if (mode === "flare") value = (web * 0.58) + (ripple * 0.34) + (pool * 0.18) + (sparkle * 0.18);
+      else value = (web * 0.82) + (ripple * 0.12) + (sparkle * 0.16);
+      return clamp(((value - 0.5) * contrast) + 0.5 + (balance * 0.18), 0, 1);
+    },
+    (value, u, v) => {
+      const deep = [18, 44, 56];
+      const mid = [64, 172, 206];
+      const bright = [238, 253, 255];
+      const first = lerpColor(deep, mid, Math.min(1, value * 1.08));
+      const final = lerpColor(first, bright, Math.max(0, (value - 0.42) / 0.58));
+      const tint = noise2D((u * 24) + 2.2, (v * 24) + 4.8, seed + 197) * shimmer;
+      return rgbString(lerpColor(final, [255, 255, 255], tint * 0.18));
+    },
+  );
+
+  drawVignette(ctx, previewFrame, 0.12);
+  drawLabel(ctx, mode, previewFrame.x + 10, previewFrame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawLabel(ctx, `${formatNumber(focus, 2)} focus`, previewFrame.x + previewFrame.w - 10, previewFrame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
+}
+
+function drawCracklePreview(ctx, width, height, node, config) {
+  const frame = drawFrame(ctx, width, height, "rgba(230,195,151,0.28)");
+  const previewFrame = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
+  const mode = String(getValue(node, "pattern_mode", config.defaults.pattern_mode));
+  const crackWidth = getNumber(node, "crack_width", config.defaults.crack_width);
+  const variation = getNumber(node, "plate_variation", config.defaults.plate_variation);
+  const relief = getNumber(node, "relief", config.defaults.relief);
+  const contrast = getNumber(node, "contrast", config.defaults.contrast);
+  const balance = getNumber(node, "balance", config.defaults.balance);
+  const seed = Math.round(getNumber(node, "seed", config.defaults.seed));
+
+  const bg = ctx.createLinearGradient(previewFrame.x, previewFrame.y, previewFrame.x, previewFrame.y + previewFrame.h);
+  bg.addColorStop(0, "rgba(30,24,19,0.98)");
+  bg.addColorStop(1, "rgba(18,14,11,0.98)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(previewFrame.x, previewFrame.y, previewFrame.w, previewFrame.h);
+
+  paintField(
+    ctx,
+    previewFrame,
+    96,
+    52,
+    (u, v) => {
+      const cellA = noise2D((u * (7 + (variation * 2))) + 1.3, (v * (7 + (variation * 2))) + 3.1, seed);
+      const cellB = noise2D((u * (11 + (variation * 3))) + 5.6, (v * (11 + (variation * 3))) + 0.9, seed + 19);
+      const cellC = noise2D((u * (18 + (variation * 4))) + 7.2, (v * (18 + (variation * 4))) + 6.5, seed + 43);
+      const crack = 1.0 - Math.min(1.0, Math.abs(cellA - cellB) / Math.max(0.04, crackWidth * 0.55));
+      const plate = (cellA * 0.52) + (cellC * 0.48);
+      const bevel = Math.max(0, 1.0 - Math.abs((plate * 2.0) - 1.0));
+      let value;
+      if (mode === "cracks") value = Math.pow(Math.max(0, crack), 1.15) + (cellC * 0.08);
+      else if (mode === "mud") value = (plate * (0.54 + (relief * 0.18))) + (bevel * 0.34) + (cellC * 0.10) - (crack * 0.16);
+      else value = (plate * 0.62) + (bevel * (0.20 + (relief * 0.20))) + (crack * 0.22) + (cellC * 0.08);
+      return clamp(((value - 0.5) * contrast) + 0.5 + (balance * 0.18), 0, 1);
+    },
+    (value, u, v) => {
+      const dark = [73, 54, 41];
+      const mid = [138, 106, 83];
+      const light = [226, 204, 175];
+      const first = lerpColor(dark, mid, Math.min(1, value * 1.12));
+      const final = lerpColor(first, light, Math.max(0, (value - 0.34) / 0.66));
+      const dust = noise2D((u * 28) + 4.6, (v * 28) + 1.6, seed + 157) * variation;
+      return rgbString(lerpColor(final, [246, 229, 208], dust * 0.08));
+    },
+  );
+
+  drawVignette(ctx, previewFrame, 0.14);
+  drawLabel(ctx, mode, previewFrame.x + 10, previewFrame.y + 14, "rgba(245,247,250,0.78)", 10);
+  drawLabel(ctx, `${formatNumber(crackWidth, 2)} crack`, previewFrame.x + previewFrame.w - 10, previewFrame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
 }
 
 const NODE_CONFIGS = {
@@ -1400,6 +2055,561 @@ const NODE_CONFIGS = {
       },
     ],
   },
+  x1TextureRippleField: {
+    panelName: "mkrX1TextureRippleFieldStudio",
+    size: [780, 760],
+    accent: "#7be0ff",
+    title: "Ripple Field Studio",
+    subtitle: "Build tileable directional waves, rings, and interference patterns for fluids, energy surfaces, or stylized displacement maps.",
+    defaults: {
+      width: 1024,
+      height: 1024,
+      pattern_mode: "interference",
+      ripple_scale_px: 160.0,
+      direction_deg: 28.0,
+      radial_mix: 0.42,
+      interference: 0.58,
+      warp_strength: 0.24,
+      contrast: 1.15,
+      balance: 0.0,
+      invert: false,
+      seed: 71,
+    },
+    numericSpecs: {
+      width: { min: 64, max: 4096, integer: true },
+      height: { min: 64, max: 4096, integer: true },
+      ripple_scale_px: { min: 4.0, max: 4096.0 },
+      direction_deg: { min: -180.0, max: 180.0 },
+      radial_mix: { min: 0.0, max: 1.0 },
+      interference: { min: 0.0, max: 1.0 },
+      warp_strength: { min: 0.0, max: 1.0 },
+      contrast: { min: 0.05, max: 4.0 },
+      balance: { min: -1.0, max: 1.0 },
+      seed: { min: 0, max: MAX_SEED, integer: true },
+    },
+    booleanKeys: ["invert"],
+    legacyNames: ["width", "height", "pattern_mode", "ripple_scale_px", "direction_deg", "radial_mix", "interference", "warp_strength", "contrast", "balance", "invert", "seed"],
+    metrics: [
+      { label: "Mode", get: (node) => String(getValue(node, "pattern_mode", "interference")) },
+      { label: "Direction", get: (node) => `${formatNumber(getNumber(node, "direction_deg", 28), 1)} deg` },
+      { label: "Interference", get: (node) => formatNumber(getNumber(node, "interference", 0.58), 2) },
+    ],
+    presets: [
+      { label: "Interference", tone: "accent", values: { width: 1024, height: 1024, pattern_mode: "interference", ripple_scale_px: 160.0, direction_deg: 28.0, radial_mix: 0.42, interference: 0.58, warp_strength: 0.24, contrast: 1.15, balance: 0.0, invert: false, seed: 71 } },
+      { label: "Rings", values: { width: 1024, height: 1024, pattern_mode: "rings", ripple_scale_px: 132.0, direction_deg: 12.0, radial_mix: 0.86, interference: 0.18, warp_strength: 0.18, contrast: 1.22, balance: 0.0, invert: false, seed: 91 } },
+      { label: "Sweep", values: { width: 1024, height: 1024, pattern_mode: "directional", ripple_scale_px: 184.0, direction_deg: -36.0, radial_mix: 0.10, interference: 0.24, warp_strength: 0.28, contrast: 1.10, balance: -0.04, invert: false, seed: 57 } },
+    ],
+    graph: {
+      title: "Wavefront Preview",
+      note: "tileable wave field",
+      height: 226,
+      help: "Use this for watery shimmer, sci-fi interference, heat-ripple masks, or animated-looking displacement textures that still tile cleanly.",
+      readouts: [
+        { label: "Scale", get: (node) => `${Math.round(getNumber(node, "ripple_scale_px", 160))} px` },
+        { label: "Warp", get: (node) => formatNumber(getNumber(node, "warp_strength", 0.24), 2) },
+      ],
+      draw: drawRipplePreview,
+    },
+    sections: [
+      {
+        title: "Output Size",
+        note: "map resolution",
+        controls: [
+          { key: "width", type: "number", label: "Width", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "height", type: "number", label: "Height", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "pattern_mode", type: "select", label: "Mode", options: [{ label: "Interference", value: "interference" }, { label: "Directional", value: "directional" }, { label: "Rings", value: "rings" }] },
+        ],
+      },
+      {
+        title: "Wave Structure",
+        note: "primary motion",
+        controls: [
+          { key: "ripple_scale_px", label: "Ripple Scale", min: 4.0, max: 512.0, step: 1.0, decimals: 0 },
+          { key: "direction_deg", label: "Direction", min: -180.0, max: 180.0, step: 0.5, decimals: 1 },
+          { key: "radial_mix", label: "Radial Mix", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Interference",
+        note: "secondary breakup",
+        controls: [
+          { key: "interference", label: "Interference", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "warp_strength", label: "Warp Strength", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "seed", type: "seed", label: "Seed", min: 0, max: MAX_SEED },
+        ],
+      },
+      {
+        title: "Shaping",
+        note: "output curve",
+        controls: [
+          { key: "contrast", label: "Contrast", min: 0.05, max: 4.0, step: 0.01, decimals: 2 },
+          { key: "balance", label: "Balance", min: -1.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "invert", type: "toggle", label: "Invert", description: "Flip the field after shaping." },
+        ],
+      },
+    ],
+  },
+  x1TextureContourLines: {
+    panelName: "mkrX1TextureContourLinesStudio",
+    size: [780, 760],
+    accent: "#b6f48b",
+    title: "Contour Lines Studio",
+    subtitle: "Generate topographic lines, terraced height bands, and beveled contour masks for terrain, foam, wear, or stylized maps.",
+    defaults: {
+      width: 1024,
+      height: 1024,
+      pattern_mode: "lines",
+      contour_scale_px: 156.0,
+      line_width: 0.18,
+      terrace_strength: 0.42,
+      warp_strength: 0.26,
+      contrast: 1.2,
+      balance: 0.0,
+      invert: false,
+      seed: 83,
+    },
+    numericSpecs: {
+      width: { min: 64, max: 4096, integer: true },
+      height: { min: 64, max: 4096, integer: true },
+      contour_scale_px: { min: 4.0, max: 4096.0 },
+      line_width: { min: 0.01, max: 1.0 },
+      terrace_strength: { min: 0.0, max: 1.0 },
+      warp_strength: { min: 0.0, max: 1.0 },
+      contrast: { min: 0.05, max: 4.0 },
+      balance: { min: -1.0, max: 1.0 },
+      seed: { min: 0, max: MAX_SEED, integer: true },
+    },
+    booleanKeys: ["invert"],
+    legacyNames: ["width", "height", "pattern_mode", "contour_scale_px", "line_width", "terrace_strength", "warp_strength", "contrast", "balance", "invert", "seed"],
+    metrics: [
+      { label: "Mode", get: (node) => String(getValue(node, "pattern_mode", "lines")) },
+      { label: "Line", get: (node) => formatNumber(getNumber(node, "line_width", 0.18), 2) },
+      { label: "Terrace", get: (node) => formatNumber(getNumber(node, "terrace_strength", 0.42), 2) },
+    ],
+    presets: [
+      { label: "Lines", tone: "accent", values: { width: 1024, height: 1024, pattern_mode: "lines", contour_scale_px: 156.0, line_width: 0.18, terrace_strength: 0.42, warp_strength: 0.26, contrast: 1.2, balance: 0.0, invert: false, seed: 83 } },
+      { label: "Terrace", values: { width: 1024, height: 1024, pattern_mode: "terrace", contour_scale_px: 188.0, line_width: 0.14, terrace_strength: 0.68, warp_strength: 0.22, contrast: 1.08, balance: -0.02, invert: false, seed: 91 } },
+      { label: "Height", values: { width: 1024, height: 1024, pattern_mode: "height", contour_scale_px: 136.0, line_width: 0.22, terrace_strength: 0.26, warp_strength: 0.32, contrast: 1.0, balance: 0.0, invert: false, seed: 67 } },
+    ],
+    graph: {
+      title: "Topo Preview",
+      note: "contour field",
+      height: 226,
+      help: "This is useful for stylized terrain, engravings, foam masks, slope-driven wear, or any map where stacked contour rhythm matters more than pure noise.",
+      readouts: [
+        { label: "Scale", get: (node) => `${Math.round(getNumber(node, "contour_scale_px", 156))} px` },
+        { label: "Warp", get: (node) => formatNumber(getNumber(node, "warp_strength", 0.26), 2) },
+      ],
+      draw: drawContourPreview,
+    },
+    sections: [
+      {
+        title: "Output Size",
+        note: "map resolution",
+        controls: [
+          { key: "width", type: "number", label: "Width", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "height", type: "number", label: "Height", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "pattern_mode", type: "select", label: "Mode", options: [{ label: "Lines", value: "lines" }, { label: "Height", value: "height" }, { label: "Terrace", value: "terrace" }, { label: "Bevel", value: "bevel" }] },
+        ],
+      },
+      {
+        title: "Contour Structure",
+        note: "terrain rhythm",
+        controls: [
+          { key: "contour_scale_px", label: "Contour Scale", min: 4.0, max: 512.0, step: 1.0, decimals: 0 },
+          { key: "line_width", label: "Line Width", min: 0.01, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "terrace_strength", label: "Terrace Strength", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Terrain Breakup",
+        note: "secondary warp",
+        controls: [
+          { key: "warp_strength", label: "Warp Strength", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "seed", type: "seed", label: "Seed", min: 0, max: MAX_SEED },
+        ],
+      },
+      {
+        title: "Shaping",
+        note: "output curve",
+        controls: [
+          { key: "contrast", label: "Contrast", min: 0.05, max: 4.0, step: 0.01, decimals: 2 },
+          { key: "balance", label: "Balance", min: -1.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "invert", type: "toggle", label: "Invert", description: "Flip the field after shaping." },
+        ],
+      },
+    ],
+  },
+  x1TextureMarbleVein: {
+    panelName: "mkrX1TextureMarbleVeinStudio",
+    size: [780, 760],
+    accent: "#e1c9a1",
+    title: "Marble Vein Studio",
+    subtitle: "Shape flowing stone bands, polished vein fields, and onyx-like mineral surfaces for lookdev, masks, or stylized material maps.",
+    defaults: {
+      width: 1024,
+      height: 1024,
+      pattern_mode: "classic",
+      vein_scale_px: 168.0,
+      direction_deg: 22.0,
+      flow_strength: 0.46,
+      mineral_mix: 0.32,
+      contrast: 1.14,
+      balance: 0.0,
+      invert: false,
+      seed: 97,
+    },
+    numericSpecs: {
+      width: { min: 64, max: 4096, integer: true },
+      height: { min: 64, max: 4096, integer: true },
+      vein_scale_px: { min: 4.0, max: 4096.0 },
+      direction_deg: { min: -180.0, max: 180.0 },
+      flow_strength: { min: 0.0, max: 1.0 },
+      mineral_mix: { min: 0.0, max: 1.0 },
+      contrast: { min: 0.05, max: 4.0 },
+      balance: { min: -1.0, max: 1.0 },
+      seed: { min: 0, max: MAX_SEED, integer: true },
+    },
+    booleanKeys: ["invert"],
+    legacyNames: ["width", "height", "pattern_mode", "vein_scale_px", "direction_deg", "flow_strength", "mineral_mix", "contrast", "balance", "invert", "seed"],
+    metrics: [
+      { label: "Mode", get: (node) => String(getValue(node, "pattern_mode", "classic")) },
+      { label: "Flow", get: (node) => formatNumber(getNumber(node, "flow_strength", 0.46), 2) },
+      { label: "Mineral", get: (node) => formatNumber(getNumber(node, "mineral_mix", 0.32), 2) },
+    ],
+    presets: [
+      { label: "Classic", tone: "accent", values: { width: 1024, height: 1024, pattern_mode: "classic", vein_scale_px: 168.0, direction_deg: 22.0, flow_strength: 0.46, mineral_mix: 0.32, contrast: 1.14, balance: 0.0, invert: false, seed: 97 } },
+      { label: "Vein", values: { width: 1024, height: 1024, pattern_mode: "vein", vein_scale_px: 148.0, direction_deg: -16.0, flow_strength: 0.58, mineral_mix: 0.24, contrast: 1.28, balance: -0.04, invert: false, seed: 131 } },
+      { label: "Onyx", values: { width: 1024, height: 1024, pattern_mode: "onyx", vein_scale_px: 194.0, direction_deg: 34.0, flow_strength: 0.38, mineral_mix: 0.54, contrast: 1.02, balance: 0.02, invert: false, seed: 211 } },
+    ],
+    graph: {
+      title: "Stone Flow Preview",
+      note: "mineral field",
+      height: 226,
+      help: "Use this for marble, agate, polished stone masks, or vein-driven breakup where the flow direction needs to feel deliberate instead of random.",
+      readouts: [
+        { label: "Scale", get: (node) => `${Math.round(getNumber(node, "vein_scale_px", 168))} px` },
+        { label: "Flow", get: (node) => formatNumber(getNumber(node, "flow_strength", 0.46), 2) },
+      ],
+      draw: drawMarblePreview,
+    },
+    sections: [
+      {
+        title: "Output Size",
+        note: "map resolution",
+        controls: [
+          { key: "width", type: "number", label: "Width", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "height", type: "number", label: "Height", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "pattern_mode", type: "select", label: "Mode", options: [{ label: "Classic", value: "classic" }, { label: "Vein", value: "vein" }, { label: "Onyx", value: "onyx" }] },
+        ],
+      },
+      {
+        title: "Stone Flow",
+        note: "band direction",
+        controls: [
+          { key: "vein_scale_px", label: "Vein Scale", min: 4.0, max: 512.0, step: 1.0, decimals: 0 },
+          { key: "direction_deg", label: "Direction", min: -180.0, max: 180.0, step: 0.5, decimals: 1 },
+          { key: "flow_strength", label: "Flow Strength", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Mineral Breakup",
+        note: "vein density",
+        controls: [
+          { key: "mineral_mix", label: "Mineral Mix", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "seed", type: "seed", label: "Seed", min: 0, max: MAX_SEED },
+        ],
+      },
+      {
+        title: "Shaping",
+        note: "output curve",
+        controls: [
+          { key: "contrast", label: "Contrast", min: 0.05, max: 4.0, step: 0.01, decimals: 2 },
+          { key: "balance", label: "Balance", min: -1.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "invert", type: "toggle", label: "Invert", description: "Flip the field after shaping." },
+        ],
+      },
+    ],
+  },
+  x1TextureDuneField: {
+    panelName: "mkrX1TextureDuneFieldStudio",
+    size: [780, 760],
+    accent: "#f5cb7d",
+    title: "Dune Field Studio",
+    subtitle: "Build directional sand ridges, wind-swept sheets, and crescent dune masks for terrain, dust breakup, erosion, or stylized surfaces.",
+    defaults: {
+      width: 1024,
+      height: 1024,
+      pattern_mode: "ridges",
+      dune_scale_px: 184.0,
+      direction_deg: 18.0,
+      wind_skew: 0.36,
+      crest_sharpness: 0.54,
+      ripple_detail: 0.34,
+      drift_strength: 0.28,
+      contrast: 1.16,
+      balance: 0.0,
+      invert: false,
+      seed: 109,
+    },
+    numericSpecs: {
+      width: { min: 64, max: 4096, integer: true },
+      height: { min: 64, max: 4096, integer: true },
+      dune_scale_px: { min: 4.0, max: 4096.0 },
+      direction_deg: { min: -180.0, max: 180.0 },
+      wind_skew: { min: 0.0, max: 1.0 },
+      crest_sharpness: { min: 0.0, max: 1.0 },
+      ripple_detail: { min: 0.0, max: 1.0 },
+      drift_strength: { min: 0.0, max: 1.0 },
+      contrast: { min: 0.05, max: 4.0 },
+      balance: { min: -1.0, max: 1.0 },
+      seed: { min: 0, max: MAX_SEED, integer: true },
+    },
+    booleanKeys: ["invert"],
+    legacyNames: ["width", "height", "pattern_mode", "dune_scale_px", "direction_deg", "wind_skew", "crest_sharpness", "ripple_detail", "drift_strength", "contrast", "balance", "invert", "seed"],
+    metrics: [
+      { label: "Mode", get: (node) => String(getValue(node, "pattern_mode", "ridges")) },
+      { label: "Crest", get: (node) => formatNumber(getNumber(node, "crest_sharpness", 0.54), 2) },
+      { label: "Wind", get: (node) => formatNumber(getNumber(node, "wind_skew", 0.36), 2) },
+    ],
+    presets: [
+      { label: "Ridges", tone: "accent", values: { width: 1024, height: 1024, pattern_mode: "ridges", dune_scale_px: 184.0, direction_deg: 18.0, wind_skew: 0.36, crest_sharpness: 0.54, ripple_detail: 0.34, drift_strength: 0.28, contrast: 1.16, balance: 0.0, invert: false, seed: 109 } },
+      { label: "Sheet", values: { width: 1024, height: 1024, pattern_mode: "sheet", dune_scale_px: 240.0, direction_deg: 8.0, wind_skew: 0.22, crest_sharpness: 0.24, ripple_detail: 0.18, drift_strength: 0.22, contrast: 1.04, balance: 0.04, invert: false, seed: 149 } },
+      { label: "Crescent", values: { width: 1024, height: 1024, pattern_mode: "crescent", dune_scale_px: 168.0, direction_deg: 26.0, wind_skew: 0.52, crest_sharpness: 0.62, ripple_detail: 0.40, drift_strength: 0.34, contrast: 1.18, balance: -0.02, invert: false, seed: 173 } },
+    ],
+    graph: {
+      title: "Dune Field Preview",
+      note: "wind terrain",
+      height: 226,
+      help: "This is useful for sand, snow drifts, wind-shaped dust, erosion masks, or any surface where directional terrain rhythm matters more than cellular breakup.",
+      readouts: [
+        { label: "Scale", get: (node) => `${Math.round(getNumber(node, "dune_scale_px", 184))} px` },
+        { label: "Drift", get: (node) => formatNumber(getNumber(node, "drift_strength", 0.28), 2) },
+      ],
+      draw: drawDunePreview,
+    },
+    sections: [
+      {
+        title: "Output Size",
+        note: "map resolution",
+        controls: [
+          { key: "width", type: "number", label: "Width", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "height", type: "number", label: "Height", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "pattern_mode", type: "select", label: "Mode", options: [{ label: "Ridges", value: "ridges" }, { label: "Sheet", value: "sheet" }, { label: "Crescent", value: "crescent" }] },
+        ],
+      },
+      {
+        title: "Dune Shape",
+        note: "crest layout",
+        controls: [
+          { key: "dune_scale_px", label: "Dune Scale", min: 4.0, max: 512.0, step: 1.0, decimals: 0 },
+          { key: "direction_deg", label: "Direction", min: -180.0, max: 180.0, step: 0.5, decimals: 1 },
+          { key: "crest_sharpness", label: "Crest Sharpness", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Wind Breakup",
+        note: "secondary motion",
+        controls: [
+          { key: "wind_skew", label: "Wind Skew", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "ripple_detail", label: "Ripple Detail", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "drift_strength", label: "Drift Strength", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "seed", type: "seed", label: "Seed", min: 0, max: MAX_SEED },
+        ],
+      },
+      {
+        title: "Shaping",
+        note: "output curve",
+        controls: [
+          { key: "contrast", label: "Contrast", min: 0.05, max: 4.0, step: 0.01, decimals: 2 },
+          { key: "balance", label: "Balance", min: -1.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "invert", type: "toggle", label: "Invert", description: "Flip the field after shaping." },
+        ],
+      },
+    ],
+  },
+  x1TextureCausticField: {
+    panelName: "mkrX1TextureCausticFieldStudio",
+    size: [780, 760],
+    accent: "#9feaff",
+    title: "Caustic Field Studio",
+    subtitle: "Generate refractive light webs, pooled caustic fields, and flare-like energy masks for water light, magic FX, or emissive breakup.",
+    defaults: {
+      width: 1024,
+      height: 1024,
+      pattern_mode: "web",
+      caustic_scale_px: 148.0,
+      focus: 0.58,
+      shimmer: 0.34,
+      warp_strength: 0.26,
+      contrast: 1.18,
+      balance: 0.0,
+      invert: false,
+      seed: 137,
+    },
+    numericSpecs: {
+      width: { min: 64, max: 4096, integer: true },
+      height: { min: 64, max: 4096, integer: true },
+      caustic_scale_px: { min: 4.0, max: 4096.0 },
+      focus: { min: 0.0, max: 1.0 },
+      shimmer: { min: 0.0, max: 1.0 },
+      warp_strength: { min: 0.0, max: 1.0 },
+      contrast: { min: 0.05, max: 4.0 },
+      balance: { min: -1.0, max: 1.0 },
+      seed: { min: 0, max: MAX_SEED, integer: true },
+    },
+    booleanKeys: ["invert"],
+    legacyNames: ["width", "height", "pattern_mode", "caustic_scale_px", "focus", "shimmer", "warp_strength", "contrast", "balance", "invert", "seed"],
+    metrics: [
+      { label: "Mode", get: (node) => String(getValue(node, "pattern_mode", "web")) },
+      { label: "Focus", get: (node) => formatNumber(getNumber(node, "focus", 0.58), 2) },
+      { label: "Shimmer", get: (node) => formatNumber(getNumber(node, "shimmer", 0.34), 2) },
+    ],
+    presets: [
+      { label: "Web", tone: "accent", values: { width: 1024, height: 1024, pattern_mode: "web", caustic_scale_px: 148.0, focus: 0.58, shimmer: 0.34, warp_strength: 0.26, contrast: 1.18, balance: 0.0, invert: false, seed: 137 } },
+      { label: "Pool", values: { width: 1024, height: 1024, pattern_mode: "pool", caustic_scale_px: 196.0, focus: 0.42, shimmer: 0.24, warp_strength: 0.18, contrast: 1.06, balance: 0.04, invert: false, seed: 181 } },
+      { label: "Flare", values: { width: 1024, height: 1024, pattern_mode: "flare", caustic_scale_px: 124.0, focus: 0.72, shimmer: 0.54, warp_strength: 0.34, contrast: 1.24, balance: -0.02, invert: false, seed: 223 } },
+    ],
+    graph: {
+      title: "Caustic Preview",
+      note: "light web",
+      height: 226,
+      help: "This is useful for water caustics, refractive light maps, magical energy webs, or bright emissive breakup where the pattern should feel luminous instead of noisy.",
+      readouts: [
+        { label: "Scale", get: (node) => `${Math.round(getNumber(node, "caustic_scale_px", 148))} px` },
+        { label: "Warp", get: (node) => formatNumber(getNumber(node, "warp_strength", 0.26), 2) },
+      ],
+      draw: drawCausticPreview,
+    },
+    sections: [
+      {
+        title: "Output Size",
+        note: "map resolution",
+        controls: [
+          { key: "width", type: "number", label: "Width", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "height", type: "number", label: "Height", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "pattern_mode", type: "select", label: "Mode", options: [{ label: "Web", value: "web" }, { label: "Pool", value: "pool" }, { label: "Flare", value: "flare" }] },
+        ],
+      },
+      {
+        title: "Light Structure",
+        note: "primary web",
+        controls: [
+          { key: "caustic_scale_px", label: "Caustic Scale", min: 4.0, max: 512.0, step: 1.0, decimals: 0 },
+          { key: "focus", label: "Focus", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "warp_strength", label: "Warp Strength", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Sparkle",
+        note: "secondary shimmer",
+        controls: [
+          { key: "shimmer", label: "Shimmer", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "seed", type: "seed", label: "Seed", min: 0, max: MAX_SEED },
+        ],
+      },
+      {
+        title: "Shaping",
+        note: "output curve",
+        controls: [
+          { key: "contrast", label: "Contrast", min: 0.05, max: 4.0, step: 0.01, decimals: 2 },
+          { key: "balance", label: "Balance", min: -1.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "invert", type: "toggle", label: "Invert", description: "Flip the field after shaping." },
+        ],
+      },
+    ],
+  },
+  x1TextureCrackleField: {
+    panelName: "mkrX1TextureCrackleFieldStudio",
+    size: [780, 760],
+    accent: "#e6c397",
+    title: "Crackle Field Studio",
+    subtitle: "Generate fractured plates, dried clay cracks, and baked surface breakup for terrain, ceramics, paint masks, or weathered materials.",
+    defaults: {
+      width: 1024,
+      height: 1024,
+      pattern_mode: "plates",
+      plate_scale_px: 134.0,
+      crack_width: 0.18,
+      plate_variation: 0.42,
+      relief: 0.54,
+      contrast: 1.16,
+      balance: 0.0,
+      invert: false,
+      seed: 151,
+    },
+    numericSpecs: {
+      width: { min: 64, max: 4096, integer: true },
+      height: { min: 64, max: 4096, integer: true },
+      plate_scale_px: { min: 4.0, max: 4096.0 },
+      crack_width: { min: 0.01, max: 1.0 },
+      plate_variation: { min: 0.0, max: 1.0 },
+      relief: { min: 0.0, max: 1.0 },
+      contrast: { min: 0.05, max: 4.0 },
+      balance: { min: -1.0, max: 1.0 },
+      seed: { min: 0, max: MAX_SEED, integer: true },
+    },
+    booleanKeys: ["invert"],
+    legacyNames: ["width", "height", "pattern_mode", "plate_scale_px", "crack_width", "plate_variation", "relief", "contrast", "balance", "invert", "seed"],
+    metrics: [
+      { label: "Mode", get: (node) => String(getValue(node, "pattern_mode", "plates")) },
+      { label: "Crack", get: (node) => formatNumber(getNumber(node, "crack_width", 0.18), 2) },
+      { label: "Relief", get: (node) => formatNumber(getNumber(node, "relief", 0.54), 2) },
+    ],
+    presets: [
+      { label: "Plates", tone: "accent", values: { width: 1024, height: 1024, pattern_mode: "plates", plate_scale_px: 134.0, crack_width: 0.18, plate_variation: 0.42, relief: 0.54, contrast: 1.16, balance: 0.0, invert: false, seed: 151 } },
+      { label: "Cracks", values: { width: 1024, height: 1024, pattern_mode: "cracks", plate_scale_px: 110.0, crack_width: 0.12, plate_variation: 0.56, relief: 0.28, contrast: 1.30, balance: -0.06, invert: false, seed: 181 } },
+      { label: "Mud", values: { width: 1024, height: 1024, pattern_mode: "mud", plate_scale_px: 164.0, crack_width: 0.22, plate_variation: 0.34, relief: 0.72, contrast: 1.06, balance: 0.02, invert: false, seed: 211 } },
+    ],
+    graph: {
+      title: "Fracture Preview",
+      note: "plate field",
+      height: 226,
+      help: "Use this for baked clay, parched ground, flaking paint, fracture masks, or any surface that needs plate breakup instead of soft noise.",
+      readouts: [
+        { label: "Scale", get: (node) => `${Math.round(getNumber(node, "plate_scale_px", 134))} px` },
+        { label: "Variation", get: (node) => formatNumber(getNumber(node, "plate_variation", 0.42), 2) },
+      ],
+      draw: drawCracklePreview,
+    },
+    sections: [
+      {
+        title: "Output Size",
+        note: "map resolution",
+        controls: [
+          { key: "width", type: "number", label: "Width", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "height", type: "number", label: "Height", min: 64, max: 4096, step: 1, decimals: 0 },
+          { key: "pattern_mode", type: "select", label: "Mode", options: [{ label: "Plates", value: "plates" }, { label: "Cracks", value: "cracks" }, { label: "Mud", value: "mud" }] },
+        ],
+      },
+      {
+        title: "Plate Structure",
+        note: "fracture spacing",
+        controls: [
+          { key: "plate_scale_px", label: "Plate Scale", min: 4.0, max: 512.0, step: 1.0, decimals: 0 },
+          { key: "crack_width", label: "Crack Width", min: 0.01, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "plate_variation", label: "Plate Variation", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+        ],
+      },
+      {
+        title: "Surface Relief",
+        note: "baked height feel",
+        controls: [
+          { key: "relief", label: "Relief", min: 0.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "seed", type: "seed", label: "Seed", min: 0, max: MAX_SEED },
+        ],
+      },
+      {
+        title: "Shaping",
+        note: "output curve",
+        controls: [
+          { key: "contrast", label: "Contrast", min: 0.05, max: 4.0, step: 0.01, decimals: 2 },
+          { key: "balance", label: "Balance", min: -1.0, max: 1.0, step: 0.01, decimals: 2 },
+          { key: "invert", type: "toggle", label: "Invert", description: "Flip the field after shaping." },
+        ],
+      },
+    ],
+  },
   x1TextureDetileBlend: {
     panelName: "mkrX1TextureDetileBlendStudio",
     size: [780, 760],
@@ -1651,15 +2861,56 @@ function buildPanel(node, config) {
     observer.observe(canvas);
   }
 
+  function safeRead(read, fallback = "—") {
+    try {
+      return read();
+    } catch (error) {
+      console.warn(`[${EXTENSION_NAME}] failed to read panel value`, {
+        node: node?.comfyClass || node?.type,
+        panel: config.panelName,
+        error,
+      });
+      return fallback;
+    }
+  }
+
   function drawCanvas() {
     const { ctx, width, height } = ensureCanvasResolution(canvas);
-    config.graph.draw(ctx, width, height, node, config);
+    try {
+      config.graph.draw(ctx, width, height, node, config);
+      node.__mkrTexturePreviewError = null;
+    } catch (error) {
+      node.__mkrTexturePreviewError = error;
+      console.error(`[${EXTENSION_NAME}] texture preview draw failed`, {
+        node: node?.comfyClass || node?.type,
+        panel: config.panelName,
+        error,
+      });
+      drawPreviewFallback(
+        ctx,
+        width,
+        height,
+        "Texture Preview Offline",
+        "The panel is still active while the preview draw recovers."
+      );
+    }
   }
 
   function refresh() {
-    metricViews.forEach((metric) => metric.view.setValue(metric.get(node)));
-    readoutViews.forEach((readout) => readout.view.setValue(readout.get(node)));
-    controlViews.forEach(({ spec, control }) => control.setValue(readControlValue(node, spec)));
+    metricViews.forEach((metric) => metric.view.setValue(safeRead(() => metric.get(node))));
+    readoutViews.forEach((readout) => readout.view.setValue(safeRead(() => readout.get(node))));
+    controlViews.forEach(({ spec, control }) => {
+      try {
+        control.setValue(readControlValue(node, spec));
+      } catch (error) {
+        console.warn(`[${EXTENSION_NAME}] failed to sync panel control`, {
+          node: node?.comfyClass || node?.type,
+          panel: config.panelName,
+          key: spec.key,
+          error,
+        });
+      }
+    });
     drawCanvas();
   }
 

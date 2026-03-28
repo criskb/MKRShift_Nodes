@@ -13,20 +13,25 @@ if str(PACKAGE_PARENT) not in sys.path:
 
 from MKRShift_Nodes.nodes.texture_tool_nodes import (  # noqa: E402
     x1TextureAlbedoSafe,
+    x1TextureCausticField,
     x1TextureCellPattern,
+    x1TextureCrackleField,
+    x1TextureContourLines,
     x1TextureDetileBlend,
     x1TextureDelight,
+    x1TextureDuneField,
     x1TextureEdgePad,
     x1TextureHexTiles,
     x1TextureMacroVariation,
+    x1TextureMarbleVein,
     x1TextureNoiseField,
     x1TextureOffset,
+    x1TextureRippleField,
     x1TextureSeamless,
     x1TextureStrata,
     x1TextureTilePreview,
     x1TextureWeavePattern,
 )
-
 
 class TextureToolNodeTests(unittest.TestCase):
     def test_texture_offset_half_tile_moves_content_and_marks_seam(self) -> None:
@@ -416,6 +421,232 @@ class TextureToolNodeTests(unittest.TestCase):
         self.assertTrue(torch.allclose(fill_output[0, :, :, 0], fill_mask[0], atol=1e-6))
         self.assertTrue(torch.allclose(line_output[0, :, :, 0], line_mask[0], atol=1e-6))
         self.assertIn("x1TextureHexTiles", info)
+
+    def test_texture_ripple_field_is_tileable_and_mode_distinct(self) -> None:
+        node = x1TextureRippleField()
+        inter_output, inter_mask, info = node.run(
+            width=96,
+            height=96,
+            pattern_mode="interference",
+            ripple_scale_px=20.0,
+            direction_deg=32.0,
+            radial_mix=0.42,
+            interference=0.58,
+            warp_strength=0.20,
+            contrast=1.1,
+            balance=0.0,
+            invert=False,
+            seed=29,
+        )
+        dir_output, dir_mask, _ = node.run(
+            width=96,
+            height=96,
+            pattern_mode="directional",
+            ripple_scale_px=20.0,
+            direction_deg=32.0,
+            radial_mix=0.42,
+            interference=0.58,
+            warp_strength=0.20,
+            contrast=1.1,
+            balance=0.0,
+            invert=False,
+            seed=29,
+        )
+
+        self.assertTrue(torch.allclose(inter_mask[0, :, 0], inter_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(inter_mask[0, 0, :], inter_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(float(inter_mask.std().item()), 0.05)
+        self.assertGreater(float(torch.mean(torch.abs(inter_output - dir_output)).item()), 0.01)
+        self.assertTrue(torch.allclose(inter_output[0, :, :, 0], inter_mask[0], atol=1e-6))
+        self.assertIn("x1TextureRippleField", info)
+
+    def test_texture_contour_lines_are_tileable_and_mode_distinct(self) -> None:
+        node = x1TextureContourLines()
+        line_output, line_mask, info = node.run(
+            width=96,
+            height=96,
+            pattern_mode="lines",
+            contour_scale_px=20.0,
+            line_width=0.16,
+            terrace_strength=0.42,
+            warp_strength=0.26,
+            contrast=1.15,
+            balance=0.0,
+            invert=False,
+            seed=47,
+        )
+        terrace_output, terrace_mask, _ = node.run(
+            width=96,
+            height=96,
+            pattern_mode="terrace",
+            contour_scale_px=20.0,
+            line_width=0.16,
+            terrace_strength=0.72,
+            warp_strength=0.26,
+            contrast=1.15,
+            balance=0.0,
+            invert=False,
+            seed=47,
+        )
+
+        self.assertTrue(torch.allclose(line_mask[0, :, 0], line_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(line_mask[0, 0, :], line_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(float(line_mask.std().item()), 0.05)
+        self.assertGreater(float(torch.mean(torch.abs(line_output - terrace_output)).item()), 0.01)
+        self.assertTrue(torch.allclose(line_output[0, :, :, 0], line_mask[0], atol=1e-6))
+        self.assertIn("x1TextureContourLines", info)
+
+    def test_texture_marble_vein_is_tileable_and_mode_distinct(self) -> None:
+        node = x1TextureMarbleVein()
+        classic_output, classic_mask, info = node.run(
+            width=96,
+            height=96,
+            pattern_mode="classic",
+            vein_scale_px=22.0,
+            direction_deg=24.0,
+            flow_strength=0.46,
+            mineral_mix=0.32,
+            contrast=1.14,
+            balance=0.0,
+            invert=False,
+            seed=97,
+        )
+        vein_output, vein_mask, _ = node.run(
+            width=96,
+            height=96,
+            pattern_mode="vein",
+            vein_scale_px=22.0,
+            direction_deg=24.0,
+            flow_strength=0.46,
+            mineral_mix=0.32,
+            contrast=1.14,
+            balance=0.0,
+            invert=False,
+            seed=97,
+        )
+
+        self.assertTrue(torch.allclose(classic_mask[0, :, 0], classic_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(classic_mask[0, 0, :], classic_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(float(classic_mask.std().item()), 0.05)
+        self.assertGreater(float(torch.mean(torch.abs(classic_output - vein_output)).item()), 0.01)
+        self.assertTrue(torch.allclose(classic_output[0, :, :, 0], classic_mask[0], atol=1e-6))
+        self.assertTrue(torch.allclose(vein_output[0, :, :, 0], vein_mask[0], atol=1e-6))
+        self.assertIn("x1TextureMarbleVein", info)
+
+    def test_texture_dune_field_is_tileable_and_mode_distinct(self) -> None:
+        node = x1TextureDuneField()
+        ridge_output, ridge_mask, info = node.run(
+            width=96,
+            height=96,
+            pattern_mode="ridges",
+            dune_scale_px=24.0,
+            direction_deg=18.0,
+            wind_skew=0.36,
+            crest_sharpness=0.54,
+            ripple_detail=0.34,
+            drift_strength=0.28,
+            contrast=1.16,
+            balance=0.0,
+            invert=False,
+            seed=109,
+        )
+        sheet_output, sheet_mask, _ = node.run(
+            width=96,
+            height=96,
+            pattern_mode="sheet",
+            dune_scale_px=24.0,
+            direction_deg=18.0,
+            wind_skew=0.36,
+            crest_sharpness=0.54,
+            ripple_detail=0.34,
+            drift_strength=0.28,
+            contrast=1.16,
+            balance=0.0,
+            invert=False,
+            seed=109,
+        )
+
+        self.assertTrue(torch.allclose(ridge_mask[0, :, 0], ridge_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(ridge_mask[0, 0, :], ridge_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(float(ridge_mask.std().item()), 0.05)
+        self.assertGreater(float(torch.mean(torch.abs(ridge_output - sheet_output)).item()), 0.01)
+        self.assertTrue(torch.allclose(ridge_output[0, :, :, 0], ridge_mask[0], atol=1e-6))
+        self.assertTrue(torch.allclose(sheet_output[0, :, :, 0], sheet_mask[0], atol=1e-6))
+        self.assertIn("x1TextureDuneField", info)
+
+    def test_texture_caustic_field_is_tileable_and_mode_distinct(self) -> None:
+        node = x1TextureCausticField()
+        web_output, web_mask, info = node.run(
+            width=96,
+            height=96,
+            pattern_mode="web",
+            caustic_scale_px=22.0,
+            focus=0.58,
+            shimmer=0.34,
+            warp_strength=0.26,
+            contrast=1.18,
+            balance=0.0,
+            invert=False,
+            seed=137,
+        )
+        pool_output, pool_mask, _ = node.run(
+            width=96,
+            height=96,
+            pattern_mode="pool",
+            caustic_scale_px=22.0,
+            focus=0.58,
+            shimmer=0.34,
+            warp_strength=0.26,
+            contrast=1.18,
+            balance=0.0,
+            invert=False,
+            seed=137,
+        )
+
+        self.assertTrue(torch.allclose(web_mask[0, :, 0], web_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(web_mask[0, 0, :], web_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(float(web_mask.std().item()), 0.05)
+        self.assertGreater(float(torch.mean(torch.abs(web_output - pool_output)).item()), 0.01)
+        self.assertTrue(torch.allclose(web_output[0, :, :, 0], web_mask[0], atol=1e-6))
+        self.assertTrue(torch.allclose(pool_output[0, :, :, 0], pool_mask[0], atol=1e-6))
+        self.assertIn("x1TextureCausticField", info)
+
+    def test_texture_crackle_field_is_tileable_and_mode_distinct(self) -> None:
+        node = x1TextureCrackleField()
+        plate_output, plate_mask, info = node.run(
+            width=96,
+            height=96,
+            pattern_mode="plates",
+            plate_scale_px=22.0,
+            crack_width=0.18,
+            plate_variation=0.42,
+            relief=0.54,
+            contrast=1.16,
+            balance=0.0,
+            invert=False,
+            seed=151,
+        )
+        crack_output, crack_mask, _ = node.run(
+            width=96,
+            height=96,
+            pattern_mode="cracks",
+            plate_scale_px=22.0,
+            crack_width=0.18,
+            plate_variation=0.42,
+            relief=0.54,
+            contrast=1.16,
+            balance=0.0,
+            invert=False,
+            seed=151,
+        )
+
+        self.assertTrue(torch.allclose(plate_mask[0, :, 0], plate_mask[0, :, -1], atol=1e-6))
+        self.assertTrue(torch.allclose(plate_mask[0, 0, :], plate_mask[0, -1, :], atol=1e-6))
+        self.assertGreater(float(plate_mask.std().item()), 0.05)
+        self.assertGreater(float(torch.mean(torch.abs(plate_output - crack_output)).item()), 0.01)
+        self.assertTrue(torch.allclose(plate_output[0, :, :, 0], plate_mask[0], atol=1e-6))
+        self.assertTrue(torch.allclose(crack_output[0, :, :, 0], crack_mask[0], atol=1e-6))
+        self.assertIn("x1TextureCrackleField", info)
 
     def test_texture_weave_pattern_is_tileable_and_style_changes_output(self) -> None:
         node = x1TextureWeavePattern()

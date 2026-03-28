@@ -89,6 +89,21 @@ function drawLabel(ctx, text, x, y, color = "rgba(244,248,252,0.88)", size = 11,
   ctx.restore();
 }
 
+function drawVignette(ctx, frame, opacity = 0.14) {
+  const vignette = ctx.createRadialGradient(
+    frame.x + (frame.w * 0.5),
+    frame.y + (frame.h * 0.48),
+    frame.w * 0.18,
+    frame.x + (frame.w * 0.5),
+    frame.y + (frame.h * 0.5),
+    frame.w * 0.74,
+  );
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, `rgba(0,0,0,${opacity})`);
+  ctx.fillStyle = vignette;
+  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
+}
+
 function ensureLocalStyles() {
   ensureColorGradeStyles();
   if (document.getElementById(STYLE_ID)) return;
@@ -422,6 +437,7 @@ function drawHexPreview(ctx, width, height, node, config) {
     }
   }
 
+  drawVignette(ctx, frame, 0.16);
   drawLabel(ctx, mode, frame.x + 10, frame.y + 14, "rgba(245,247,250,0.78)", 10);
   drawLabel(ctx, `${Math.round(scalePx)} px`, frame.x + frame.w - 10, frame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
 }
@@ -520,6 +536,7 @@ function drawWeavePreview(ctx, width, height, node, config) {
     ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
   }
 
+  drawVignette(ctx, frame, 0.16);
   drawLabel(ctx, style, frame.x + 10, frame.y + 14, "rgba(245,247,250,0.78)", 10);
   drawLabel(ctx, `${Math.round(warpScale)} x ${Math.round(weftScale)} px`, frame.x + frame.w - 10, frame.y + 14, "rgba(245,247,250,0.64)", 10, "right");
 }

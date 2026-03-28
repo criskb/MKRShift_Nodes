@@ -16,6 +16,10 @@ from MKRShift_Nodes.nodes.xcolor import x1ColorMatch, x1FalseColor, x1GamutMap, 
 from MKRShift_Nodes.nodes.xcolor_analyze_nodes import (  # noqa: E402
     x1GamutWarning,
     x1HistogramScope,
+    x1HueBandScope,
+    x1NeutralityMap,
+    x1RGBBalanceScope,
+    x1SatLumaScope,
     x1SkinToneCheck,
     x1Vectorscope,
     x1WaveformScope,
@@ -400,6 +404,152 @@ class ColorNodeTests(unittest.TestCase):
         self.assertGreater(left, right + 0.20)
         self.assertGreater(float(torch.mean(torch.abs(out - image)).item()), 0.02)
         self.assertIn("target_hue=28.0", info)
+
+    def test_rgb_balance_scope_separates_warm_shadows_and_cool_highs(self) -> None:
+        image = torch.zeros((1, 36, 36, 3), dtype=torch.float32)
+        image[:, :12, :, 0] = 0.24
+        image[:, :12, :, 1] = 0.12
+        image[:, :12, :, 2] = 0.08
+        image[:, 12:24, :, :] = 0.45
+        image[:, 24:, :, 0] = 0.60
+        image[:, 24:, :, 1] = 0.72
+        image[:, 24:, :, 2] = 0.98
+
+        out, mask, info = x1RGBBalanceScope().run(
+            image=image,
+            settings_json=json.dumps(
+                {
+                    "analysis_mode": "zones",
+                    "shadow_point": 0.22,
+                    "highlight_point": 0.75,
+                    "zone_softness": 0.12,
+                    "response_gain": 1.2,
+                    "neutral_tolerance": 0.08,
+                    "show_reference": True,
+                    "mask_feather": 0.0,
+                    "invert_mask": False,
+                }
+            ),
+        )
+
+        self.assertEqual(tuple(out.shape), (1, 360, 720, 3))
+        self.assertEqual(tuple(mask.shape), (1, 360, 720))
+        left_red_lane = out[0, 80:280, 24:90]
+        left_blue_lane = out[0, 80:280, 152:218]
+        right_red_lane = out[0, 80:280, 492:558]
+        right_blue_lane = out[0, 80:280, 620:686]
+        self.assertGreater(float(left_red_lane[..., 0].mean().item()), float(left_blue_lane[..., 0].mean().item()) + 0.08)
+        self.assertGreater(float(right_blue_lane[..., 2].mean().item()), float(right_red_lane[..., 2].mean().item()) + 0.08)
+        self.assertIn("mode=zones", info)
+
+    def test_neutrality_map_prefers_low_saturation_patch_over_saturated_blue(self) -> None:
+        image = torch.zeros((1, 32, 32, 3), dtype=torch.float32)
+        image[:, :, :16, 0] = 0.62
+        image[:, :, :16, 1] = 0.58
+        image[:, :, :16, 2] = 0.54
+        image[:, :, 16:, 0] = 0.10
+        image[:, :, 16:, 1] = 0.34
+        image[:, :, 16:, 2] = 1.00
+
+        out, mask, info = x1NeutralityMap().run(
+            image=image,
+            settings_json=json.dumps(
+                {
+                    "sat_ceiling": 0.18,
+                    "luma_floor": 0.05,
+                    "luma_ceiling": 0.95,
+                    "cast_gain": 1.4,
+                    "warmth_bias": 0.0,
+                    "overlay_opacity": 0.85,
+                    "show_isolation": False,
+                    "mask_feather": 0.0,
+                    "invert_mask": False,
+                }
+            ),
+        )
+
+        left = float(mask[0, :, :16].mean().item())
+        right = float(mask[0, :, 16:].mean().item())
+        self.assertGreater(left, right + 0.35)
+        self.assertGreater(float(torch.mean(torch.abs(out - image)).item()), 0.02)
+        self.assertIn("sat_ceiling=0.18", info)
+
+    def test_rgb_balance_scope_accepts_legacy_widget_values(self) -> None:
+        image = torch.rand((1, 20, 20, 3), dtype=torch.float32)
+        out, mask, info = x1RGBBalanceScope().run(
+            image=image,
+            analysis_mode="columns",
+            shadow_point=0.2,
+            highlight_point=0.8,
+            zone_softness=0.1,
+            response_gain=1.0,
+            neutral_tolerance=0.06,
+            show_reference=True,
+            mask_feather=0.0,
+            invert_mask=False,
+        )
+
+        self.assertEqual(tuple(out.shape), (1, 360, 720, 3))
+        self.assertEqual(tuple(mask.shape), (1, 360, 720))
+        self.assertIn("mode=columns", info)
+
+    def test_hue_band_scope_detects_warm_peak(self) -> None:
+        image = torch.zeros((1, 32, 64, 3), dtype=torch.float32)
+        image[:, :, :44, 0] = 1.0
+        image[:, :, :44, 1] = 0.35
+        image[:, :, :44, 2] = 0.10
+        image[:, :, 44:, 0] = 0.10
+        image[:, :, 44:, 1] = 0.30
+        image[:, :, 44:, 2] = 1.0
+
+        out, mask, info = x1HueBandScope().run(
+            image=image,
+            settings_json=json.dumps(
+                {
+                    "bins": 144,
+                    "density_gain": 1.1,
+                    "sat_floor": 0.05,
+                    "val_floor": 0.05,
+                    "graticule": 0.34,
+                    "sample_step": 1,
+                    "mask_feather": 0.0,
+                    "invert_mask": False,
+                }
+            ),
+        )
+
+        self.assertEqual(tuple(out.shape), (1, 240, 720, 3))
+        self.assertEqual(tuple(mask.shape), (1, 240, 720))
+        left = out[0, 40:180, 40:220]
+        right = out[0, 40:180, 500:680]
+        self.assertGreater(float(left[..., 0].mean().item()), float(left[..., 2].mean().item()) + 0.08)
+        self.assertGreater(float(right[..., 2].mean().item()), float(right[..., 0].mean().item()) + 0.02)
+        self.assertIn("peak_hue", info)
+
+    def test_sat_luma_scope_prefers_saturated_patch_over_gray(self) -> None:
+        image = torch.full((1, 40, 40, 3), 0.55, dtype=torch.float32)
+        image[:, :, :20, 0] = 1.0
+        image[:, :, :20, 1] = 0.25
+        image[:, :, :20, 2] = 0.10
+
+        out, mask, info = x1SatLumaScope().run(
+            image=image,
+            settings_json=json.dumps(
+                {
+                    "density_gain": 1.0,
+                    "sat_floor": 0.04,
+                    "graticule": 0.4,
+                    "sample_step": 1,
+                    "mask_feather": 0.0,
+                    "invert_mask": False,
+                }
+            ),
+        )
+
+        self.assertEqual(tuple(out.shape), (1, 420, 420, 3))
+        self.assertEqual(tuple(mask.shape), (1, 420, 420))
+        self.assertGreater(float(mask.max().item()), 0.5)
+        self.assertIn("active_density", info)
 
 
 if __name__ == "__main__":

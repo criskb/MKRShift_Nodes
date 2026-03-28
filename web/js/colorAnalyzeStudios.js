@@ -29,18 +29,30 @@ const VECTORSCOPE_NODE = "x1Vectorscope";
 const GAMUT_WARNING_NODE = "x1GamutWarning";
 const HISTOGRAM_NODE = "x1HistogramScope";
 const SKIN_TONE_NODE = "x1SkinToneCheck";
+const RGB_BALANCE_NODE = "x1RGBBalanceScope";
+const NEUTRALITY_MAP_NODE = "x1NeutralityMap";
+const HUE_BAND_NODE = "x1HueBandScope";
+const SAT_LUMA_NODE = "x1SatLumaScope";
 
 const WAVEFORM_PANEL = "mkr_color_waveform_scope_studio";
 const VECTORSCOPE_PANEL = "mkr_color_vectorscope_studio";
 const GAMUT_WARNING_PANEL = "mkr_color_gamut_warning_studio";
 const HISTOGRAM_PANEL = "mkr_color_histogram_scope_studio";
 const SKIN_TONE_PANEL = "mkr_color_skin_tone_check_studio";
+const RGB_BALANCE_PANEL = "mkr_color_rgb_balance_scope_studio";
+const NEUTRALITY_MAP_PANEL = "mkr_color_neutrality_map_studio";
+const HUE_BAND_PANEL = "mkr_color_hue_band_scope_studio";
+const SAT_LUMA_PANEL = "mkr_color_sat_luma_scope_studio";
 
 const WAVEFORM_SIZE = [860, 760];
 const VECTORSCOPE_SIZE = [760, 760];
 const GAMUT_WARNING_SIZE = [760, 720];
 const HISTOGRAM_SIZE = [820, 740];
 const SKIN_TONE_SIZE = [760, 760];
+const RGB_BALANCE_SIZE = [820, 760];
+const NEUTRALITY_MAP_SIZE = [760, 760];
+const HUE_BAND_SIZE = [820, 720];
+const SAT_LUMA_SIZE = [760, 760];
 
 const WAVEFORM_DEFAULTS = {
   scope_mode: "rgb_parade",
@@ -141,6 +153,87 @@ const SKIN_TONE_NUMERIC = {
   val_min: { min: 0.0, max: 1.0 },
   line_tolerance: { min: 0.01, max: 0.6 },
   overlay_opacity: { min: 0.0, max: 1.0 },
+  mask_feather: { min: 0.0, max: 256.0 },
+};
+
+const RGB_BALANCE_DEFAULTS = {
+  analysis_mode: "zones",
+  shadow_point: 0.22,
+  highlight_point: 0.78,
+  zone_softness: 0.12,
+  response_gain: 1.15,
+  neutral_tolerance: 0.08,
+  show_reference: true,
+  mask_feather: 12.0,
+  invert_mask: false,
+};
+
+const RGB_BALANCE_NUMERIC = {
+  shadow_point: { min: 0.0, max: 1.0 },
+  highlight_point: { min: 0.0, max: 1.0 },
+  zone_softness: { min: 0.02, max: 0.35 },
+  response_gain: { min: 0.25, max: 3.0 },
+  neutral_tolerance: { min: 0.02, max: 0.25 },
+  mask_feather: { min: 0.0, max: 256.0 },
+};
+
+const NEUTRALITY_MAP_DEFAULTS = {
+  sat_ceiling: 0.18,
+  luma_floor: 0.10,
+  luma_ceiling: 0.92,
+  cast_gain: 1.35,
+  warmth_bias: 0.0,
+  overlay_opacity: 0.82,
+  show_isolation: false,
+  mask_feather: 12.0,
+  invert_mask: false,
+};
+
+const NEUTRALITY_MAP_NUMERIC = {
+  sat_ceiling: { min: 0.02, max: 0.60 },
+  luma_floor: { min: 0.0, max: 1.0 },
+  luma_ceiling: { min: 0.0, max: 1.0 },
+  cast_gain: { min: 0.2, max: 3.0 },
+  warmth_bias: { min: -0.35, max: 0.35 },
+  overlay_opacity: { min: 0.0, max: 1.0 },
+  mask_feather: { min: 0.0, max: 256.0 },
+};
+
+const HUE_BAND_DEFAULTS = {
+  bins: 192,
+  density_gain: 1.10,
+  sat_floor: 0.08,
+  val_floor: 0.10,
+  graticule: 0.34,
+  sample_step: 2,
+  mask_feather: 12.0,
+  invert_mask: false,
+};
+
+const HUE_BAND_NUMERIC = {
+  bins: { min: 48, max: 512, integer: true },
+  density_gain: { min: 0.2, max: 3.0 },
+  sat_floor: { min: 0.0, max: 1.0 },
+  val_floor: { min: 0.0, max: 1.0 },
+  graticule: { min: 0.0, max: 1.0 },
+  sample_step: { min: 1, max: 8, integer: true },
+  mask_feather: { min: 0.0, max: 256.0 },
+};
+
+const SAT_LUMA_DEFAULTS = {
+  density_gain: 1.00,
+  sat_floor: 0.04,
+  graticule: 0.40,
+  sample_step: 2,
+  mask_feather: 12.0,
+  invert_mask: false,
+};
+
+const SAT_LUMA_NUMERIC = {
+  density_gain: { min: 0.2, max: 3.0 },
+  sat_floor: { min: 0.0, max: 0.5 },
+  graticule: { min: 0.0, max: 1.0 },
+  sample_step: { min: 1, max: 8, integer: true },
   mask_feather: { min: 0.0, max: 256.0 },
 };
 
@@ -597,6 +690,283 @@ function drawSkinTonePreview(ctx, width, height, settings) {
 
   ctx.strokeStyle = "rgba(255,255,255,0.18)";
   ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+}
+
+function drawRGBBalancePreview(ctx, width, height, settings) {
+  ctx.clearRect(0, 0, width, height);
+  const bg = ctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, "rgba(17,20,25,1)");
+  bg.addColorStop(1, "rgba(27,31,38,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  const mode = String(settings.analysis_mode || "zones");
+  const responseGain = clamp(Number(settings.response_gain) || 1.15, 0.25, 3.0);
+  const tolerance = clamp(Number(settings.neutral_tolerance) || 0.08, 0.02, 0.25);
+  const showReference = !!settings.show_reference;
+  const segments = mode === "columns" ? 12 : 3;
+  const centerY = height * 0.5;
+  const tolPx = height * tolerance * 0.9;
+
+  ctx.strokeStyle = "rgba(228,234,241,0.14)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, centerY + 0.5);
+  ctx.lineTo(width, centerY + 0.5);
+  ctx.stroke();
+
+  if (showReference) {
+    ctx.strokeStyle = "rgba(228,234,241,0.08)";
+    for (const y of [centerY - tolPx, centerY + tolPx]) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(width, y + 0.5);
+      ctx.stroke();
+    }
+  }
+
+  const gap = segments >= 8 ? 4 : 10;
+  const segmentWidth = (width - (gap * (segments + 1))) / segments;
+  const colors = ["rgba(255,92,70,0.95)", "rgba(102,255,148,0.95)", "rgba(87,160,255,0.95)"];
+
+  function drawSegmentBars(segmentIndex, offsets) {
+    const x0 = gap + (segmentIndex * (segmentWidth + gap));
+    const x1 = x0 + segmentWidth;
+    ctx.fillStyle = segmentIndex % 2 === 0 ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.01)";
+    ctx.fillRect(x0, 0, segmentWidth, height);
+
+    const laneGap = Math.max(4, segmentWidth * 0.05);
+    const laneWidth = ((segmentWidth - (laneGap * 4)) / 3);
+    offsets.forEach((offset, channel) => {
+      const laneX = x0 + laneGap + (channel * (laneWidth + laneGap));
+      const bar = Math.abs(offset) * height * 0.72;
+      const y = offset >= 0 ? centerY - bar : centerY;
+      const h = Math.max(2, bar);
+      ctx.fillStyle = colors[channel].replace("0.95", "0.32");
+      ctx.fillRect(laneX, y, laneWidth, h);
+      ctx.fillStyle = colors[channel];
+      ctx.fillRect(laneX, offset >= 0 ? y : y + h - 2, laneWidth, 2);
+    });
+  }
+
+  if (mode === "columns") {
+    for (let i = 0; i < segments; i += 1) {
+      const t = i / Math.max(segments - 1, 1);
+      const offsets = [
+        Math.sin((t * 7.2) + 0.4) * 0.14 * responseGain,
+        Math.cos((t * 5.0) + 1.2) * 0.10 * responseGain,
+        Math.sin((t * 6.1) + 2.2) * -0.12 * responseGain,
+      ].map((value) => clamp(value, -0.46, 0.46));
+      drawSegmentBars(i, offsets);
+    }
+  } else {
+    const shadow = clamp((0.18 + (Number(settings.shadow_point) || 0.22)) * responseGain * 0.42, -0.46, 0.46);
+    const highlight = clamp((Number(settings.highlight_point) || 0.78) * responseGain * 0.24, -0.46, 0.46);
+    drawSegmentBars(0, [shadow, 0.02, -shadow * 0.68]);
+    drawSegmentBars(1, [0.02, 0.0, -0.03]);
+    drawSegmentBars(2, [-highlight * 0.35, 0.01, highlight]);
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+}
+
+function drawNeutralityMapPreview(ctx, width, height, settings) {
+  ctx.clearRect(0, 0, width, height);
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, "rgba(30,30,31,1)");
+  bg.addColorStop(1, "rgba(49,46,43,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  const plates = [
+    ["#827a72", "#928a82"],
+    ["#6f7277", "#888d94"],
+    ["#62564e", "#83766d"],
+    ["#7c7f81", "#97999c"],
+  ];
+  const plateWidth = width / plates.length;
+  for (let i = 0; i < plates.length; i += 1) {
+    const grad = ctx.createLinearGradient(i * plateWidth, 0, (i + 1) * plateWidth, height);
+    grad.addColorStop(0, plates[i][0]);
+    grad.addColorStop(1, plates[i][1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(i * plateWidth, 0, plateWidth, height);
+  }
+
+  const satCeiling = clamp(Number(settings.sat_ceiling) || 0.18, 0.02, 0.60);
+  const castGain = clamp(Number(settings.cast_gain) || 1.35, 0.2, 3.0);
+  const warmthBias = clamp(Number(settings.warmth_bias) || 0.0, -0.35, 0.35);
+  const opacity = clamp(Number(settings.overlay_opacity) || 0.82, 0.0, 1.0);
+  const showIsolation = !!settings.show_isolation;
+
+  const swatches = [
+    { x: width * 0.18, y: height * 0.36, color: `rgba(255,182,92,${0.18 + (castGain * 0.10)})` },
+    { x: width * 0.40, y: height * 0.58, color: `rgba(112,255,146,${0.12 + (satCeiling * 0.40)})` },
+    { x: width * 0.68, y: height * 0.30, color: `rgba(96,162,255,${0.16 + (Math.abs(warmthBias) * 0.8)})` },
+    { x: width * 0.80, y: height * 0.64, color: `rgba(255,112,212,${0.12 + (opacity * 0.34)})` },
+  ];
+  for (const swatch of swatches) {
+    ctx.fillStyle = swatch.color;
+    ctx.beginPath();
+    ctx.ellipse(swatch.x, swatch.y, width * 0.14, height * 0.18, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (showIsolation) {
+    ctx.fillStyle = "rgba(8,10,12,0.58)";
+    ctx.fillRect(0, 0, width, height);
+    for (const swatch of swatches) {
+      ctx.fillStyle = swatch.color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, "rgba($1,$2,$3,0.92)");
+      ctx.beginPath();
+      ctx.ellipse(swatch.x, swatch.y, width * 0.12, height * 0.15, -0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.14)";
+  ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+}
+
+function hueColor(t) {
+  const h = ((t % 1) + 1) % 1;
+  const sector = h * 6;
+  const c = 1;
+  const x = c * (1 - Math.abs((sector % 2) - 1));
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (sector < 1) [r, g, b] = [c, x, 0];
+  else if (sector < 2) [r, g, b] = [x, c, 0];
+  else if (sector < 3) [r, g, b] = [0, c, x];
+  else if (sector < 4) [r, g, b] = [0, x, c];
+  else if (sector < 5) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+}
+
+function drawHueBandPreview(ctx, width, height, settings) {
+  ctx.clearRect(0, 0, width, height);
+  const bg = ctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, "rgba(16,18,23,1)");
+  bg.addColorStop(1, "rgba(24,28,34,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  const bandHeight = Math.max(28, height * 0.18);
+  for (let x = 0; x < width; x += 1) {
+    ctx.fillStyle = hueColor(x / Math.max(width - 1, 1));
+    ctx.fillRect(x, height - bandHeight, 1, bandHeight);
+  }
+
+  const graticule = clamp(Number(settings.graticule) || 0.34, 0, 1);
+  ctx.strokeStyle = `rgba(210,220,232,${0.08 + (graticule * 0.14)})`;
+  ctx.lineWidth = 1;
+  for (const stop of [0.25, 0.5, 0.75]) {
+    const y = Math.round((height - bandHeight - 1) * (1 - stop)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+  for (let i = 0; i <= 6; i += 1) {
+    const x = Math.round((width - 1) * (i / 6)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+
+  const bins = clamp(Math.round(Number(settings.bins) || 192), 48, 512);
+  const density = clamp(Number(settings.density_gain) || 1.1, 0.2, 3.0);
+  const satFloor = clamp(Number(settings.sat_floor) || 0.08, 0, 1);
+  const valFloor = clamp(Number(settings.val_floor) || 0.10, 0, 1);
+
+  const points = [];
+  for (let i = 0; i < bins; i += 1) {
+    const t = i / Math.max(bins - 1, 1);
+    const peakA = Math.exp(-Math.pow((t - 0.08), 2) / 0.004);
+    const peakB = Math.exp(-Math.pow((t - 0.33), 2) / 0.010);
+    const peakC = Math.exp(-Math.pow((t - 0.67), 2) / 0.008);
+    const peakD = Math.exp(-Math.pow((t - 0.91), 2) / 0.006);
+    const activity = clamp((0.10 + (peakA * (0.45 + satFloor)) + (peakB * 0.30) + (peakC * (0.22 + valFloor)) + (peakD * 0.52)) * density * 0.56, 0.01, 0.98);
+    const x = t * width;
+    const y = (height - bandHeight) - (activity * (height - bandHeight - 8));
+    points.push([x, y, t]);
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], height - bandHeight);
+  for (const [x, y] of points) ctx.lineTo(x, y);
+  ctx.lineTo(points[points.length - 1][0], height - bandHeight);
+  ctx.closePath();
+  const fill = ctx.createLinearGradient(0, 0, 0, height - bandHeight);
+  fill.addColorStop(0, "rgba(255,255,255,0.16)");
+  fill.addColorStop(1, "rgba(255,255,255,0.03)");
+  ctx.fillStyle = fill;
+  ctx.fill();
+
+  ctx.lineWidth = 2;
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    ctx.strokeStyle = hueColor(curr[2]);
+    ctx.beginPath();
+    ctx.moveTo(prev[0], prev[1]);
+    ctx.lineTo(curr[0], curr[1]);
+    ctx.stroke();
+  }
+}
+
+function drawSatLumaPreview(ctx, width, height, settings) {
+  ctx.clearRect(0, 0, width, height);
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, "rgba(18,21,26,1)");
+  bg.addColorStop(1, "rgba(28,31,38,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  const graticule = clamp(Number(settings.graticule) || 0.40, 0, 1);
+  ctx.strokeStyle = `rgba(212,220,230,${0.08 + (graticule * 0.12)})`;
+  ctx.lineWidth = 1;
+  for (const stop of [0.25, 0.5, 0.75]) {
+    const x = Math.round((width - 1) * stop) + 0.5;
+    const y = Math.round((height - 1) * stop) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  const density = clamp(Number(settings.density_gain) || 1.0, 0.2, 3.0);
+  const satFloor = clamp(Number(settings.sat_floor) || 0.04, 0, 0.5);
+  const clusters = [
+    { sat: 0.12 + satFloor, luma: 0.82, color: "rgba(190,205,255,0.66)" },
+    { sat: 0.28 + satFloor, luma: 0.58, color: "rgba(255,208,98,0.72)" },
+    { sat: 0.72, luma: 0.36, color: "rgba(255,96,82,0.78)" },
+    { sat: 0.84, luma: 0.72, color: "rgba(98,255,162,0.68)" },
+  ];
+  for (const cluster of clusters) {
+    ctx.strokeStyle = cluster.color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < 80; i += 1) {
+      const t = i / 79;
+      const wobbleX = Math.sin((t * 7.2) + (cluster.sat * 4.0)) * 0.05 * density;
+      const wobbleY = Math.cos((t * 6.0) + (cluster.luma * 5.0)) * 0.06 * density;
+      const x = clamp(cluster.sat + wobbleX + (t * 0.08), 0, 1) * width;
+      const y = (1 - clamp(cluster.luma + wobbleY - (t * 0.06), 0, 1)) * height;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.14)";
   ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
 }
 
@@ -1468,6 +1838,675 @@ function buildSkinTonePanel(node) {
   refreshPanel();
 }
 
+function buildRGBBalancePanel(node) {
+  ensureLocalStyles();
+  const { panel } = createPanelShell({
+    kicker: "MKR SHIFT COLOR",
+    title: "RGB Balance Scope Studio",
+    subtitle: "Track red, green, and blue bias through tonal zones or a fast column scan.",
+    showHeader: false,
+  });
+  panel.classList.add("mkr-grade-panel");
+  panel.style.setProperty("--mkr-grade-accent", "#a4b8ff");
+  panel.style.paddingBottom = "16px";
+
+  const topbar = document.createElement("div");
+  topbar.className = "mkr-grade-topbar";
+  const metricsWrap = document.createElement("div");
+  metricsWrap.className = "mkr-grade-metrics";
+  const modeMetric = createGradeMetric("Mode", "zones");
+  const gainMetric = createGradeMetric("Response", "1.15");
+  const tolMetric = createGradeMetric("Tol", "0.08");
+  metricsWrap.appendChild(modeMetric.element);
+  metricsWrap.appendChild(gainMetric.element);
+  metricsWrap.appendChild(tolMetric.element);
+  const actions = document.createElement("div");
+  actions.className = "mkr-grade-actions";
+  actions.appendChild(createGradeButton("Zones", () => { applyValues(node, { analysis_mode: "zones" }); refreshPanel(); }, "accent"));
+  actions.appendChild(createGradeButton("Columns", () => { applyValues(node, { analysis_mode: "columns" }); refreshPanel(); }));
+  actions.appendChild(createGradeButton("Neutral", () => { applyValues(node, { response_gain: 1.0, neutral_tolerance: 0.07, show_reference: true }); refreshPanel(); }));
+  topbar.appendChild(metricsWrap);
+  topbar.appendChild(actions);
+  panel.appendChild(topbar);
+
+  const previewSection = createGradeSection("Balance Preview", "rgb bias");
+  const previewWrap = document.createElement("div");
+  previewWrap.className = "mkr-color-analyze-preview";
+  const canvas = document.createElement("canvas");
+  previewWrap.appendChild(canvas);
+  previewSection.body.appendChild(previewWrap);
+  previewSection.body.appendChild(
+    createLegend([
+      { color: "#ff6146", label: "Red Bias" },
+      { color: "#64ff96", label: "Green Bias" },
+      { color: "#5d9fff", label: "Blue Bias" },
+    ])
+  );
+  const hint = document.createElement("div");
+  hint.className = "mkr-color-analyze-hint";
+  hint.textContent = "Use Zones when you want a quick shadow/mid/high read. Switch to Columns when you want to spot a left-to-right white-balance drift through the frame.";
+  previewSection.body.appendChild(hint);
+  panel.appendChild(previewSection.section);
+
+  const analysisSection = createGradeSection("Analysis Layout", "zones");
+  const analysisControls = document.createElement("div");
+  analysisControls.className = "mkr-grade-controls";
+  const modeSelect = createSelectControl({
+    label: "Analysis Mode",
+    value: getValue(node, "analysis_mode", RGB_BALANCE_DEFAULTS.analysis_mode),
+    options: [
+      { value: "zones", label: "Shadow / Mid / High" },
+      { value: "columns", label: "Column Scan" },
+    ],
+    onChange: (value) => { setWidgetValue(node, "analysis_mode", value); refreshPanel(); },
+  });
+  const shadowPoint = createGradeSlider({
+    label: "Shadow Split",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "shadow_point", RGB_BALANCE_DEFAULTS.shadow_point),
+    onChange: (value) => { setWidgetValue(node, "shadow_point", value); refreshPanel(); },
+  });
+  const highlightPoint = createGradeSlider({
+    label: "Highlight Split",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "highlight_point", RGB_BALANCE_DEFAULTS.highlight_point),
+    onChange: (value) => { setWidgetValue(node, "highlight_point", value); refreshPanel(); },
+  });
+  const softness = createGradeSlider({
+    label: "Zone Softness",
+    min: 0.02,
+    max: 0.35,
+    step: 0.01,
+    value: getNumber(node, "zone_softness", RGB_BALANCE_DEFAULTS.zone_softness),
+    onChange: (value) => { setWidgetValue(node, "zone_softness", value); refreshPanel(); },
+  });
+  analysisControls.appendChild(modeSelect.element);
+  analysisControls.appendChild(shadowPoint.element);
+  analysisControls.appendChild(highlightPoint.element);
+  analysisControls.appendChild(softness.element);
+  analysisSection.body.appendChild(analysisControls);
+  panel.appendChild(analysisSection.section);
+
+  const responseSection = createGradeSection("Scope Response", "reference");
+  const responseControls = document.createElement("div");
+  responseControls.className = "mkr-grade-controls";
+  const responseGain = createGradeSlider({
+    label: "Response Gain",
+    min: 0.25,
+    max: 3.0,
+    step: 0.01,
+    value: getNumber(node, "response_gain", RGB_BALANCE_DEFAULTS.response_gain),
+    onChange: (value) => { setWidgetValue(node, "response_gain", value); refreshPanel(); },
+  });
+  const neutralTolerance = createGradeSlider({
+    label: "Neutral Tol",
+    min: 0.02,
+    max: 0.25,
+    step: 0.01,
+    value: getNumber(node, "neutral_tolerance", RGB_BALANCE_DEFAULTS.neutral_tolerance),
+    onChange: (value) => { setWidgetValue(node, "neutral_tolerance", value); refreshPanel(); },
+  });
+  const showReference = createGradeToggle({
+    label: "Reference Lines",
+    checked: getBoolean(node, "show_reference", RGB_BALANCE_DEFAULTS.show_reference),
+    description: "Draw center and tolerance lines so neutral balance is easier to read.",
+    onChange: (checked) => { setWidgetValue(node, "show_reference", checked); refreshPanel(); },
+  });
+  const maskFeather = createGradeSlider({
+    label: "Mask Feather",
+    min: 0,
+    max: 256,
+    step: 0.5,
+    value: getNumber(node, "mask_feather", RGB_BALANCE_DEFAULTS.mask_feather),
+    decimals: 1,
+    onChange: (value) => { setWidgetValue(node, "mask_feather", value); refreshPanel(); },
+  });
+  const invertMask = createGradeToggle({
+    label: "Invert Mask",
+    checked: getBoolean(node, "invert_mask", RGB_BALANCE_DEFAULTS.invert_mask),
+    description: "Flip the optional external mask before it limits the sampled image area.",
+    onChange: (checked) => { setWidgetValue(node, "invert_mask", checked); refreshPanel(); },
+  });
+  responseControls.appendChild(responseGain.element);
+  responseControls.appendChild(neutralTolerance.element);
+  responseControls.appendChild(showReference.element);
+  responseControls.appendChild(maskFeather.element);
+  responseControls.appendChild(invertMask.element);
+  responseSection.body.appendChild(responseControls);
+  panel.appendChild(responseSection.section);
+
+  function refreshPanel() {
+    const settings = {
+      analysis_mode: getValue(node, "analysis_mode", RGB_BALANCE_DEFAULTS.analysis_mode),
+      shadow_point: getNumber(node, "shadow_point", RGB_BALANCE_DEFAULTS.shadow_point),
+      highlight_point: getNumber(node, "highlight_point", RGB_BALANCE_DEFAULTS.highlight_point),
+      zone_softness: getNumber(node, "zone_softness", RGB_BALANCE_DEFAULTS.zone_softness),
+      response_gain: getNumber(node, "response_gain", RGB_BALANCE_DEFAULTS.response_gain),
+      neutral_tolerance: getNumber(node, "neutral_tolerance", RGB_BALANCE_DEFAULTS.neutral_tolerance),
+      show_reference: getBoolean(node, "show_reference", RGB_BALANCE_DEFAULTS.show_reference),
+      mask_feather: getNumber(node, "mask_feather", RGB_BALANCE_DEFAULTS.mask_feather),
+      invert_mask: getBoolean(node, "invert_mask", RGB_BALANCE_DEFAULTS.invert_mask),
+    };
+
+    modeMetric.setValue(settings.analysis_mode);
+    gainMetric.setValue(formatNumber(settings.response_gain, 2));
+    tolMetric.setValue(formatNumber(settings.neutral_tolerance, 2));
+    modeSelect.setValue(settings.analysis_mode);
+    shadowPoint.setValue(settings.shadow_point);
+    highlightPoint.setValue(settings.highlight_point);
+    softness.setValue(settings.zone_softness);
+    responseGain.setValue(settings.response_gain);
+    neutralTolerance.setValue(settings.neutral_tolerance);
+    showReference.setValue(settings.show_reference);
+    maskFeather.setValue(settings.mask_feather);
+    invertMask.setValue(settings.invert_mask);
+
+    const { ctx, width, height } = ensureCanvasResolution(canvas);
+    drawRGBBalancePreview(ctx, width, height, settings);
+  }
+
+  attachPanel(node, RGB_BALANCE_PANEL, panel, RGB_BALANCE_SIZE[0], RGB_BALANCE_SIZE[1]);
+  normalizePanelNode(node, [SETTINGS_WIDGET_NAME], RGB_BALANCE_PANEL);
+  installRefreshHooks(node, "__mkrRGBBalanceStudioHooks", refreshPanel);
+  refreshPanel();
+}
+
+function buildNeutralityMapPanel(node) {
+  ensureLocalStyles();
+  const { panel } = createPanelShell({
+    kicker: "MKR SHIFT COLOR",
+    title: "Neutrality Map Studio",
+    subtitle: "Reveal near-neutral regions and show whether they lean warm, cool, green, or magenta.",
+    showHeader: false,
+  });
+  panel.classList.add("mkr-grade-panel");
+  panel.style.setProperty("--mkr-grade-accent", "#d9c38a");
+  panel.style.paddingBottom = "16px";
+
+  const topbar = document.createElement("div");
+  topbar.className = "mkr-grade-topbar";
+  const metricsWrap = document.createElement("div");
+  metricsWrap.className = "mkr-grade-metrics";
+  const satMetric = createGradeMetric("Sat", "0.18");
+  const gainMetric = createGradeMetric("Cast", "1.35");
+  const viewMetric = createGradeMetric("View", "Overlay");
+  metricsWrap.appendChild(satMetric.element);
+  metricsWrap.appendChild(gainMetric.element);
+  metricsWrap.appendChild(viewMetric.element);
+  const actions = document.createElement("div");
+  actions.className = "mkr-grade-actions";
+  actions.appendChild(createGradeButton("Whites", () => { applyValues(node, { sat_ceiling: 0.12, luma_floor: 0.35, luma_ceiling: 1.0 }); refreshPanel(); }, "accent"));
+  actions.appendChild(createGradeButton("Mids", () => { applyValues(node, { sat_ceiling: 0.18, luma_floor: 0.10, luma_ceiling: 0.82 }); refreshPanel(); }));
+  actions.appendChild(createGradeButton("Isolation", () => { applyValues(node, { show_isolation: true, overlay_opacity: 0.9 }); refreshPanel(); }));
+  topbar.appendChild(metricsWrap);
+  topbar.appendChild(actions);
+  panel.appendChild(topbar);
+
+  const previewSection = createGradeSection("Neutral Preview", "cast map");
+  const previewWrap = document.createElement("div");
+  previewWrap.className = "mkr-color-analyze-preview";
+  const canvas = document.createElement("canvas");
+  previewWrap.appendChild(canvas);
+  previewSection.body.appendChild(previewWrap);
+  previewSection.body.appendChild(
+    createLegend([
+      { color: "#ffb05e", label: "Warm" },
+      { color: "#69a8ff", label: "Cool" },
+      { color: "#72ff9f", label: "Green" },
+      { color: "#ff80d9", label: "Magenta" },
+    ])
+  );
+  const hint = document.createElement("div");
+  hint.className = "mkr-color-analyze-hint";
+  hint.textContent = "This is best used on walls, wardrobe neutrals, practical whites, or product surfaces when you want to catch a subtle cast before it spreads through the grade.";
+  previewSection.body.appendChild(hint);
+  panel.appendChild(previewSection.section);
+
+  const gateSection = createGradeSection("Neutral Gate", "candidate range");
+  const gateControls = document.createElement("div");
+  gateControls.className = "mkr-grade-controls";
+  const satCeiling = createGradeSlider({
+    label: "Sat Ceiling",
+    min: 0.02,
+    max: 0.60,
+    step: 0.01,
+    value: getNumber(node, "sat_ceiling", NEUTRALITY_MAP_DEFAULTS.sat_ceiling),
+    onChange: (value) => { setWidgetValue(node, "sat_ceiling", value); refreshPanel(); },
+  });
+  const lumaFloor = createGradeSlider({
+    label: "Luma Floor",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "luma_floor", NEUTRALITY_MAP_DEFAULTS.luma_floor),
+    onChange: (value) => { setWidgetValue(node, "luma_floor", value); refreshPanel(); },
+  });
+  const lumaCeiling = createGradeSlider({
+    label: "Luma Ceiling",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "luma_ceiling", NEUTRALITY_MAP_DEFAULTS.luma_ceiling),
+    onChange: (value) => { setWidgetValue(node, "luma_ceiling", value); refreshPanel(); },
+  });
+  const castGain = createGradeSlider({
+    label: "Cast Gain",
+    min: 0.2,
+    max: 3.0,
+    step: 0.01,
+    value: getNumber(node, "cast_gain", NEUTRALITY_MAP_DEFAULTS.cast_gain),
+    onChange: (value) => { setWidgetValue(node, "cast_gain", value); refreshPanel(); },
+  });
+  const warmthBias = createGradeSlider({
+    label: "Warm Bias",
+    min: -0.35,
+    max: 0.35,
+    step: 0.01,
+    value: getNumber(node, "warmth_bias", NEUTRALITY_MAP_DEFAULTS.warmth_bias),
+    onChange: (value) => { setWidgetValue(node, "warmth_bias", value); refreshPanel(); },
+  });
+  gateControls.appendChild(satCeiling.element);
+  gateControls.appendChild(lumaFloor.element);
+  gateControls.appendChild(lumaCeiling.element);
+  gateControls.appendChild(castGain.element);
+  gateControls.appendChild(warmthBias.element);
+  gateSection.body.appendChild(gateControls);
+  panel.appendChild(gateSection.section);
+
+  const outputSection = createGradeSection("Output", "overlay");
+  const outputControls = document.createElement("div");
+  outputControls.className = "mkr-grade-controls";
+  const overlayOpacity = createGradeSlider({
+    label: "Overlay",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "overlay_opacity", NEUTRALITY_MAP_DEFAULTS.overlay_opacity),
+    onChange: (value) => { setWidgetValue(node, "overlay_opacity", value); refreshPanel(); },
+  });
+  const isolation = createGradeToggle({
+    label: "Isolation",
+    checked: getBoolean(node, "show_isolation", NEUTRALITY_MAP_DEFAULTS.show_isolation),
+    description: "Show only the neutrality diagnostic map instead of overlaying it on the source.",
+    onChange: (checked) => { setWidgetValue(node, "show_isolation", checked); refreshPanel(); },
+  });
+  const maskFeather = createGradeSlider({
+    label: "Mask Feather",
+    min: 0,
+    max: 256,
+    step: 0.5,
+    value: getNumber(node, "mask_feather", NEUTRALITY_MAP_DEFAULTS.mask_feather),
+    decimals: 1,
+    onChange: (value) => { setWidgetValue(node, "mask_feather", value); refreshPanel(); },
+  });
+  const invertMask = createGradeToggle({
+    label: "Invert Mask",
+    checked: getBoolean(node, "invert_mask", NEUTRALITY_MAP_DEFAULTS.invert_mask),
+    description: "Flip the optional external mask before it gates the neutrality analysis.",
+    onChange: (checked) => { setWidgetValue(node, "invert_mask", checked); refreshPanel(); },
+  });
+  outputControls.appendChild(overlayOpacity.element);
+  outputControls.appendChild(isolation.element);
+  outputControls.appendChild(maskFeather.element);
+  outputControls.appendChild(invertMask.element);
+  outputSection.body.appendChild(outputControls);
+  panel.appendChild(outputSection.section);
+
+  function refreshPanel() {
+    const settings = {
+      sat_ceiling: getNumber(node, "sat_ceiling", NEUTRALITY_MAP_DEFAULTS.sat_ceiling),
+      luma_floor: getNumber(node, "luma_floor", NEUTRALITY_MAP_DEFAULTS.luma_floor),
+      luma_ceiling: getNumber(node, "luma_ceiling", NEUTRALITY_MAP_DEFAULTS.luma_ceiling),
+      cast_gain: getNumber(node, "cast_gain", NEUTRALITY_MAP_DEFAULTS.cast_gain),
+      warmth_bias: getNumber(node, "warmth_bias", NEUTRALITY_MAP_DEFAULTS.warmth_bias),
+      overlay_opacity: getNumber(node, "overlay_opacity", NEUTRALITY_MAP_DEFAULTS.overlay_opacity),
+      show_isolation: getBoolean(node, "show_isolation", NEUTRALITY_MAP_DEFAULTS.show_isolation),
+      mask_feather: getNumber(node, "mask_feather", NEUTRALITY_MAP_DEFAULTS.mask_feather),
+      invert_mask: getBoolean(node, "invert_mask", NEUTRALITY_MAP_DEFAULTS.invert_mask),
+    };
+
+    satMetric.setValue(formatNumber(settings.sat_ceiling, 2));
+    gainMetric.setValue(formatNumber(settings.cast_gain, 2));
+    viewMetric.setValue(settings.show_isolation ? "Isolation" : "Overlay");
+    satCeiling.setValue(settings.sat_ceiling);
+    lumaFloor.setValue(settings.luma_floor);
+    lumaCeiling.setValue(settings.luma_ceiling);
+    castGain.setValue(settings.cast_gain);
+    warmthBias.setValue(settings.warmth_bias);
+    overlayOpacity.setValue(settings.overlay_opacity);
+    isolation.setValue(settings.show_isolation);
+    maskFeather.setValue(settings.mask_feather);
+    invertMask.setValue(settings.invert_mask);
+
+    const { ctx, width, height } = ensureCanvasResolution(canvas);
+    drawNeutralityMapPreview(ctx, width, height, settings);
+  }
+
+  attachPanel(node, NEUTRALITY_MAP_PANEL, panel, NEUTRALITY_MAP_SIZE[0], NEUTRALITY_MAP_SIZE[1]);
+  normalizePanelNode(node, [SETTINGS_WIDGET_NAME], NEUTRALITY_MAP_PANEL);
+  installRefreshHooks(node, "__mkrNeutralityMapStudioHooks", refreshPanel);
+  refreshPanel();
+}
+
+function buildHueBandPanel(node) {
+  ensureLocalStyles();
+  const { panel } = createPanelShell({
+    kicker: "MKR SHIFT COLOR",
+    title: "Hue Band Scope Studio",
+    subtitle: "Read hue density as a spectral band so dominant ranges jump out immediately.",
+    showHeader: false,
+  });
+  panel.classList.add("mkr-grade-panel");
+  panel.style.setProperty("--mkr-grade-accent", "#ffb35b");
+  panel.style.paddingBottom = "16px";
+
+  const topbar = document.createElement("div");
+  topbar.className = "mkr-grade-topbar";
+  const metricsWrap = document.createElement("div");
+  metricsWrap.className = "mkr-grade-metrics";
+  const binsMetric = createGradeMetric("Bins", "192");
+  const densityMetric = createGradeMetric("Density", "1.10");
+  const sampleMetric = createGradeMetric("Step", "2");
+  metricsWrap.appendChild(binsMetric.element);
+  metricsWrap.appendChild(densityMetric.element);
+  metricsWrap.appendChild(sampleMetric.element);
+  const actions = document.createElement("div");
+  actions.className = "mkr-grade-actions";
+  actions.appendChild(createGradeButton("Dense", () => { applyValues(node, { density_gain: 1.4, sat_floor: 0.06 }); refreshPanel(); }, "accent"));
+  actions.appendChild(createGradeButton("Clean", () => { applyValues(node, { density_gain: 0.95, val_floor: 0.18 }); refreshPanel(); }));
+  actions.appendChild(createGradeButton("Fast", () => { applyValues(node, { sample_step: 4, bins: 128 }); refreshPanel(); }));
+  topbar.appendChild(metricsWrap);
+  topbar.appendChild(actions);
+  panel.appendChild(topbar);
+
+  const previewSection = createGradeSection("Hue Preview", "spectrum");
+  const previewWrap = document.createElement("div");
+  previewWrap.className = "mkr-color-analyze-preview";
+  const canvas = document.createElement("canvas");
+  previewWrap.appendChild(canvas);
+  previewSection.body.appendChild(previewWrap);
+  previewSection.body.appendChild(
+    createLegend([
+      { color: "#ff5a44", label: "Warm Peaks" },
+      { color: "#8aff67", label: "Green Peaks" },
+      { color: "#5f9fff", label: "Cool Peaks" },
+    ])
+  );
+  const hint = document.createElement("div");
+  hint.className = "mkr-color-analyze-hint";
+  hint.textContent = "This sits between histogram and vectorscope: it shows which hue families dominate, without hiding the density behind a circular readout.";
+  previewSection.body.appendChild(hint);
+  panel.appendChild(previewSection.section);
+
+  const densitySection = createGradeSection("Density", "sampling");
+  const controls = document.createElement("div");
+  controls.className = "mkr-grade-controls";
+  const bins = createGradeSlider({
+    label: "Bins",
+    min: 48,
+    max: 512,
+    step: 1,
+    value: getNumber(node, "bins", HUE_BAND_DEFAULTS.bins),
+    decimals: 0,
+    onChange: (value) => { setWidgetValue(node, "bins", Math.round(value)); refreshPanel(); },
+  });
+  const densityGain = createGradeSlider({
+    label: "Density Gain",
+    min: 0.2,
+    max: 3.0,
+    step: 0.01,
+    value: getNumber(node, "density_gain", HUE_BAND_DEFAULTS.density_gain),
+    onChange: (value) => { setWidgetValue(node, "density_gain", value); refreshPanel(); },
+  });
+  const satFloor = createGradeSlider({
+    label: "Sat Floor",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "sat_floor", HUE_BAND_DEFAULTS.sat_floor),
+    onChange: (value) => { setWidgetValue(node, "sat_floor", value); refreshPanel(); },
+  });
+  const valFloor = createGradeSlider({
+    label: "Val Floor",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "val_floor", HUE_BAND_DEFAULTS.val_floor),
+    onChange: (value) => { setWidgetValue(node, "val_floor", value); refreshPanel(); },
+  });
+  const graticule = createGradeSlider({
+    label: "Graticule",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "graticule", HUE_BAND_DEFAULTS.graticule),
+    onChange: (value) => { setWidgetValue(node, "graticule", value); refreshPanel(); },
+  });
+  const sampleStep = createGradeSlider({
+    label: "Sample Step",
+    min: 1,
+    max: 8,
+    step: 1,
+    value: getNumber(node, "sample_step", HUE_BAND_DEFAULTS.sample_step),
+    decimals: 0,
+    onChange: (value) => { setWidgetValue(node, "sample_step", Math.round(value)); refreshPanel(); },
+  });
+  controls.appendChild(bins.element);
+  controls.appendChild(densityGain.element);
+  controls.appendChild(satFloor.element);
+  controls.appendChild(valFloor.element);
+  controls.appendChild(graticule.element);
+  controls.appendChild(sampleStep.element);
+  densitySection.body.appendChild(controls);
+  panel.appendChild(densitySection.section);
+
+  const maskSection = createGradeSection("Mask Gate", "optional");
+  const maskControls = document.createElement("div");
+  maskControls.className = "mkr-grade-controls";
+  const maskFeather = createGradeSlider({
+    label: "Mask Feather",
+    min: 0,
+    max: 256,
+    step: 0.5,
+    value: getNumber(node, "mask_feather", HUE_BAND_DEFAULTS.mask_feather),
+    decimals: 1,
+    onChange: (value) => { setWidgetValue(node, "mask_feather", value); refreshPanel(); },
+  });
+  const invertMask = createGradeToggle({
+    label: "Invert Mask",
+    checked: getBoolean(node, "invert_mask", HUE_BAND_DEFAULTS.invert_mask),
+    description: "Flip the optional external mask before it limits the hue sample.",
+    onChange: (checked) => { setWidgetValue(node, "invert_mask", checked); refreshPanel(); },
+  });
+  maskControls.appendChild(maskFeather.element);
+  maskControls.appendChild(invertMask.element);
+  maskSection.body.appendChild(maskControls);
+  panel.appendChild(maskSection.section);
+
+  function refreshPanel() {
+    const settings = {
+      bins: getNumber(node, "bins", HUE_BAND_DEFAULTS.bins),
+      density_gain: getNumber(node, "density_gain", HUE_BAND_DEFAULTS.density_gain),
+      sat_floor: getNumber(node, "sat_floor", HUE_BAND_DEFAULTS.sat_floor),
+      val_floor: getNumber(node, "val_floor", HUE_BAND_DEFAULTS.val_floor),
+      graticule: getNumber(node, "graticule", HUE_BAND_DEFAULTS.graticule),
+      sample_step: getNumber(node, "sample_step", HUE_BAND_DEFAULTS.sample_step),
+      mask_feather: getNumber(node, "mask_feather", HUE_BAND_DEFAULTS.mask_feather),
+      invert_mask: getBoolean(node, "invert_mask", HUE_BAND_DEFAULTS.invert_mask),
+    };
+
+    binsMetric.setValue(String(Math.round(settings.bins)));
+    densityMetric.setValue(formatNumber(settings.density_gain, 2));
+    sampleMetric.setValue(String(Math.round(settings.sample_step)));
+    bins.setValue(settings.bins);
+    densityGain.setValue(settings.density_gain);
+    satFloor.setValue(settings.sat_floor);
+    valFloor.setValue(settings.val_floor);
+    graticule.setValue(settings.graticule);
+    sampleStep.setValue(settings.sample_step);
+    maskFeather.setValue(settings.mask_feather);
+    invertMask.setValue(settings.invert_mask);
+
+    const { ctx, width, height } = ensureCanvasResolution(canvas);
+    drawHueBandPreview(ctx, width, height, settings);
+  }
+
+  attachPanel(node, HUE_BAND_PANEL, panel, HUE_BAND_SIZE[0], HUE_BAND_SIZE[1]);
+  normalizePanelNode(node, [SETTINGS_WIDGET_NAME], HUE_BAND_PANEL);
+  installRefreshHooks(node, "__mkrHueBandStudioHooks", refreshPanel);
+  refreshPanel();
+}
+
+function buildSatLumaPanel(node) {
+  ensureLocalStyles();
+  const { panel } = createPanelShell({
+    kicker: "MKR SHIFT COLOR",
+    title: "Sat / Luma Scope Studio",
+    subtitle: "Plot chroma density against luminance to see where vivid color really lives in the frame.",
+    showHeader: false,
+  });
+  panel.classList.add("mkr-grade-panel");
+  panel.style.setProperty("--mkr-grade-accent", "#7bd7ff");
+  panel.style.paddingBottom = "16px";
+
+  const topbar = document.createElement("div");
+  topbar.className = "mkr-grade-topbar";
+  const metricsWrap = document.createElement("div");
+  metricsWrap.className = "mkr-grade-metrics";
+  const densityMetric = createGradeMetric("Density", "1.00");
+  const floorMetric = createGradeMetric("Sat Floor", "0.04");
+  const sampleMetric = createGradeMetric("Step", "2");
+  metricsWrap.appendChild(densityMetric.element);
+  metricsWrap.appendChild(floorMetric.element);
+  metricsWrap.appendChild(sampleMetric.element);
+  const actions = document.createElement("div");
+  actions.className = "mkr-grade-actions";
+  actions.appendChild(createGradeButton("Rich Color", () => { applyValues(node, { density_gain: 1.35, sat_floor: 0.02 }); refreshPanel(); }, "accent"));
+  actions.appendChild(createGradeButton("Cleaner", () => { applyValues(node, { density_gain: 0.9, sat_floor: 0.10 }); refreshPanel(); }));
+  actions.appendChild(createGradeButton("Fast", () => { applyValues(node, { sample_step: 4 }); refreshPanel(); }));
+  topbar.appendChild(metricsWrap);
+  topbar.appendChild(actions);
+  panel.appendChild(topbar);
+
+  const previewSection = createGradeSection("Scope Preview", "sat vs luma");
+  const previewWrap = document.createElement("div");
+  previewWrap.className = "mkr-color-analyze-preview";
+  const canvas = document.createElement("canvas");
+  previewWrap.appendChild(canvas);
+  previewSection.body.appendChild(previewWrap);
+  previewSection.body.appendChild(
+    createLegend([
+      { color: "#c6d7ff", label: "Low Sat / High Luma" },
+      { color: "#ffd76d", label: "Mid Density" },
+      { color: "#ff6d56", label: "High Sat" },
+    ])
+  );
+  const hint = document.createElement("div");
+  hint.className = "mkr-color-analyze-hint";
+  hint.textContent = "This is useful when a grade feels too loud or too flat: it reveals whether saturation is piling up in highlights, mids, or darker parts of the image.";
+  previewSection.body.appendChild(hint);
+  panel.appendChild(previewSection.section);
+
+  const scopeSection = createGradeSection("Scope Response", "density");
+  const controls = document.createElement("div");
+  controls.className = "mkr-grade-controls";
+  const densityGain = createGradeSlider({
+    label: "Density Gain",
+    min: 0.2,
+    max: 3.0,
+    step: 0.01,
+    value: getNumber(node, "density_gain", SAT_LUMA_DEFAULTS.density_gain),
+    onChange: (value) => { setWidgetValue(node, "density_gain", value); refreshPanel(); },
+  });
+  const satFloor = createGradeSlider({
+    label: "Sat Floor",
+    min: 0,
+    max: 0.5,
+    step: 0.01,
+    value: getNumber(node, "sat_floor", SAT_LUMA_DEFAULTS.sat_floor),
+    onChange: (value) => { setWidgetValue(node, "sat_floor", value); refreshPanel(); },
+  });
+  const graticule = createGradeSlider({
+    label: "Graticule",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: getNumber(node, "graticule", SAT_LUMA_DEFAULTS.graticule),
+    onChange: (value) => { setWidgetValue(node, "graticule", value); refreshPanel(); },
+  });
+  const sampleStep = createGradeSlider({
+    label: "Sample Step",
+    min: 1,
+    max: 8,
+    step: 1,
+    value: getNumber(node, "sample_step", SAT_LUMA_DEFAULTS.sample_step),
+    decimals: 0,
+    onChange: (value) => { setWidgetValue(node, "sample_step", Math.round(value)); refreshPanel(); },
+  });
+  controls.appendChild(densityGain.element);
+  controls.appendChild(satFloor.element);
+  controls.appendChild(graticule.element);
+  controls.appendChild(sampleStep.element);
+  scopeSection.body.appendChild(controls);
+  panel.appendChild(scopeSection.section);
+
+  const maskSection = createGradeSection("Mask Gate", "optional");
+  const maskControls = document.createElement("div");
+  maskControls.className = "mkr-grade-controls";
+  const maskFeather = createGradeSlider({
+    label: "Mask Feather",
+    min: 0,
+    max: 256,
+    step: 0.5,
+    value: getNumber(node, "mask_feather", SAT_LUMA_DEFAULTS.mask_feather),
+    decimals: 1,
+    onChange: (value) => { setWidgetValue(node, "mask_feather", value); refreshPanel(); },
+  });
+  const invertMask = createGradeToggle({
+    label: "Invert Mask",
+    checked: getBoolean(node, "invert_mask", SAT_LUMA_DEFAULTS.invert_mask),
+    description: "Flip the optional external mask before it limits the sat/luma sample.",
+    onChange: (checked) => { setWidgetValue(node, "invert_mask", checked); refreshPanel(); },
+  });
+  maskControls.appendChild(maskFeather.element);
+  maskControls.appendChild(invertMask.element);
+  maskSection.body.appendChild(maskControls);
+  panel.appendChild(maskSection.section);
+
+  function refreshPanel() {
+    const settings = {
+      density_gain: getNumber(node, "density_gain", SAT_LUMA_DEFAULTS.density_gain),
+      sat_floor: getNumber(node, "sat_floor", SAT_LUMA_DEFAULTS.sat_floor),
+      graticule: getNumber(node, "graticule", SAT_LUMA_DEFAULTS.graticule),
+      sample_step: getNumber(node, "sample_step", SAT_LUMA_DEFAULTS.sample_step),
+      mask_feather: getNumber(node, "mask_feather", SAT_LUMA_DEFAULTS.mask_feather),
+      invert_mask: getBoolean(node, "invert_mask", SAT_LUMA_DEFAULTS.invert_mask),
+    };
+
+    densityMetric.setValue(formatNumber(settings.density_gain, 2));
+    floorMetric.setValue(formatNumber(settings.sat_floor, 2));
+    sampleMetric.setValue(String(Math.round(settings.sample_step)));
+    densityGain.setValue(settings.density_gain);
+    satFloor.setValue(settings.sat_floor);
+    graticule.setValue(settings.graticule);
+    sampleStep.setValue(settings.sample_step);
+    maskFeather.setValue(settings.mask_feather);
+    invertMask.setValue(settings.invert_mask);
+
+    const { ctx, width, height } = ensureCanvasResolution(canvas);
+    drawSatLumaPreview(ctx, width, height, settings);
+  }
+
+  attachPanel(node, SAT_LUMA_PANEL, panel, SAT_LUMA_SIZE[0], SAT_LUMA_SIZE[1]);
+  normalizePanelNode(node, [SETTINGS_WIDGET_NAME], SAT_LUMA_PANEL);
+  installRefreshHooks(node, "__mkrSatLumaStudioHooks", refreshPanel);
+  refreshPanel();
+}
+
 function prepareNode(node) {
   if (matchesNode(node, WAVEFORM_NODE)) {
     installBundledSettingsAdapter(node, {
@@ -1550,6 +2589,74 @@ function prepareNode(node) {
       buildSkinTonePanel(node);
     } else {
       normalizePanelNode(node, [SETTINGS_WIDGET_NAME], SKIN_TONE_PANEL);
+    }
+    return;
+  }
+
+  if (matchesNode(node, RGB_BALANCE_NODE)) {
+    installBundledSettingsAdapter(node, {
+      widgetName: SETTINGS_WIDGET_NAME,
+      defaults: RGB_BALANCE_DEFAULTS,
+      numericSpecs: RGB_BALANCE_NUMERIC,
+      booleanKeys: ["show_reference", "invert_mask"],
+      legacyNames: Object.keys(RGB_BALANCE_DEFAULTS),
+    });
+    if (!node.__mkrRGBBalanceStudioBuilt) {
+      node.__mkrRGBBalanceStudioBuilt = true;
+      buildRGBBalancePanel(node);
+    } else {
+      normalizePanelNode(node, [SETTINGS_WIDGET_NAME], RGB_BALANCE_PANEL);
+    }
+    return;
+  }
+
+  if (matchesNode(node, NEUTRALITY_MAP_NODE)) {
+    installBundledSettingsAdapter(node, {
+      widgetName: SETTINGS_WIDGET_NAME,
+      defaults: NEUTRALITY_MAP_DEFAULTS,
+      numericSpecs: NEUTRALITY_MAP_NUMERIC,
+      booleanKeys: ["show_isolation", "invert_mask"],
+      legacyNames: Object.keys(NEUTRALITY_MAP_DEFAULTS),
+    });
+    if (!node.__mkrNeutralityMapStudioBuilt) {
+      node.__mkrNeutralityMapStudioBuilt = true;
+      buildNeutralityMapPanel(node);
+    } else {
+      normalizePanelNode(node, [SETTINGS_WIDGET_NAME], NEUTRALITY_MAP_PANEL);
+    }
+    return;
+  }
+
+  if (matchesNode(node, HUE_BAND_NODE)) {
+    installBundledSettingsAdapter(node, {
+      widgetName: SETTINGS_WIDGET_NAME,
+      defaults: HUE_BAND_DEFAULTS,
+      numericSpecs: HUE_BAND_NUMERIC,
+      booleanKeys: ["invert_mask"],
+      legacyNames: Object.keys(HUE_BAND_DEFAULTS),
+    });
+    if (!node.__mkrHueBandStudioBuilt) {
+      node.__mkrHueBandStudioBuilt = true;
+      buildHueBandPanel(node);
+    } else {
+      normalizePanelNode(node, [SETTINGS_WIDGET_NAME], HUE_BAND_PANEL);
+    }
+    return;
+  }
+
+  if (matchesNode(node, SAT_LUMA_NODE)) {
+    installBundledSettingsAdapter(node, {
+      widgetName: SETTINGS_WIDGET_NAME,
+      defaults: SAT_LUMA_DEFAULTS,
+      numericSpecs: SAT_LUMA_NUMERIC,
+      booleanKeys: ["invert_mask"],
+      legacyNames: Object.keys(SAT_LUMA_DEFAULTS),
+    });
+    if (!node.__mkrSatLumaStudioBuilt) {
+      node.__mkrSatLumaStudioBuilt = true;
+      buildSatLumaPanel(node);
+    } else {
+      normalizePanelNode(node, [SETTINGS_WIDGET_NAME], SAT_LUMA_PANEL);
     }
   }
 }

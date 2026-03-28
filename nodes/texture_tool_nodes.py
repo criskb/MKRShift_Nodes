@@ -8,10 +8,16 @@ import torch
 from ..categories import SURFACE_TEXTURE
 from ..lib.image_shared import gaussian_blur_rgb_np, hsv_to_rgb_np, luma_np, mask_to_batch, rgb_to_hsv_np, smoothstep_np, to_image_batch
 from ..lib.procedural_texture_shared import (
+    procedural_caustic_pattern,
     grayscale_to_rgb,
     procedural_cell_pattern,
+    procedural_crackle_pattern,
+    procedural_contour_pattern,
+    procedural_dune_pattern,
     procedural_hex_pattern,
+    procedural_marble_pattern,
     procedural_noise_field,
+    procedural_ripple_pattern,
     procedural_strata_pattern,
     procedural_weave_pattern,
     shape_scalar_field,
@@ -1621,6 +1627,621 @@ class x1TextureStrata:
             float(max(4.0, settings["breakup_scale_px"])),
             float(np.clip(settings["breakup_strength"], 0.0, 1.0)),
             micro_breakup,
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
+        )
+        return image_t, mask_t, info
+
+
+class x1TextureRippleField:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "pattern_mode": "interference",
+            "ripple_scale_px": 160.0,
+            "direction_deg": 28.0,
+            "radial_mix": 0.42,
+            "interference": 0.58,
+            "warp_strength": 0.24,
+            "contrast": 1.15,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 71,
+        }
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "ripple_info")
+    FUNCTION = "run"
+    CATEGORY = SURFACE_TEXTURE
+
+    def run(
+        self,
+        settings_json: str = "{}",
+        **legacy_settings,
+    ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "ripple_scale_px": {"min": 4.0, "max": 4096.0},
+                "direction_deg": {"min": -180.0, "max": 180.0},
+                "radial_mix": {"min": 0.0, "max": 1.0},
+                "interference": {"min": 0.0, "max": 1.0},
+                "warp_strength": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
+        )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        pattern_mode = str(settings["pattern_mode"]).lower()
+        if pattern_mode not in {"directional", "rings", "interference"}:
+            pattern_mode = "interference"
+        field = procedural_ripple_pattern(
+            h=int(height),
+            w=int(width),
+            ripple_scale_px=float(max(4.0, settings["ripple_scale_px"])),
+            direction_deg=float(settings["direction_deg"]),
+            radial_mix=float(np.clip(settings["radial_mix"], 0.0, 1.0)),
+            interference=float(np.clip(settings["interference"], 0.0, 1.0)),
+            warp_strength=float(np.clip(settings["warp_strength"], 0.0, 1.0)),
+            seed=int(settings["seed"]),
+            pattern_mode=pattern_mode,
+        )
+        shaped = shape_scalar_field(
+            field=field,
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
+        )
+        image_t, mask_t = _field_output(shaped)
+        info = (
+            "x1TextureRippleField: size={}x{}, mode={}, ripple_scale_px={:.1f}, direction_deg={:.1f}, "
+            "radial_mix={:.2f}, interference={:.2f}, warp_strength={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
+        ).format(
+            int(width),
+            int(height),
+            pattern_mode,
+            float(max(4.0, settings["ripple_scale_px"])),
+            float(settings["direction_deg"]),
+            float(np.clip(settings["radial_mix"], 0.0, 1.0)),
+            float(np.clip(settings["interference"], 0.0, 1.0)),
+            float(np.clip(settings["warp_strength"], 0.0, 1.0)),
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
+        )
+        return image_t, mask_t, info
+
+
+class x1TextureContourLines:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "pattern_mode": "lines",
+            "contour_scale_px": 156.0,
+            "line_width": 0.18,
+            "terrace_strength": 0.42,
+            "warp_strength": 0.26,
+            "contrast": 1.2,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 83,
+        }
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "contour_info")
+    FUNCTION = "run"
+    CATEGORY = SURFACE_TEXTURE
+
+    def run(
+        self,
+        settings_json: str = "{}",
+        **legacy_settings,
+    ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "contour_scale_px": {"min": 4.0, "max": 4096.0},
+                "line_width": {"min": 0.01, "max": 1.0},
+                "terrace_strength": {"min": 0.0, "max": 1.0},
+                "warp_strength": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
+        )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        pattern_mode = str(settings["pattern_mode"]).lower()
+        if pattern_mode not in {"lines", "height", "terrace", "bevel"}:
+            pattern_mode = "lines"
+        field = procedural_contour_pattern(
+            h=int(height),
+            w=int(width),
+            contour_scale_px=float(max(4.0, settings["contour_scale_px"])),
+            line_width=float(np.clip(settings["line_width"], 0.01, 1.0)),
+            terrace_strength=float(np.clip(settings["terrace_strength"], 0.0, 1.0)),
+            warp_strength=float(np.clip(settings["warp_strength"], 0.0, 1.0)),
+            seed=int(settings["seed"]),
+            pattern_mode=pattern_mode,
+        )
+        shaped = shape_scalar_field(
+            field=field,
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
+        )
+        image_t, mask_t = _field_output(shaped)
+        info = (
+            "x1TextureContourLines: size={}x{}, mode={}, contour_scale_px={:.1f}, line_width={:.2f}, "
+            "terrace_strength={:.2f}, warp_strength={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
+        ).format(
+            int(width),
+            int(height),
+            pattern_mode,
+            float(max(4.0, settings["contour_scale_px"])),
+            float(np.clip(settings["line_width"], 0.01, 1.0)),
+            float(np.clip(settings["terrace_strength"], 0.0, 1.0)),
+            float(np.clip(settings["warp_strength"], 0.0, 1.0)),
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
+        )
+        return image_t, mask_t, info
+
+
+class x1TextureMarbleVein:
+    SEARCH_ALIASES = ["marble", "stone vein", "agate"]
+
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "pattern_mode": "classic",
+            "vein_scale_px": 168.0,
+            "direction_deg": 22.0,
+            "flow_strength": 0.46,
+            "mineral_mix": 0.32,
+            "contrast": 1.14,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 97,
+        }
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "marble_info")
+    FUNCTION = "run"
+    CATEGORY = SURFACE_TEXTURE
+
+    def run(
+        self,
+        settings_json: str = "{}",
+        **legacy_settings,
+    ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "vein_scale_px": {"min": 4.0, "max": 4096.0},
+                "direction_deg": {"min": -180.0, "max": 180.0},
+                "flow_strength": {"min": 0.0, "max": 1.0},
+                "mineral_mix": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
+        )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        pattern_mode = str(settings["pattern_mode"]).lower()
+        if pattern_mode not in {"classic", "vein", "onyx"}:
+            pattern_mode = "classic"
+        field = procedural_marble_pattern(
+            h=int(height),
+            w=int(width),
+            vein_scale_px=float(max(4.0, settings["vein_scale_px"])),
+            direction_deg=float(settings["direction_deg"]),
+            flow_strength=float(np.clip(settings["flow_strength"], 0.0, 1.0)),
+            mineral_mix=float(np.clip(settings["mineral_mix"], 0.0, 1.0)),
+            seed=int(settings["seed"]),
+            pattern_mode=pattern_mode,
+        )
+        shaped = shape_scalar_field(
+            field=field,
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
+        )
+        image_t, mask_t = _field_output(shaped)
+        info = (
+            "x1TextureMarbleVein: size={}x{}, mode={}, vein_scale_px={:.1f}, direction_deg={:.1f}, "
+            "flow_strength={:.2f}, mineral_mix={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
+        ).format(
+            int(width),
+            int(height),
+            pattern_mode,
+            float(max(4.0, settings["vein_scale_px"])),
+            float(settings["direction_deg"]),
+            float(np.clip(settings["flow_strength"], 0.0, 1.0)),
+            float(np.clip(settings["mineral_mix"], 0.0, 1.0)),
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
+        )
+        return image_t, mask_t, info
+
+
+class x1TextureDuneField:
+    SEARCH_ALIASES = ["sand dune", "desert ripple", "aeolian"]
+
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "pattern_mode": "ridges",
+            "dune_scale_px": 184.0,
+            "direction_deg": 18.0,
+            "wind_skew": 0.36,
+            "crest_sharpness": 0.54,
+            "ripple_detail": 0.34,
+            "drift_strength": 0.28,
+            "contrast": 1.16,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 109,
+        }
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "dune_info")
+    FUNCTION = "run"
+    CATEGORY = SURFACE_TEXTURE
+
+    def run(
+        self,
+        settings_json: str = "{}",
+        **legacy_settings,
+    ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "dune_scale_px": {"min": 4.0, "max": 4096.0},
+                "direction_deg": {"min": -180.0, "max": 180.0},
+                "wind_skew": {"min": 0.0, "max": 1.0},
+                "crest_sharpness": {"min": 0.0, "max": 1.0},
+                "ripple_detail": {"min": 0.0, "max": 1.0},
+                "drift_strength": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
+        )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        pattern_mode = str(settings["pattern_mode"]).lower()
+        if pattern_mode not in {"ridges", "sheet", "crescent"}:
+            pattern_mode = "ridges"
+        field = procedural_dune_pattern(
+            h=int(height),
+            w=int(width),
+            dune_scale_px=float(max(4.0, settings["dune_scale_px"])),
+            direction_deg=float(settings["direction_deg"]),
+            wind_skew=float(np.clip(settings["wind_skew"], 0.0, 1.0)),
+            crest_sharpness=float(np.clip(settings["crest_sharpness"], 0.0, 1.0)),
+            ripple_detail=float(np.clip(settings["ripple_detail"], 0.0, 1.0)),
+            drift_strength=float(np.clip(settings["drift_strength"], 0.0, 1.0)),
+            seed=int(settings["seed"]),
+            pattern_mode=pattern_mode,
+        )
+        shaped = shape_scalar_field(
+            field=field,
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
+        )
+        image_t, mask_t = _field_output(shaped)
+        info = (
+            "x1TextureDuneField: size={}x{}, mode={}, dune_scale_px={:.1f}, direction_deg={:.1f}, "
+            "wind_skew={:.2f}, crest_sharpness={:.2f}, ripple_detail={:.2f}, drift_strength={:.2f}, "
+            "contrast={:.2f}, balance={:.2f}, seed={}{}"
+        ).format(
+            int(width),
+            int(height),
+            pattern_mode,
+            float(max(4.0, settings["dune_scale_px"])),
+            float(settings["direction_deg"]),
+            float(np.clip(settings["wind_skew"], 0.0, 1.0)),
+            float(np.clip(settings["crest_sharpness"], 0.0, 1.0)),
+            float(np.clip(settings["ripple_detail"], 0.0, 1.0)),
+            float(np.clip(settings["drift_strength"], 0.0, 1.0)),
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
+        )
+        return image_t, mask_t, info
+
+
+class x1TextureCausticField:
+    SEARCH_ALIASES = ["caustics", "water light", "refractive web"]
+
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "pattern_mode": "web",
+            "caustic_scale_px": 148.0,
+            "focus": 0.58,
+            "shimmer": 0.34,
+            "warp_strength": 0.26,
+            "contrast": 1.18,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 137,
+        }
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "caustic_info")
+    FUNCTION = "run"
+    CATEGORY = SURFACE_TEXTURE
+
+    def run(
+        self,
+        settings_json: str = "{}",
+        **legacy_settings,
+    ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "caustic_scale_px": {"min": 4.0, "max": 4096.0},
+                "focus": {"min": 0.0, "max": 1.0},
+                "shimmer": {"min": 0.0, "max": 1.0},
+                "warp_strength": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
+        )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        pattern_mode = str(settings["pattern_mode"]).lower()
+        if pattern_mode not in {"web", "pool", "flare"}:
+            pattern_mode = "web"
+        field = procedural_caustic_pattern(
+            h=int(height),
+            w=int(width),
+            caustic_scale_px=float(max(4.0, settings["caustic_scale_px"])),
+            focus=float(np.clip(settings["focus"], 0.0, 1.0)),
+            shimmer=float(np.clip(settings["shimmer"], 0.0, 1.0)),
+            warp_strength=float(np.clip(settings["warp_strength"], 0.0, 1.0)),
+            seed=int(settings["seed"]),
+            pattern_mode=pattern_mode,
+        )
+        shaped = shape_scalar_field(
+            field=field,
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
+        )
+        image_t, mask_t = _field_output(shaped)
+        info = (
+            "x1TextureCausticField: size={}x{}, mode={}, caustic_scale_px={:.1f}, focus={:.2f}, "
+            "shimmer={:.2f}, warp_strength={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
+        ).format(
+            int(width),
+            int(height),
+            pattern_mode,
+            float(max(4.0, settings["caustic_scale_px"])),
+            float(np.clip(settings["focus"], 0.0, 1.0)),
+            float(np.clip(settings["shimmer"], 0.0, 1.0)),
+            float(np.clip(settings["warp_strength"], 0.0, 1.0)),
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
+        )
+        return image_t, mask_t, info
+
+
+class x1TextureCrackleField:
+    SEARCH_ALIASES = ["crackle", "dried clay", "fracture plates"]
+
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "pattern_mode": "plates",
+            "plate_scale_px": 134.0,
+            "crack_width": 0.18,
+            "plate_variation": 0.42,
+            "relief": 0.54,
+            "contrast": 1.16,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 151,
+        }
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "crackle_info")
+    FUNCTION = "run"
+    CATEGORY = SURFACE_TEXTURE
+
+    def run(
+        self,
+        settings_json: str = "{}",
+        **legacy_settings,
+    ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "plate_scale_px": {"min": 4.0, "max": 4096.0},
+                "crack_width": {"min": 0.01, "max": 1.0},
+                "plate_variation": {"min": 0.0, "max": 1.0},
+                "relief": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
+        )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        pattern_mode = str(settings["pattern_mode"]).lower()
+        if pattern_mode not in {"plates", "cracks", "mud"}:
+            pattern_mode = "plates"
+        field = procedural_crackle_pattern(
+            h=int(height),
+            w=int(width),
+            plate_scale_px=float(max(4.0, settings["plate_scale_px"])),
+            crack_width=float(np.clip(settings["crack_width"], 0.01, 1.0)),
+            plate_variation=float(np.clip(settings["plate_variation"], 0.0, 1.0)),
+            relief=float(np.clip(settings["relief"], 0.0, 1.0)),
+            seed=int(settings["seed"]),
+            pattern_mode=pattern_mode,
+        )
+        shaped = shape_scalar_field(
+            field=field,
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
+        )
+        image_t, mask_t = _field_output(shaped)
+        info = (
+            "x1TextureCrackleField: size={}x{}, mode={}, plate_scale_px={:.1f}, crack_width={:.2f}, "
+            "plate_variation={:.2f}, relief={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
+        ).format(
+            int(width),
+            int(height),
+            pattern_mode,
+            float(max(4.0, settings["plate_scale_px"])),
+            float(np.clip(settings["crack_width"], 0.01, 1.0)),
+            float(np.clip(settings["plate_variation"], 0.0, 1.0)),
+            float(np.clip(settings["relief"], 0.0, 1.0)),
             float(max(0.05, settings["contrast"])),
             float(np.clip(settings["balance"], -1.0, 1.0)),
             int(settings["seed"]),

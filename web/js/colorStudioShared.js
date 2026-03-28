@@ -304,9 +304,14 @@ export function formatNumber(value, decimals = 2) {
 }
 
 export function ensureCanvasResolution(canvas) {
+  const computed = window.getComputedStyle(canvas);
+  const computedWidth = Number.parseFloat(computed.width || "0");
+  const computedHeight = Number.parseFloat(computed.height || "0");
   const rect = canvas.getBoundingClientRect();
-  const cssWidth = Math.max(1, Math.round(rect.width));
-  const cssHeight = Math.max(1, Math.round(rect.height));
+  const rawWidth = canvas.clientWidth || canvas.offsetWidth || computedWidth || rect.width;
+  const rawHeight = canvas.clientHeight || canvas.offsetHeight || computedHeight || rect.height;
+  const cssWidth = Math.max(1, Math.round(rawWidth));
+  const cssHeight = Math.max(1, Math.round(rawHeight));
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   const targetWidth = Math.max(1, Math.round(cssWidth * dpr));
   const targetHeight = Math.max(1, Math.round(cssHeight * dpr));
