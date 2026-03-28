@@ -1,9 +1,10 @@
+import json
 from typing import Optional
 
 import numpy as np
 import torch
 
-from ..categories import COLOR_GRADE, COLOR_TOOLS, FX_PHOTO
+from ..categories import COLOR_FINISH, COLOR_GRADE, FX_PHOTO
 from ..lib.image_shared import (
     gaussian_blur_rgb_np,
     luma_np,
@@ -11,6 +12,7 @@ from ..lib.image_shared import (
     smoothstep_np,
     to_image_batch,
 )
+from ..lib.settings_bundle import parse_settings_payload
 
 
 def _apply_masked_output(
@@ -46,19 +48,31 @@ def _apply_masked_output(
 
 
 class x1HighlightRecovery:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "threshold": 0.72,
+            "softness": 0.10,
+            "recovery": 0.72,
+            "chroma_preserve": 0.60,
+            "desaturate_clips": 0.18,
+            "mix": 1.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "threshold": ("FLOAT", {"default": 0.72, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "softness": ("FLOAT", {"default": 0.10, "min": 0.0, "max": 0.5, "step": 0.005}),
-                "recovery": ("FLOAT", {"default": 0.72, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "chroma_preserve": ("FLOAT", {"default": 0.60, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "desaturate_clips": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -68,21 +82,38 @@ class x1HighlightRecovery:
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "highlight_recovery_info")
     FUNCTION = "run"
-    CATEGORY = COLOR_TOOLS
+    CATEGORY = COLOR_FINISH
 
     def run(
         self,
         image: torch.Tensor,
-        threshold: float = 0.72,
-        softness: float = 0.10,
-        recovery: float = 0.72,
-        chroma_preserve: float = 0.60,
-        desaturate_clips: float = 0.18,
-        mix: float = 1.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "threshold": {"min": 0.0, "max": 1.0},
+                "softness": {"min": 0.0, "max": 0.5},
+                "recovery": {"min": 0.0, "max": 1.0},
+                "chroma_preserve": {"min": 0.0, "max": 1.0},
+                "desaturate_clips": {"min": 0.0, "max": 1.0},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        threshold = float(settings["threshold"])
+        softness = float(settings["softness"])
+        recovery = float(settings["recovery"])
+        chroma_preserve = float(settings["chroma_preserve"])
+        desaturate_clips = float(settings["desaturate_clips"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch[..., :3].detach().cpu().numpy().astype(np.float32, copy=False)
@@ -149,20 +180,32 @@ class x1HighlightRecovery:
 
 
 class x1LocalContrast:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "radius": 28.0,
+            "amount": 0.55,
+            "shadow_weight": 0.70,
+            "highlight_weight": 0.55,
+            "midtone_boost": 0.70,
+            "preserve_luma": True,
+            "mix": 1.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "radius": ("FLOAT", {"default": 28.0, "min": 1.0, "max": 256.0, "step": 0.5}),
-                "amount": ("FLOAT", {"default": 0.55, "min": -1.0, "max": 2.0, "step": 0.01}),
-                "shadow_weight": ("FLOAT", {"default": 0.70, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "highlight_weight": ("FLOAT", {"default": 0.55, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "midtone_boost": ("FLOAT", {"default": 0.70, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "preserve_luma": ("BOOLEAN", {"default": True}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -177,17 +220,34 @@ class x1LocalContrast:
     def run(
         self,
         image: torch.Tensor,
-        radius: float = 28.0,
-        amount: float = 0.55,
-        shadow_weight: float = 0.70,
-        highlight_weight: float = 0.55,
-        midtone_boost: float = 0.70,
-        preserve_luma: bool = True,
-        mix: float = 1.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "radius": {"min": 1.0, "max": 256.0},
+                "amount": {"min": -1.0, "max": 2.0},
+                "shadow_weight": {"min": 0.0, "max": 2.0},
+                "highlight_weight": {"min": 0.0, "max": 2.0},
+                "midtone_boost": {"min": 0.0, "max": 2.0},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"preserve_luma", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        radius = float(settings["radius"])
+        amount = float(settings["amount"])
+        shadow_weight = float(settings["shadow_weight"])
+        highlight_weight = float(settings["highlight_weight"])
+        midtone_boost = float(settings["midtone_boost"])
+        preserve_luma = bool(settings["preserve_luma"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch[..., :3].detach().cpu().numpy().astype(np.float32, copy=False)
@@ -252,20 +312,32 @@ class x1LocalContrast:
 
 
 class x1SharpenPro:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "mode": "unsharp",
+            "radius": 1.6,
+            "amount": 1.05,
+            "threshold": 0.015,
+            "halo_suppress": 0.40,
+            "luma_only": True,
+            "mix": 1.0,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "mode": (["unsharp", "highpass"],),
-                "radius": ("FLOAT", {"default": 1.6, "min": 0.1, "max": 32.0, "step": 0.1}),
-                "amount": ("FLOAT", {"default": 1.05, "min": 0.0, "max": 4.0, "step": 0.01}),
-                "threshold": ("FLOAT", {"default": 0.015, "min": 0.0, "max": 0.2, "step": 0.001}),
-                "halo_suppress": ("FLOAT", {"default": 0.40, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "luma_only": ("BOOLEAN", {"default": True}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -280,17 +352,33 @@ class x1SharpenPro:
     def run(
         self,
         image: torch.Tensor,
-        mode: str = "unsharp",
-        radius: float = 1.6,
-        amount: float = 1.05,
-        threshold: float = 0.015,
-        halo_suppress: float = 0.40,
-        luma_only: bool = True,
-        mix: float = 1.0,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "radius": {"min": 0.1, "max": 32.0},
+                "amount": {"min": 0.0, "max": 4.0},
+                "threshold": {"min": 0.0, "max": 0.2},
+                "halo_suppress": {"min": 0.0, "max": 1.0},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"luma_only", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        mode = str(settings["mode"])
+        radius = float(settings["radius"])
+        amount = float(settings["amount"])
+        threshold = float(settings["threshold"])
+        halo_suppress = float(settings["halo_suppress"])
+        luma_only = bool(settings["luma_only"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch[..., :3].detach().cpu().numpy().astype(np.float32, copy=False)

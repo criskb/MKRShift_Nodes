@@ -212,7 +212,7 @@ from .vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite
 from .layer_stack_nodes import MKRLayerStackComposite
 from .xphoto import x1HighlightRecovery, x1LocalContrast, x1SharpenPro
 from .xshader import xShader
-from .xplay import x1AuraFlow, x1Glitch, x1Kaleido
+from .xplay import x1AuraFlow, x1Glitch, x1Kaleido, x1PrismEcho, x1RippleWarp
 from .mask_nodes import x1MaskGen
 from .xresize import AdvResize
 from .xutility_photo import x1DenoiseDetail
@@ -526,6 +526,8 @@ NODE_CLASS_MAPPINGS = {
     "x1Kaleido": x1Kaleido,
     "x1Glitch": x1Glitch,
     "x1AuraFlow": x1AuraFlow,
+    "x1PrismEcho": x1PrismEcho,
+    "x1RippleWarp": x1RippleWarp,
     "MKRPreSave": MKRPreSave,
     "MKRPresaveVideo": MKRPresaveVideo,
     "MKRPresaveAudio": MKRPresaveAudio,
@@ -602,7 +604,7 @@ NODE_CLASS_MAPPINGS = {
     "MKRLowerThirdTemplate": MKRLowerThirdTemplate,
 }
 
-NODE_DISPLAY_NAME_MAPPINGS = {
+_RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRCharacterCustomizer": "Character Direction Studio • MKRShift Nodes",
     "MKRCharacterState": "Character State • MKRShift Nodes",
     "MKROutfitSet": "Outfit Set • MKRShift Nodes",
@@ -809,7 +811,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "x1HeatHaze": "Heat Haze • MKRShift Nodes",
     "x1LensDirtBloom": "Lens Dirt Bloom • MKRShift Nodes",
     "x1ShockwaveDistort": "Shockwave Distort • MKRShift Nodes",
-    "x1LightWrapComposite": "Light Wrap Composite • MKRShift Nodes",
+    "x1LightWrapComposite": "Light Wrap Composite (Image) • MKRShift Nodes",
     "x1EdgeAberration": "Edge Aberration • MKRShift Nodes",
     "MKRLayerStackComposite": "Layer Stack Composite • MKRShift Nodes",
     "x1HighlightRecovery": "Highlight Recovery • MKRShift Nodes",
@@ -822,6 +824,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "x1Kaleido": "Kaleido • MKRShift Nodes",
     "x1Glitch": "Glitch • MKRShift Nodes",
     "x1AuraFlow": "Aura Flow • MKRShift Nodes",
+    "x1PrismEcho": "Prism Echo • MKRShift Nodes",
+    "x1RippleWarp": "Ripple Warp • MKRShift Nodes",
     "MKRPreSave": "Presave Image • MKRShift Nodes",
     "MKRPresaveVideo": "Presave Video • MKRShift Nodes",
     "MKRPresaveAudio": "Presave Audio • MKRShift Nodes",
@@ -882,7 +886,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRMatchCutByMotion": "Match Cut By Motion • MKRShift Nodes",
     "MKRShotMatchColor": "Shot Match Color • MKRShift Nodes",
     "MKRFilmGatePack": "Film Gate Pack • MKRShift Nodes",
-    "MKRLightWrapComposite": "Light Wrap Composite • MKRShift Nodes",
+    "MKRLightWrapComposite": "Light Wrap Composite (Timeline) • MKRShift Nodes",
     "MKRMotionBlurVector": "Motion Blur Vector • MKRShift Nodes",
     "MKRLensFX": "Lens FX • MKRShift Nodes",
     "MKRDepthFog": "Depth Fog • MKRShift Nodes",
@@ -900,7 +904,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     key: value.replace(" • MKRShift Nodes", "")
-    for key, value in NODE_DISPLAY_NAME_MAPPINGS.items()
+    for key, value in _RAW_NODE_DISPLAY_NAME_MAPPINGS.items()
 }
 
 WEB_DIRECTORY = "./web"

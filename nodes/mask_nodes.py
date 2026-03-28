@@ -1,3 +1,4 @@
+import json
 import math
 import os
 from pathlib import Path
@@ -244,6 +245,138 @@ def _expand_or_erode(mask: np.ndarray, pixels: int) -> np.ndarray:
     return (np.asarray(pil, dtype=np.float32) / 255.0).astype(np.float32, copy=False)
 
 
+MASK_MODES = {
+    "luminance",
+    "channel",
+    "hue",
+    "saturation",
+    "value",
+    "skin_tones",
+    "chroma_key",
+    "edge",
+    "radial",
+}
+MASK_CHANNELS = {"luma", "red", "green", "blue", "alpha"}
+MASK_COMBINE_MODES = {"replace", "multiply", "maximum", "minimum", "add"}
+
+
+def _default_mask_settings() -> dict:
+    return {
+        "mode": "luminance",
+        "channel": "luma",
+        "threshold": 0.5,
+        "softness": 0.08,
+        "min_value": 0.2,
+        "max_value": 0.8,
+        "hue_center": 120.0,
+        "hue_width": 24.0,
+        "target_r": 0.0,
+        "target_g": 1.0,
+        "target_b": 0.0,
+        "color_tolerance": 0.25,
+        "edge_radius": 1.0,
+        "edge_strength": 1.0,
+        "center_x": 0.5,
+        "center_y": 0.5,
+        "radius": 0.28,
+        "falloff": 1.0,
+        "combine_mode": "replace",
+        "expand_pixels": 0,
+        "blur_radius": 0.0,
+        "mask_gamma": 1.0,
+        "invert_mask": False,
+    }
+
+
+def _parse_bool(value, fallback: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"true", "1", "yes", "on"}:
+            return True
+        if token in {"false", "0", "no", "off"}:
+            return False
+    return fallback
+
+
+def _clamp_float(value, default: float, min_value: float, max_value: float) -> float:
+    try:
+        parsed = float(value)
+    except Exception:
+        parsed = float(default)
+    return float(max(min_value, min(max_value, parsed)))
+
+
+def _clamp_int(value, default: int, min_value: int, max_value: int) -> int:
+    try:
+        parsed = int(round(float(value)))
+    except Exception:
+        parsed = int(default)
+    return int(max(min_value, min(max_value, parsed)))
+
+
+def _coerce_choice(value, valid: set[str], fallback: str) -> str:
+    token = str(value or fallback).strip().lower()
+    return token if token in valid else fallback
+
+
+def _normalize_mask_settings(payload: dict | None) -> dict:
+    defaults = _default_mask_settings()
+    data = payload if isinstance(payload, dict) else {}
+    settings = defaults.copy()
+
+    settings["mode"] = _coerce_choice(data.get("mode"), MASK_MODES, defaults["mode"])
+    settings["channel"] = _coerce_choice(data.get("channel"), MASK_CHANNELS, defaults["channel"])
+    settings["threshold"] = _clamp_float(data.get("threshold"), defaults["threshold"], 0.0, 1.0)
+    settings["softness"] = _clamp_float(data.get("softness"), defaults["softness"], 0.0, 1.0)
+    settings["min_value"] = _clamp_float(data.get("min_value"), defaults["min_value"], 0.0, 1.0)
+    settings["max_value"] = _clamp_float(data.get("max_value"), defaults["max_value"], 0.0, 1.0)
+    settings["hue_center"] = _clamp_float(data.get("hue_center"), defaults["hue_center"], 0.0, 360.0)
+    settings["hue_width"] = _clamp_float(data.get("hue_width"), defaults["hue_width"], 0.0, 180.0)
+    settings["target_r"] = _clamp_float(data.get("target_r"), defaults["target_r"], 0.0, 1.0)
+    settings["target_g"] = _clamp_float(data.get("target_g"), defaults["target_g"], 0.0, 1.0)
+    settings["target_b"] = _clamp_float(data.get("target_b"), defaults["target_b"], 0.0, 1.0)
+    settings["color_tolerance"] = _clamp_float(data.get("color_tolerance"), defaults["color_tolerance"], 0.0, 1.0)
+    settings["edge_radius"] = _clamp_float(data.get("edge_radius"), defaults["edge_radius"], 0.0, 32.0)
+    settings["edge_strength"] = _clamp_float(data.get("edge_strength"), defaults["edge_strength"], 0.0, 4.0)
+    settings["center_x"] = _clamp_float(data.get("center_x"), defaults["center_x"], 0.0, 1.0)
+    settings["center_y"] = _clamp_float(data.get("center_y"), defaults["center_y"], 0.0, 1.0)
+    settings["radius"] = _clamp_float(data.get("radius"), defaults["radius"], 0.0, 2.0)
+    settings["falloff"] = _clamp_float(data.get("falloff"), defaults["falloff"], 0.05, 6.0)
+    settings["combine_mode"] = _coerce_choice(data.get("combine_mode"), MASK_COMBINE_MODES, defaults["combine_mode"])
+    settings["expand_pixels"] = _clamp_int(data.get("expand_pixels"), defaults["expand_pixels"], -64, 64)
+    settings["blur_radius"] = _clamp_float(data.get("blur_radius"), defaults["blur_radius"], 0.0, 64.0)
+    settings["mask_gamma"] = _clamp_float(data.get("mask_gamma"), defaults["mask_gamma"], 0.1, 4.0)
+    settings["invert_mask"] = _parse_bool(data.get("invert_mask"), defaults["invert_mask"])
+    return settings
+
+
+def _parse_mask_settings_payload(settings_json: str = "{}", legacy: Optional[dict] = None) -> dict:
+    payload = {}
+    try:
+        parsed = json.loads(str(settings_json or "{}"))
+        if isinstance(parsed, dict):
+            payload = parsed
+        elif isinstance(parsed, str) and parsed.strip().lower() in MASK_MODES:
+            payload = {"mode": parsed.strip().lower()}
+    except Exception:
+        token = str(settings_json or "").strip().lower()
+        if token in MASK_MODES:
+            payload = {"mode": token}
+        else:
+            payload = {}
+
+    if isinstance(legacy, dict):
+        for key, value in legacy.items():
+            if key in _default_mask_settings() and key not in payload:
+                payload[key] = value
+
+    return _normalize_mask_settings(payload)
+
+
 def _temp_dir() -> str:
     if folder_paths and hasattr(folder_paths, "get_temp_directory"):
         return str(folder_paths.get_temp_directory())
@@ -288,41 +421,13 @@ class x1MaskGen:
         return {
             "required": {
                 "image": ("IMAGE",),
-                "mode": (
-                    [
-                        "luminance",
-                        "channel",
-                        "hue",
-                        "saturation",
-                        "value",
-                        "skin_tones",
-                        "chroma_key",
-                        "edge",
-                        "radial",
-                    ],
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(_default_mask_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
                 ),
-                "channel": (["luma", "red", "green", "blue", "alpha"],),
-                "threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "softness": ("FLOAT", {"default": 0.08, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "min_value": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "max_value": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "hue_center": ("FLOAT", {"default": 120.0, "min": 0.0, "max": 360.0, "step": 0.1}),
-                "hue_width": ("FLOAT", {"default": 24.0, "min": 0.0, "max": 180.0, "step": 0.1}),
-                "target_r": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "target_g": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "target_b": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "color_tolerance": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "edge_radius": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 32.0, "step": 0.1}),
-                "edge_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 4.0, "step": 0.01}),
-                "center_x": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "center_y": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "radius": ("FLOAT", {"default": 0.28, "min": 0.0, "max": 2.0, "step": 0.001}),
-                "falloff": ("FLOAT", {"default": 1.0, "min": 0.05, "max": 6.0, "step": 0.01}),
-                "combine_mode": (["replace", "multiply", "maximum", "minimum", "add"],),
-                "expand_pixels": ("INT", {"default": 0, "min": -64, "max": 64, "step": 1}),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 64.0, "step": 0.1}),
-                "mask_gamma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "base_mask": ("MASK",),
@@ -337,31 +442,11 @@ class x1MaskGen:
     def run(
         self,
         image: torch.Tensor,
-        mode: str = "luminance",
-        channel: str = "luma",
-        threshold: float = 0.5,
-        softness: float = 0.08,
-        min_value: float = 0.2,
-        max_value: float = 0.8,
-        hue_center: float = 120.0,
-        hue_width: float = 24.0,
-        target_r: float = 0.0,
-        target_g: float = 1.0,
-        target_b: float = 0.0,
-        color_tolerance: float = 0.25,
-        edge_radius: float = 1.0,
-        edge_strength: float = 1.0,
-        center_x: float = 0.5,
-        center_y: float = 0.5,
-        radius: float = 0.28,
-        falloff: float = 1.0,
-        combine_mode: str = "replace",
-        expand_pixels: int = 0,
-        blur_radius: float = 0.0,
-        mask_gamma: float = 1.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         base_mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_mask_settings_payload(settings_json, legacy=legacy_settings)
         batch = _to_image_batch(image)
         b, h, w, c = batch.shape
         rgb_np = batch[..., :3].detach().cpu().numpy().astype(np.float32, copy=False)
@@ -379,29 +464,29 @@ class x1MaskGen:
             m = _build_mode_mask(
                 rgb=rgb_np[idx],
                 alpha=alpha_np[idx],
-                mode=str(mode),
-                channel=str(channel),
-                threshold=float(threshold),
-                softness=float(softness),
-                min_value=float(min_value),
-                max_value=float(max_value),
-                hue_center=float(hue_center),
-                hue_width=float(hue_width),
-                target_r=float(target_r),
-                target_g=float(target_g),
-                target_b=float(target_b),
-                color_tolerance=float(color_tolerance),
-                edge_radius=float(edge_radius),
-                edge_strength=float(edge_strength),
-                center_x=float(center_x),
-                center_y=float(center_y),
-                radius=float(radius),
-                falloff=float(falloff),
+                mode=str(settings["mode"]),
+                channel=str(settings["channel"]),
+                threshold=float(settings["threshold"]),
+                softness=float(settings["softness"]),
+                min_value=float(settings["min_value"]),
+                max_value=float(settings["max_value"]),
+                hue_center=float(settings["hue_center"]),
+                hue_width=float(settings["hue_width"]),
+                target_r=float(settings["target_r"]),
+                target_g=float(settings["target_g"]),
+                target_b=float(settings["target_b"]),
+                color_tolerance=float(settings["color_tolerance"]),
+                edge_radius=float(settings["edge_radius"]),
+                edge_strength=float(settings["edge_strength"]),
+                center_x=float(settings["center_x"]),
+                center_y=float(settings["center_y"]),
+                radius=float(settings["radius"]),
+                falloff=float(settings["falloff"]),
             )
 
             if base_np is not None:
                 base = base_np[idx]
-                mode_key = str(combine_mode).lower()
+                mode_key = str(settings["combine_mode"]).lower()
                 if mode_key == "multiply":
                     m = m * base
                 elif mode_key == "maximum":
@@ -411,18 +496,18 @@ class x1MaskGen:
                 elif mode_key == "add":
                     m = np.clip(m + base, 0.0, 1.0)
 
-            m = _expand_or_erode(m, int(expand_pixels))
+            m = _expand_or_erode(m, int(settings["expand_pixels"]))
 
-            if float(blur_radius) > 1e-6:
+            if float(settings["blur_radius"]) > 1e-6:
                 pil = Image.fromarray(np.clip(m * 255.0, 0.0, 255.0).astype(np.uint8), mode="L")
-                pil = pil.filter(ImageFilter.GaussianBlur(radius=float(max(0.0, blur_radius))))
+                pil = pil.filter(ImageFilter.GaussianBlur(radius=float(max(0.0, settings["blur_radius"]))))
                 m = np.asarray(pil, dtype=np.float32) / 255.0
 
-            g = float(max(0.1, mask_gamma))
+            g = float(max(0.1, settings["mask_gamma"]))
             if abs(g - 1.0) > 1e-6:
                 m = np.power(np.clip(m, 0.0, 1.0), g)
 
-            if invert_mask:
+            if settings["invert_mask"]:
                 m = 1.0 - m
 
             m = np.clip(m, 0.0, 1.0).astype(np.float32, copy=False)
@@ -445,29 +530,29 @@ class x1MaskGen:
             "edge(r={:.1f},s={:.2f}), radial(c={:.3f},{:.3f},r={:.3f},f={:.2f}), "
             "expand={}px, blur={:.1f}px, gamma={:.2f}, coverage={:.2f}%{}"
         ).format(
-            str(mode),
-            str(combine_mode),
-            float(threshold),
-            float(softness),
-            float(min_value),
-            float(max_value),
-            float(hue_center),
-            float(hue_width),
-            float(target_r),
-            float(target_g),
-            float(target_b),
-            float(color_tolerance),
-            float(edge_radius),
-            float(edge_strength),
-            float(center_x),
-            float(center_y),
-            float(radius),
-            float(falloff),
-            int(expand_pixels),
-            float(blur_radius),
-            float(mask_gamma),
+            str(settings["mode"]),
+            str(settings["combine_mode"]),
+            float(settings["threshold"]),
+            float(settings["softness"]),
+            float(settings["min_value"]),
+            float(settings["max_value"]),
+            float(settings["hue_center"]),
+            float(settings["hue_width"]),
+            float(settings["target_r"]),
+            float(settings["target_g"]),
+            float(settings["target_b"]),
+            float(settings["color_tolerance"]),
+            float(settings["edge_radius"]),
+            float(settings["edge_strength"]),
+            float(settings["center_x"]),
+            float(settings["center_y"]),
+            float(settings["radius"]),
+            float(settings["falloff"]),
+            int(settings["expand_pixels"]),
+            float(settings["blur_radius"]),
+            float(settings["mask_gamma"]),
             coverage,
-            " (inverted)" if invert_mask else "",
+            " (inverted)" if settings["invert_mask"] else "",
         )
         preview_info = _save_temp_preview(out_preview[0] if out_preview.size > 0 else out_preview)
         ui_payload = {}

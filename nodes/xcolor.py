@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 import torch
 
-from ..categories import COLOR_ANALYZE, COLOR_GRADE, COLOR_LUT, COLOR_TOOLS
+from ..categories import COLOR_ANALYZE, COLOR_FINISH, COLOR_GRADE, COLOR_LUT, COLOR_TOOLS
 from .xlut import NO_LUT_SELECTED, _load_cube, _lut_options, _resolve_lut_path, _trilinear_lookup
 
 
@@ -150,6 +150,61 @@ def _blend_mode(src: np.ndarray, fx: np.ndarray, mode: str) -> np.ndarray:
     if m == "add":
         return np.clip(src + fx, 0.0, 1.0).astype(np.float32)
     return np.clip(fx, 0.0, 1.0).astype(np.float32)
+
+
+def _parse_color_bool(value, fallback: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"true", "1", "yes", "on"}:
+            return True
+        if token in {"false", "0", "no", "off"}:
+            return False
+    return fallback
+
+
+def _parse_color_settings_payload(
+    settings_json: str,
+    defaults: dict,
+    numeric_specs: Optional[dict] = None,
+    boolean_keys: Optional[set[str]] = None,
+    legacy: Optional[dict] = None,
+) -> dict:
+    payload = {}
+    try:
+        parsed = json.loads(str(settings_json or "{}"))
+        if isinstance(parsed, dict):
+            payload = parsed
+    except Exception:
+        payload = {}
+
+    if isinstance(legacy, dict):
+        for key, value in legacy.items():
+            if key in defaults and key not in payload:
+                payload[key] = value
+
+    specs = numeric_specs or {}
+    bool_keys = boolean_keys or set()
+    settings = defaults.copy()
+
+    for key, default in defaults.items():
+        if key in specs:
+            spec = specs[key]
+            try:
+                raw = float(payload.get(key, default))
+            except Exception:
+                raw = float(default)
+            clamped = max(float(spec["min"]), min(float(spec["max"]), raw))
+            settings[key] = int(round(clamped)) if spec.get("integer") else float(clamped)
+        elif key in bool_keys:
+            settings[key] = _parse_color_bool(payload.get(key), bool(default))
+        elif key in payload:
+            settings[key] = payload[key]
+
+    return settings
 
 
 def _run_masked_rgb_node(
@@ -299,30 +354,97 @@ class x1LUTBlend:
 
 
 class x1ColorWheels:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "lift_r": 0.0,
+            "lift_g": 0.0,
+            "lift_b": 0.0,
+            "gamma_r": 1.0,
+            "gamma_g": 1.0,
+            "gamma_b": 1.0,
+            "gain_r": 1.0,
+            "gain_g": 1.0,
+            "gain_b": 1.0,
+            "offset_r": 0.0,
+            "offset_g": 0.0,
+            "offset_b": 0.0,
+            "balance": 0.0,
+            "saturation": 1.0,
+            "mix": 1.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
+    @classmethod
+    def _parse_settings(cls, settings_json: str = "{}", legacy: Optional[dict] = None) -> dict:
+        defaults = cls._default_settings()
+        payload = {}
+        try:
+            parsed = json.loads(str(settings_json or "{}"))
+            if isinstance(parsed, dict):
+                payload = parsed
+        except Exception:
+            payload = {}
+
+        if isinstance(legacy, dict):
+            for key, value in legacy.items():
+                if key in defaults and key not in payload:
+                    payload[key] = value
+
+        def clamp_float(key: str, minimum: float, maximum: float) -> float:
+            try:
+                raw = float(payload.get(key, defaults[key]))
+            except Exception:
+                raw = float(defaults[key])
+            return float(max(minimum, min(maximum, raw)))
+
+        def parse_bool(key: str) -> bool:
+            value = payload.get(key, defaults[key])
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return value != 0
+            if isinstance(value, str):
+                token = value.strip().lower()
+                if token in {"true", "1", "yes", "on"}:
+                    return True
+                if token in {"false", "0", "no", "off"}:
+                    return False
+            return bool(defaults[key])
+
+        return {
+            "lift_r": clamp_float("lift_r", -1.0, 1.0),
+            "lift_g": clamp_float("lift_g", -1.0, 1.0),
+            "lift_b": clamp_float("lift_b", -1.0, 1.0),
+            "gamma_r": clamp_float("gamma_r", 0.1, 3.0),
+            "gamma_g": clamp_float("gamma_g", 0.1, 3.0),
+            "gamma_b": clamp_float("gamma_b", 0.1, 3.0),
+            "gain_r": clamp_float("gain_r", 0.0, 3.0),
+            "gain_g": clamp_float("gain_g", 0.0, 3.0),
+            "gain_b": clamp_float("gain_b", 0.0, 3.0),
+            "offset_r": clamp_float("offset_r", -1.0, 1.0),
+            "offset_g": clamp_float("offset_g", -1.0, 1.0),
+            "offset_b": clamp_float("offset_b", -1.0, 1.0),
+            "balance": clamp_float("balance", -1.0, 1.0),
+            "saturation": clamp_float("saturation", 0.0, 2.0),
+            "mix": clamp_float("mix", 0.0, 1.0),
+            "mask_feather": clamp_float("mask_feather", 0.0, 256.0),
+            "invert_mask": parse_bool("invert_mask"),
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "lift_r": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "lift_g": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "lift_b": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "gamma_r": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.01}),
-                "gamma_g": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.01}),
-                "gamma_b": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.01}),
-                "gain_r": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "gain_g": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "gain_b": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "offset_r": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "offset_g": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "offset_b": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "balance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "saturation": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                **{
-                    "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                    "invert_mask": ("BOOLEAN", {"default": False}),
-                },
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -337,25 +459,28 @@ class x1ColorWheels:
     def run(
         self,
         image: torch.Tensor,
-        lift_r: float = 0.0,
-        lift_g: float = 0.0,
-        lift_b: float = 0.0,
-        gamma_r: float = 1.0,
-        gamma_g: float = 1.0,
-        gamma_b: float = 1.0,
-        gain_r: float = 1.0,
-        gain_g: float = 1.0,
-        gain_b: float = 1.0,
-        offset_r: float = 0.0,
-        offset_g: float = 0.0,
-        offset_b: float = 0.0,
-        balance: float = 0.0,
-        saturation: float = 1.0,
-        mix: float = 1.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = self._parse_settings(settings_json, legacy=legacy_settings)
+        lift_r = float(settings["lift_r"])
+        lift_g = float(settings["lift_g"])
+        lift_b = float(settings["lift_b"])
+        gamma_r = float(settings["gamma_r"])
+        gamma_g = float(settings["gamma_g"])
+        gamma_b = float(settings["gamma_b"])
+        gain_r = float(settings["gain_r"])
+        gain_g = float(settings["gain_g"])
+        gain_b = float(settings["gain_b"])
+        offset_r = float(settings["offset_r"])
+        offset_g = float(settings["offset_g"])
+        offset_b = float(settings["offset_b"])
+        balance = float(settings["balance"])
+        saturation = float(settings["saturation"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         lift = np.asarray([lift_r, lift_g, lift_b], dtype=np.float32)
         gamma = np.asarray([max(0.1, gamma_r), max(0.1, gamma_g), max(0.1, gamma_b)], dtype=np.float32)
         gain = np.asarray([max(0.0, gain_r), max(0.0, gain_g), max(0.0, gain_b)], dtype=np.float32)
@@ -416,27 +541,37 @@ class x1ColorWheels:
 
 
 class x1HSLQualifier:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "hue_center": 220.0,
+            "hue_width": 40.0,
+            "sat_min": 0.08,
+            "sat_max": 1.0,
+            "val_min": 0.05,
+            "val_max": 1.0,
+            "feather": 18.0,
+            "hue_shift": 0.0,
+            "sat_shift": 0.25,
+            "val_shift": 0.0,
+            "amount": 1.0,
+            "show_matte": False,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "hue_center": ("FLOAT", {"default": 220.0, "min": 0.0, "max": 360.0, "step": 1.0}),
-                "hue_width": ("FLOAT", {"default": 40.0, "min": 1.0, "max": 180.0, "step": 1.0}),
-                "sat_min": ("FLOAT", {"default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "sat_max": ("FLOAT", {"default": 1.00, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "val_min": ("FLOAT", {"default": 0.05, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "val_max": ("FLOAT", {"default": 1.00, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "feather": ("FLOAT", {"default": 18.0, "min": 0.0, "max": 120.0, "step": 0.5}),
-                "hue_shift": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0, "step": 0.5}),
-                "sat_shift": ("FLOAT", {"default": 0.25, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "val_shift": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "amount": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "show_matte": ("BOOLEAN", {"default": False}),
-                **{
-                    "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                    "invert_mask": ("BOOLEAN", {"default": False}),
-                },
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -451,22 +586,44 @@ class x1HSLQualifier:
     def run(
         self,
         image: torch.Tensor,
-        hue_center: float = 220.0,
-        hue_width: float = 40.0,
-        sat_min: float = 0.08,
-        sat_max: float = 1.00,
-        val_min: float = 0.05,
-        val_max: float = 1.00,
-        feather: float = 18.0,
-        hue_shift: float = 0.0,
-        sat_shift: float = 0.25,
-        val_shift: float = 0.0,
-        amount: float = 1.0,
-        show_matte: bool = False,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "hue_center": {"min": 0.0, "max": 360.0},
+                "hue_width": {"min": 1.0, "max": 180.0},
+                "sat_min": {"min": 0.0, "max": 1.0},
+                "sat_max": {"min": 0.0, "max": 1.0},
+                "val_min": {"min": 0.0, "max": 1.0},
+                "val_max": {"min": 0.0, "max": 1.0},
+                "feather": {"min": 0.0, "max": 120.0},
+                "hue_shift": {"min": -180.0, "max": 180.0},
+                "sat_shift": {"min": -1.0, "max": 1.0},
+                "val_shift": {"min": -1.0, "max": 1.0},
+                "amount": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"show_matte", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        hue_center = float(settings["hue_center"])
+        hue_width = float(settings["hue_width"])
+        sat_min = float(settings["sat_min"])
+        sat_max = float(settings["sat_max"])
+        val_min = float(settings["val_min"])
+        val_max = float(settings["val_max"])
+        feather = float(settings["feather"])
+        hue_shift = float(settings["hue_shift"])
+        sat_shift = float(settings["sat_shift"])
+        val_shift = float(settings["val_shift"])
+        amount = float(settings["amount"])
+        show_matte = bool(settings["show_matte"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         hc = (float(hue_center) % 360.0) / 360.0
         hw = max(1.0, float(hue_width)) * 0.5 / 360.0
         feather_h = max(0.0, float(feather)) / 360.0
@@ -803,21 +960,33 @@ class x1LUTStack:
 
 
 class x1Curves:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "master_shadows": 0.0,
+            "master_midtones": 0.0,
+            "master_highlights": 0.0,
+            "red_curve": 0.0,
+            "green_curve": 0.0,
+            "blue_curve": 0.0,
+            "contrast": 1.0,
+            "mix": 1.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "master_shadows": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "master_midtones": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "master_highlights": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "red_curve": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "green_curve": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "blue_curve": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.0, "min": 0.3, "max": 2.5, "step": 0.01}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -832,18 +1001,37 @@ class x1Curves:
     def run(
         self,
         image: torch.Tensor,
-        master_shadows: float = 0.0,
-        master_midtones: float = 0.0,
-        master_highlights: float = 0.0,
-        red_curve: float = 0.0,
-        green_curve: float = 0.0,
-        blue_curve: float = 0.0,
-        contrast: float = 1.0,
-        mix: float = 1.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "master_shadows": {"min": -1.0, "max": 1.0},
+                "master_midtones": {"min": -1.0, "max": 1.0},
+                "master_highlights": {"min": -1.0, "max": 1.0},
+                "red_curve": {"min": -1.0, "max": 1.0},
+                "green_curve": {"min": -1.0, "max": 1.0},
+                "blue_curve": {"min": -1.0, "max": 1.0},
+                "contrast": {"min": 0.3, "max": 2.5},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        master_shadows = float(settings["master_shadows"])
+        master_midtones = float(settings["master_midtones"])
+        master_highlights = float(settings["master_highlights"])
+        red_curve = float(settings["red_curve"])
+        green_curve = float(settings["green_curve"])
+        blue_curve = float(settings["blue_curve"])
+        contrast = float(settings["contrast"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         c = float(max(0.3, contrast))
         m = float(np.clip(mix, 0.0, 1.0))
 
@@ -885,25 +1073,37 @@ class x1Curves:
 
 
 class x1ColorBalance:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "slope_r": 1.0,
+            "slope_g": 1.0,
+            "slope_b": 1.0,
+            "offset_r": 0.0,
+            "offset_g": 0.0,
+            "offset_b": 0.0,
+            "power_r": 1.0,
+            "power_g": 1.0,
+            "power_b": 1.0,
+            "saturation": 1.0,
+            "mix": 1.0,
+            "preserve_luma": True,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "slope_r": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "slope_g": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "slope_b": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "offset_r": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "offset_g": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "offset_b": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "power_r": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.01}),
-                "power_g": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.01}),
-                "power_b": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.01}),
-                "saturation": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "preserve_luma": ("BOOLEAN", {"default": True}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -918,22 +1118,44 @@ class x1ColorBalance:
     def run(
         self,
         image: torch.Tensor,
-        slope_r: float = 1.0,
-        slope_g: float = 1.0,
-        slope_b: float = 1.0,
-        offset_r: float = 0.0,
-        offset_g: float = 0.0,
-        offset_b: float = 0.0,
-        power_r: float = 1.0,
-        power_g: float = 1.0,
-        power_b: float = 1.0,
-        saturation: float = 1.0,
-        mix: float = 1.0,
-        preserve_luma: bool = True,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "slope_r": {"min": 0.0, "max": 3.0},
+                "slope_g": {"min": 0.0, "max": 3.0},
+                "slope_b": {"min": 0.0, "max": 3.0},
+                "offset_r": {"min": -1.0, "max": 1.0},
+                "offset_g": {"min": -1.0, "max": 1.0},
+                "offset_b": {"min": -1.0, "max": 1.0},
+                "power_r": {"min": 0.1, "max": 3.0},
+                "power_g": {"min": 0.1, "max": 3.0},
+                "power_b": {"min": 0.1, "max": 3.0},
+                "saturation": {"min": 0.0, "max": 2.0},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"preserve_luma", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        slope_r = float(settings["slope_r"])
+        slope_g = float(settings["slope_g"])
+        slope_b = float(settings["slope_b"])
+        offset_r = float(settings["offset_r"])
+        offset_g = float(settings["offset_g"])
+        offset_b = float(settings["offset_b"])
+        power_r = float(settings["power_r"])
+        power_g = float(settings["power_g"])
+        power_b = float(settings["power_b"])
+        saturation = float(settings["saturation"])
+        mix = float(settings["mix"])
+        preserve_luma = bool(settings["preserve_luma"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         slope = np.asarray([max(0.0, slope_r), max(0.0, slope_g), max(0.0, slope_b)], dtype=np.float32)
         offset = np.asarray([offset_r, offset_g, offset_b], dtype=np.float32)
         power = np.asarray([max(0.1, power_r), max(0.1, power_g), max(0.1, power_b)], dtype=np.float32)
@@ -979,17 +1201,29 @@ class x1ColorBalance:
 
 
 class x1ColorWarpHueSat:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "warp_points_json": "[]",
+            "strength": 0.7,
+            "falloff": 1.0,
+            "mix": 1.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "warp_points_json": ("STRING", {"default": "[]", "multiline": True}),
-                "strength": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "falloff": ("FLOAT", {"default": 1.0, "min": 0.4, "max": 2.5, "step": 0.01}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -1004,14 +1238,28 @@ class x1ColorWarpHueSat:
     def run(
         self,
         image: torch.Tensor,
-        warp_points_json: str = "[]",
-        strength: float = 0.7,
-        falloff: float = 1.0,
-        mix: float = 1.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "strength": {"min": 0.0, "max": 2.0},
+                "falloff": {"min": 0.4, "max": 2.5},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        warp_points_json = str(settings["warp_points_json"])
+        strength = float(settings["strength"])
+        falloff = float(settings["falloff"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         points, warnings = _parse_warp_points(warp_points_json, mode="huesat")
         st = float(max(0.0, strength))
         fo = float(max(0.4, falloff))
@@ -1045,17 +1293,29 @@ class x1ColorWarpHueSat:
 
 
 class x1ColorWarpChromaLuma:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "warp_points_json": "[]",
+            "strength": 0.65,
+            "falloff": 1.0,
+            "mix": 1.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "warp_points_json": ("STRING", {"default": "[]", "multiline": True}),
-                "strength": ("FLOAT", {"default": 0.65, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "falloff": ("FLOAT", {"default": 1.0, "min": 0.4, "max": 2.5, "step": 0.01}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -1070,14 +1330,28 @@ class x1ColorWarpChromaLuma:
     def run(
         self,
         image: torch.Tensor,
-        warp_points_json: str = "[]",
-        strength: float = 0.65,
-        falloff: float = 1.0,
-        mix: float = 1.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "strength": {"min": 0.0, "max": 2.0},
+                "falloff": {"min": 0.4, "max": 2.5},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        warp_points_json = str(settings["warp_points_json"])
+        strength = float(settings["strength"])
+        falloff = float(settings["falloff"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         points, warnings = _parse_warp_points(warp_points_json, mode="chromaluma")
         st = float(max(0.0, strength))
         fo = float(max(0.4, falloff))
@@ -1241,7 +1515,7 @@ class x1ColorMatch:
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "color_match_info")
     FUNCTION = "run"
-    CATEGORY = COLOR_TOOLS
+    CATEGORY = COLOR_FINISH
 
     def run(
         self,
@@ -1319,19 +1593,32 @@ class x1ColorMatch:
 
 
 class x1GamutMap:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "compression": 0.25,
+            "rolloff": 0.35,
+            "saturation": 1.0,
+            "highlight_protect": 0.25,
+            "neutral_protect": 0.35,
+            "preserve_luma": True,
+            "mix": 1.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "compression": ("FLOAT", {"default": 0.25, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "rolloff": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "saturation": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "highlight_protect": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "preserve_luma": ("BOOLEAN", {"default": True}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -1341,62 +1628,69 @@ class x1GamutMap:
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "mask", "gamut_map_info")
     FUNCTION = "run"
-    CATEGORY = COLOR_TOOLS
+    CATEGORY = COLOR_FINISH
 
     def run(
         self,
         image: torch.Tensor,
-        compression: float = 0.25,
-        rolloff: float = 0.35,
-        saturation: float = 1.0,
-        highlight_protect: float = 0.25,
-        preserve_luma: bool = True,
-        mix: float = 1.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
-        comp = float(np.clip(compression, -1.0, 1.0))
-        ro = float(np.clip(rolloff, 0.0, 1.0))
-        sat = float(max(0.0, saturation))
-        hp = float(np.clip(highlight_protect, 0.0, 1.0))
-        keep_luma = bool(preserve_luma)
-        m = float(np.clip(mix, 0.0, 1.0))
+        settings = _parse_color_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "compression": {"min": -1.0, "max": 1.0},
+                "rolloff": {"min": 0.0, "max": 1.0},
+                "saturation": {"min": 0.0, "max": 2.0},
+                "highlight_protect": {"min": 0.0, "max": 1.0},
+                "neutral_protect": {"min": 0.0, "max": 1.0},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"preserve_luma", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        comp = float(settings["compression"])
+        ro = float(settings["rolloff"])
+        sat = float(settings["saturation"])
+        hp = float(settings["highlight_protect"])
+        np_guard = float(settings["neutral_protect"])
+        keep_luma = bool(settings["preserve_luma"])
+        m = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
 
         def fx_fn(src: np.ndarray, _: int):
+            hue, src_sat, value = _rgb_to_hsv_np(src)
+            src_luma = (0.2126 * src[..., 0] + 0.7152 * src[..., 1] + 0.0722 * src[..., 2])[..., None]
+            knee = float(np.clip(0.72 - (ro * 0.48), 0.12, 0.84))
+            onset = _smoothstep(knee, 1.0, src_sat)
+            roll_shape = np.power(onset, 0.85 + ((1.0 - ro) * 0.95)).astype(np.float32, copy=False)
+            highlight_guard = 1.0 - (hp * _smoothstep(0.56 - (ro * 0.10), 1.0, value))
+            neutral_guard = 1.0 - (np_guard * (1.0 - _smoothstep(0.04, 0.30, src_sat)))
+            effect = np.clip(roll_shape * highlight_guard * neutral_guard, 0.0, 1.0).astype(np.float32, copy=False)
+
             if comp >= 0.0:
-                scale = 1.0 - (0.88 * comp)
+                mapped_sat = src_sat - (np.maximum(src_sat - knee, 0.0) * comp * effect)
             else:
-                scale = 1.0 + (1.10 * abs(comp))
-            out = 0.5 + ((src - 0.5) * scale)
+                mapped_sat = src_sat + ((1.0 - src_sat) * abs(comp) * effect)
 
-            if ro > 1e-6:
-                over = np.maximum(out - 1.0, 0.0)
-                under = np.maximum(-out, 0.0)
-                out = out - (over * ro) + (under * ro)
-
-            out = np.clip(out, 0.0, 1.0)
-            out_l = (0.2126 * out[..., 0] + 0.7152 * out[..., 1] + 0.0722 * out[..., 2])[..., None]
-            out = out_l + ((out - out_l) * sat)
-            out = np.clip(out, 0.0, 1.0)
-
-            if hp > 1e-6:
-                src_l = (0.2126 * src[..., 0] + 0.7152 * src[..., 1] + 0.0722 * src[..., 2])
-                protect = _smoothstep(1.0 - hp, 1.0, src_l)[..., None]
-                out = (out * (1.0 - protect)) + (src * protect)
-
+            mapped_sat = np.clip(mapped_sat * sat, 0.0, 1.0).astype(np.float32, copy=False)
+            out = _hsv_to_rgb_np(hue, mapped_sat, value)
             if keep_luma:
-                src_l = (0.2126 * src[..., 0] + 0.7152 * src[..., 1] + 0.0722 * src[..., 2])[..., None]
                 out_l = (0.2126 * out[..., 0] + 0.7152 * out[..., 1] + 0.0722 * out[..., 2])[..., None]
-                out = np.clip(out * (src_l / np.maximum(out_l, 1e-6)), 0.0, 1.0)
+                out = np.clip(out * (src_luma / np.maximum(out_l, 1e-6)), 0.0, 1.0)
 
             return np.clip((src * (1.0 - m)) + (out * m), 0.0, 1.0).astype(np.float32, copy=False)
 
-        detail = "compression={:.2f}, rolloff={:.2f}, saturation={:.2f}, highlight_protect={:.2f}, preserve_luma={}, mix={:.2f}".format(
+        detail = "compression={:.2f}, rolloff={:.2f}, saturation={:.2f}, highlight_protect={:.2f}, neutral_protect={:.2f}, preserve_luma={}, mix={:.2f}".format(
             comp,
             ro,
             sat,
             hp,
+            np_guard,
             keep_luma,
             m,
         )

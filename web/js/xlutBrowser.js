@@ -1,13 +1,37 @@
 import { app } from "../../../scripts/app.js";
 import { api as comfyApiModule } from "../../../scripts/api.js";
+import { ensureMkrUIStyles } from "./uiSystem.js";
 
 const EXTENSION_NAME = "mkrshift.xlut_browser";
 const LUT_NONE = "None";
+const SETTINGS_WIDGET_NAME = "settings_json";
+const CONTROLS_WIDGET_NAME = "mkr_xlut_controls_ui";
 const PREVIEW_WIDGET_NAME = "mkr_xlut_preview_ui";
 const PREVIEW_MIN_H = 178;
 const PREVIEW_POLL_MS = 220;
 const LIVE_IMAGE_BUCKET_MS = 1500;
 const ACCENT_LIME = "#D2FD51";
+const DEFAULT_NODE_WIDTH = 420;
+const DEFAULT_NODE_HEIGHT = 520;
+const CONTROLS_HEIGHT = 198;
+const LAYOUT_TOP = 76;
+const LAYOUT_GAP = 8;
+const LAYOUT_BOTTOM = 8;
+const LEGACY_WIDGET_NAMES = [
+  "lut_name",
+  "strength",
+  "generated_lut_size",
+  "generated_style_strength",
+  "apply_generated_lut",
+];
+const HIDDEN_WIDGET_NAMES = [SETTINGS_WIDGET_NAME, ...LEGACY_WIDGET_NAMES];
+const XLUT_DEFAULT_SETTINGS = {
+  lut_name: LUT_NONE,
+  strength: 1,
+  generated_lut_size: 33,
+  generated_style_strength: 1,
+  apply_generated_lut: true,
+};
 
 let activePopupState = null;
 const OBJECT_IDS = new WeakMap();
@@ -16,6 +40,8 @@ let objectIdCounter = 1;
 function getApi() {
   return globalThis?.api || globalThis?.comfyAPI?.api || comfyApiModule || null;
 }
+
+ensureMkrUIStyles();
 
 function apiUrl(path) {
   const p = String(path || "");
@@ -120,6 +146,118 @@ function getWidget(node, name) {
   return node?.widgets?.find((w) => String(w?.name || "") === name);
 }
 
+function parseBoolean(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const token = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(token)) return true;
+    if (["false", "0", "no", "off"].includes(token)) return false;
+  }
+  return fallback;
+}
+
+function normalizeXLUTSettings(payload) {
+  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const next = { ...XLUT_DEFAULT_SETTINGS };
+  next.lut_name = String(source.lut_name ?? next.lut_name).trim() || LUT_NONE;
+  next.strength = Math.max(0, Math.min(1, Number.parseFloat(String(source.strength ?? next.strength)) || next.strength));
+  next.generated_lut_size = Math.max(4, Math.min(64, Math.round(Number.parseFloat(String(source.generated_lut_size ?? next.generated_lut_size)) || next.generated_lut_size)));
+  next.generated_style_strength = Math.max(0, Math.min(2, Number.parseFloat(String(source.generated_style_strength ?? next.generated_style_strength)) || next.generated_style_strength));
+  next.apply_generated_lut = parseBoolean(source.apply_generated_lut, next.apply_generated_lut);
+  return next;
+}
+
+function parseXLUTSettingsValue(rawValue) {
+  const rawText = String(rawValue ?? "").trim();
+  if (!rawText) return {};
+  try {
+    const parsed = JSON.parse(rawText);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    if (typeof parsed === "string" && parsed.trim()) {
+      return { lut_name: parsed.trim() };
+    }
+  } catch {
+    return { lut_name: rawText };
+  }
+  return {};
+}
+
+function serializeXLUTSettings(settings) {
+  return JSON.stringify(normalizeXLUTSettings(settings));
+}
+
+function buildLegacyXLUTSettings(values) {
+  if (!Array.isArray(values) || values.length < LEGACY_WIDGET_NAMES.length) return null;
+  const payload = {};
+  LEGACY_WIDGET_NAMES.forEach((name, index) => {
+    if (values[index] !== undefined) payload[name] = values[index];
+  });
+  return normalizeXLUTSettings(payload);
+}
+
+function migrateLegacyXLUTWorkflow(node) {
+  if (!node || node.__mkrXLUTLegacyMigrated) return;
+  const settingsWidget = getWidget(node, SETTINGS_WIDGET_NAME);
+  if (!settingsWidget) {
+    node.__mkrXLUTLegacyMigrated = true;
+    return;
+  }
+  const legacy = buildLegacyXLUTSettings(node.widgets_values);
+  if (!legacy) {
+    node.__mkrXLUTLegacyMigrated = true;
+    return;
+  }
+  const serialized = serializeXLUTSettings(legacy);
+  settingsWidget.value = serialized;
+  node.properties = typeof node.properties === "object" && node.properties !== null ? node.properties : {};
+  node.properties[SETTINGS_WIDGET_NAME] = serialized;
+  node.widgets_values = [serialized];
+  node.__mkrXLUTLegacyMigrated = true;
+}
+
+function readXLUTSettings(node) {
+  migrateLegacyXLUTWorkflow(node);
+  const settingsWidget = getWidget(node, SETTINGS_WIDGET_NAME);
+  const raw = settingsWidget?.value ?? node?.properties?.[SETTINGS_WIDGET_NAME];
+  const settings = normalizeXLUTSettings(parseXLUTSettingsValue(raw));
+  const serialized = serializeXLUTSettings(settings);
+  if (settingsWidget && settingsWidget.value !== serialized) {
+    settingsWidget.value = serialized;
+  }
+  if (node) {
+    node.properties = typeof node.properties === "object" && node.properties !== null ? node.properties : {};
+    node.properties[SETTINGS_WIDGET_NAME] = serialized;
+    node.widgets_values = [serialized];
+  }
+  return settings;
+}
+
+function writeXLUTSettings(node, patch, options = {}) {
+  const current = options.replace ? XLUT_DEFAULT_SETTINGS : readXLUTSettings(node);
+  const next = normalizeXLUTSettings(
+    options.replace
+      ? (typeof patch === "string" ? parseXLUTSettingsValue(patch) : patch)
+      : { ...current, ...(typeof patch === "string" ? parseXLUTSettingsValue(patch) : patch) }
+  );
+  const serialized = serializeXLUTSettings(next);
+  const settingsWidget = getWidget(node, SETTINGS_WIDGET_NAME);
+  if (settingsWidget) {
+    settingsWidget.value = serialized;
+  }
+  if (node) {
+    node.properties = typeof node.properties === "object" && node.properties !== null ? node.properties : {};
+    node.properties[SETTINGS_WIDGET_NAME] = serialized;
+    node.widgets_values = [serialized];
+  }
+  if (!options.silent && typeof settingsWidget?.callback === "function") {
+    settingsWidget.callback(serialized, app.graph, node, settingsWidget);
+  }
+  return next;
+}
+
 function getWidgetChoices(widget) {
   if (!widget) return [];
   if (Array.isArray(widget.options?.values)) return widget.options.values;
@@ -154,9 +292,168 @@ function setWidgetValue(node, widget, value) {
   }
 }
 
+function getXLUTSetting(node, name, fallback) {
+  const settings = readXLUTSettings(node);
+  if (Object.prototype.hasOwnProperty.call(settings, name)) {
+    return settings[name];
+  }
+  return fallback;
+}
+
+function setXLUTSetting(node, name, value) {
+  writeXLUTSettings(node, { [name]: value });
+  markDirty(node);
+}
+
+function setWidgetVisibility(widget, visible) {
+  if (!widget) return false;
+  widget.__mkrVisibilityState ??= {
+    type: widget.type,
+    computeSize: widget.computeSize,
+    computeLayoutSize: widget.computeLayoutSize,
+    draw: widget.draw,
+    disabled: widget.disabled,
+    options: widget.options ? { ...widget.options } : undefined,
+  };
+
+  const state = widget.__mkrVisibilityState;
+  const nextVisible = !!visible;
+  const currentVisible = widget.hidden !== true && widget.type !== "hidden";
+  let changed = currentVisible !== nextVisible;
+
+  if (nextVisible) {
+    widget.hidden = false;
+    widget.visible = true;
+    widget.type = state.type;
+    widget.disabled = state.disabled;
+    widget.computeSize = state.computeSize;
+    widget.computeLayoutSize = state.computeLayoutSize;
+    widget.draw = state.draw;
+    widget.last_y = widget.last_y || 0;
+    widget.y = widget.y || 0;
+    widget.options = {
+      ...(state.options || {}),
+      hidden: false,
+      visible: true,
+      serialize: true,
+    };
+  } else {
+    widget.hidden = true;
+    widget.visible = false;
+    widget.type = "hidden";
+    widget.disabled = true;
+    widget.computeSize = () => [0, -4];
+    widget.computeLayoutSize = () => ({
+      minHeight: 0,
+      maxHeight: 0,
+      minWidth: 0,
+      preferredWidth: 0,
+    });
+    widget.draw = () => {};
+    widget.last_y = 0;
+    widget.y = 0;
+    widget.options = {
+      ...(state.options || widget.options || {}),
+      hidden: true,
+      visible: false,
+      serialize: true,
+    };
+    for (const key of ["element", "inputEl", "textarea", "controlEl"]) {
+      const el = widget?.[key];
+      if (el?.style) {
+        el.style.display = "none";
+        el.style.visibility = "hidden";
+        el.style.height = "0px";
+        el.style.minHeight = "0px";
+        el.style.maxHeight = "0px";
+        el.style.margin = "0";
+        el.style.padding = "0";
+        el.style.overflow = "hidden";
+      }
+    }
+  }
+
+  return changed;
+}
+
+function trySetWidgetY(widget, y) {
+  if (!widget) return false;
+  let changed = false;
+  for (const key of ["y", "last_y", "_y"]) {
+    const current = Number(widget?.[key]);
+    if (Number.isFinite(current) && Math.abs(current - y) <= 0.5) continue;
+    try {
+      widget[key] = y;
+      changed = true;
+    } catch {
+    }
+  }
+  return changed;
+}
+
+function applyWidgetBox(widget, width, height, y) {
+  if (!widget) return false;
+  const w = Math.max(220, Math.round(width));
+  const h = Math.max(72, Math.round(height));
+  let changed = false;
+  widget.computeSize = () => [w, h];
+  widget.computeLayoutSize = () => ({
+    minHeight: h,
+    maxHeight: h,
+    minWidth: w,
+    preferredWidth: w,
+  });
+  if (widget.element?.style) {
+    widget.element.style.width = `${w}px`;
+    widget.element.style.height = `${h}px`;
+    widget.element.style.minHeight = `${h}px`;
+    widget.element.style.maxHeight = `${h}px`;
+    widget.element.style.boxSizing = "border-box";
+    widget.element.style.overflow = "hidden";
+  }
+  changed = trySetWidgetY(widget, y) || changed;
+  return changed;
+}
+
+function resolveXLUTControlsHeight(state) {
+  const root = state?.controlsDom?.root;
+  const measured = Math.ceil(Number(root?.scrollHeight || root?.getBoundingClientRect?.().height || 0));
+  if (measured > 0) {
+    return Math.max(CONTROLS_HEIGHT, measured + 4);
+  }
+  return CONTROLS_HEIGHT;
+}
+
 function markDirty(node) {
   node?.setDirtyCanvas?.(true, true);
   app.graph?.setDirtyCanvas?.(true, true);
+}
+
+function ensureNodeShape(node) {
+  if (!node) return;
+  const width = DEFAULT_NODE_WIDTH;
+  const height = DEFAULT_NODE_HEIGHT;
+  if (!node.__mkrXLUTFixedComputeSize) {
+    node.__mkrXLUTFixedComputeSize = true;
+    node.__mkrXLUTOrigComputeSize = node.computeSize;
+    node.computeSize = function computeFixedXLUTSize() {
+      return [width, height];
+    };
+  }
+  node.resizable = false;
+  node.flags = typeof node.flags === "object" && node.flags !== null ? node.flags : {};
+  node.flags.resizable = false;
+  const currentWidth = Number(node.size?.[0] || 0);
+  const currentHeight = Number(node.size?.[1] || 0);
+  if (Math.abs(currentWidth - width) <= 0.5 && Math.abs(currentHeight - height) <= 0.5) return;
+  if (node.__mkrXLUTSizing) return;
+  node.__mkrXLUTSizing = true;
+  try {
+    node.setSize?.([width, height]);
+    node.size = [width, height];
+  } finally {
+    node.__mkrXLUTSizing = false;
+  }
 }
 
 function getLocalPos(node, event, pos) {
@@ -214,7 +511,27 @@ function widgetRect(node, widget) {
 }
 
 function selectedLutValue(node) {
-  return String(getWidget(node, "lut_name")?.value ?? LUT_NONE);
+  return String(getXLUTSetting(node, "lut_name", LUT_NONE));
+}
+
+function inputIsConnected(node, inputName) {
+  const input = node?.inputs?.find((entry) => String(entry?.name || "") === String(inputName || ""));
+  return readInputLinkIds(input).length > 0;
+}
+
+function syncXLUTWidgetVisibility(node) {
+  if (!node) return false;
+  let changed = false;
+  for (const widget of node.widgets || []) {
+    const name = String(widget?.name || "");
+    if (!name || name === PREVIEW_WIDGET_NAME || name === CONTROLS_WIDGET_NAME) continue;
+    changed = setWidgetVisibility(widget, false) || changed;
+  }
+
+  if (changed) {
+    markDirty(node);
+  }
+  return changed;
 }
 
 function buildCatalogUrl(folder) {
@@ -390,6 +707,8 @@ function makeState(node) {
 
     previewDom: null,
     previewWidget: null,
+    controlsDom: null,
+    controlsWidget: null,
     previewTimer: null,
     previewSplit: 0.5,
     lastPreviewSig: "",
@@ -398,6 +717,461 @@ function makeState(node) {
   };
   node.__mkrXLUTBrowserState = state;
   return state;
+}
+
+function hideXLUTWidgets(node) {
+  let changed = false;
+  for (const name of HIDDEN_WIDGET_NAMES) {
+    changed = setWidgetVisibility(getWidget(node, name), false) || changed;
+  }
+  if (changed) markDirty(node);
+}
+
+function removeGeneratedInputs(node, names) {
+  if (!node || !Array.isArray(node.inputs) || node.inputs.length === 0) return false;
+  const hiddenNames = new Set((names || []).map((name) => String(name)));
+  const keep = [];
+  let changed = false;
+  for (const input of node.inputs) {
+    const name = String(input?.name || "");
+    if (hiddenNames.has(name)) {
+      changed = true;
+      continue;
+    }
+    keep.push(input);
+  }
+  if (changed) node.inputs = keep;
+  return changed;
+}
+
+function createRowLabel(text) {
+  const label = document.createElement("div");
+  label.style.cssText = "font:600 11px sans-serif;color:rgba(229,235,242,0.82);";
+  label.textContent = text;
+  return label;
+}
+
+function createNumber(value, min, max, step) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.value = String(value);
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.style.cssText = [
+    "width:64px",
+    "border-radius:8px",
+    "border:1px solid rgba(255,255,255,0.08)",
+    "background:rgba(9,10,13,0.48)",
+    "color:rgba(245,248,252,0.92)",
+    "padding:5px 6px",
+    "font:600 11px sans-serif",
+    "box-sizing:border-box",
+  ].join(";");
+  return input;
+}
+
+function createRangeRow({ label, min, max, step, value, decimals = 2, onChange }) {
+  const row = document.createElement("div");
+  row.style.cssText = "display:grid;grid-template-columns:88px 1fr 64px;gap:8px;align-items:center;";
+  row.appendChild(createRowLabel(label));
+
+  const range = document.createElement("input");
+  range.type = "range";
+  range.min = String(min);
+  range.max = String(max);
+  range.step = String(step);
+  range.value = String(value);
+  range.style.cssText = `width:100%;accent-color:${ACCENT_LIME};`;
+
+  const number = createNumber(Number(value).toFixed(decimals), min, max, step);
+  const commit = (raw) => {
+    const parsed = Number.parseFloat(String(raw));
+    const next = Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : Number(value);
+    range.value = String(next);
+    number.value = next.toFixed(decimals);
+    onChange?.(next);
+  };
+  range.addEventListener("input", () => commit(range.value));
+  number.addEventListener("change", () => commit(number.value));
+
+  row.appendChild(range);
+  row.appendChild(number);
+  return {
+    element: row,
+    setValue(next) {
+      const normalized = Number(next) || 0;
+      range.value = String(normalized);
+      number.value = normalized.toFixed(decimals);
+    },
+    setVisible(visible) {
+      row.style.display = visible ? "grid" : "none";
+    },
+  };
+}
+
+function createToggleRow({ label, checked, onChange }) {
+  const row = document.createElement("label");
+  row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
+  row.appendChild(createRowLabel(label));
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = !!checked;
+  input.style.cssText = `accent-color:${ACCENT_LIME};`;
+  input.addEventListener("change", () => onChange?.(input.checked));
+  row.appendChild(input);
+  return {
+    element: row,
+    setValue(next) {
+      input.checked = !!next;
+    },
+    setVisible(visible) {
+      row.style.display = visible ? "flex" : "none";
+    },
+  };
+}
+
+function ensureControlsWidget(node, state) {
+  const controlsReady =
+    !!state.controlsDom &&
+    !!state.controlsWidget &&
+    !!state.previewDom &&
+    Array.isArray(node?.widgets) &&
+    node.widgets.includes(state.controlsWidget);
+  if (controlsReady) return;
+  state.controlsDom = null;
+  state.controlsWidget = null;
+  state.previewDom = null;
+  state.previewWidget = null;
+
+  const root = document.createElement("div");
+  root.className = "mkr-seamless-panel";
+
+  const settings = readXLUTSettings(node);
+
+  const selectRow = document.createElement("div");
+  selectRow.style.cssText = "display:grid;grid-template-columns:88px 1fr auto;gap:8px;align-items:center;margin-bottom:8px;";
+  selectRow.appendChild(createRowLabel("LUT"));
+  const select = document.createElement("select");
+  select.style.cssText = [
+    "width:100%",
+    "border-radius:9px",
+    "border:1px solid rgba(255,255,255,0.08)",
+    "background:rgba(9,10,13,0.48)",
+    "color:rgba(245,248,252,0.92)",
+    "padding:7px 8px",
+    "font:600 11px sans-serif",
+    "box-sizing:border-box",
+  ].join(";");
+  const browseButton = document.createElement("button");
+  browseButton.type = "button";
+  browseButton.textContent = "Browse";
+  browseButton.style.cssText = [
+    "padding:7px 10px",
+    "border-radius:9px",
+    "border:1px solid rgba(255,255,255,0.08)",
+    "background:rgba(9,10,13,0.48)",
+    "color:rgba(245,248,252,0.92)",
+    "font:600 11px sans-serif",
+    "cursor:pointer",
+  ].join(";");
+  selectRow.appendChild(select);
+  selectRow.appendChild(browseButton);
+  root.appendChild(selectRow);
+
+  const controls = document.createElement("div");
+  controls.style.cssText = "display:grid;gap:8px;";
+  const strength = createRangeRow({
+    label: "Strength",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: settings.strength ?? 1,
+    onChange: (value) => setXLUTSetting(node, "strength", value),
+  });
+  const size = createRangeRow({
+    label: "Gen Size",
+    min: 4,
+    max: 64,
+    step: 1,
+    value: settings.generated_lut_size ?? 33,
+    decimals: 0,
+    onChange: (value) => setXLUTSetting(node, "generated_lut_size", Math.round(value)),
+  });
+  const styleStrength = createRangeRow({
+    label: "Style",
+    min: 0,
+    max: 2,
+    step: 0.01,
+    value: settings.generated_style_strength ?? 1,
+    onChange: (value) => setXLUTSetting(node, "generated_style_strength", value),
+  });
+  const applyToggle = createToggleRow({
+    label: "Apply Gen",
+    checked: !!settings.apply_generated_lut,
+    onChange: (checked) => setXLUTSetting(node, "apply_generated_lut", checked),
+  });
+  controls.appendChild(strength.element);
+  controls.appendChild(size.element);
+  controls.appendChild(styleStrength.element);
+  controls.appendChild(applyToggle.element);
+  root.appendChild(controls);
+
+  const previewRoot = document.createElement("div");
+  previewRoot.style.cssText = [
+    "position:relative",
+    "flex:1 1 auto",
+    `min-height:${PREVIEW_MIN_H}px`,
+    "overflow:hidden",
+    "border-radius:10px",
+    "border:1px solid var(--mkr-dark-label-highlight, #2e2e2e)",
+    "background:var(--mkr-dark-label, #1f1f1f)",
+    "box-sizing:border-box",
+    "touch-action:none",
+    "user-select:none",
+    `--mkr-accent-lime:${ACCENT_LIME}`,
+  ].join(";");
+
+  const checker = document.createElement("div");
+  checker.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "background-image:linear-gradient(45deg, rgba(44,44,44,0.5) 25%, transparent 25%, transparent 75%, rgba(44,44,44,0.5) 75%, rgba(44,44,44,0.5)),linear-gradient(45deg, rgba(44,44,44,0.5) 25%, transparent 25%, transparent 75%, rgba(44,44,44,0.5) 75%, rgba(44,44,44,0.5))",
+    "background-position:0 0, 8px 8px",
+    "background-size:16px 16px",
+  ].join(";");
+
+  const imageB = document.createElement("img");
+  imageB.alt = "LUT";
+  imageB.draggable = false;
+  imageB.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "width:100%",
+    "height:100%",
+    "object-fit:cover",
+    "display:none",
+    "pointer-events:none",
+  ].join(";");
+
+  const clip = document.createElement("div");
+  clip.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "overflow:hidden",
+    "pointer-events:none",
+  ].join(";");
+
+  const imageA = document.createElement("img");
+  imageA.alt = "Input";
+  imageA.draggable = false;
+  imageA.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "width:100%",
+    "height:100%",
+    "object-fit:cover",
+    "display:none",
+    "pointer-events:none",
+  ].join(";");
+
+  const line = document.createElement("div");
+  line.style.cssText = [
+    "position:absolute",
+    "background:rgba(255,255,255,0.95)",
+    "z-index:6",
+    "pointer-events:none",
+    "display:none",
+  ].join(";");
+
+  const handle = document.createElement("div");
+  handle.style.cssText = [
+    "position:absolute",
+    "width:12px",
+    "height:12px",
+    "border-radius:999px",
+    "border:2px solid rgba(12,16,22,0.55)",
+    "background:var(--mkr-accent-lime, #D2FD51)",
+    "box-shadow:0 0 0 1px rgba(9,13,20,0.22)",
+    "box-sizing:border-box",
+    "z-index:7",
+    "pointer-events:none",
+    "transform:translate(-50%, -50%)",
+    "display:none",
+  ].join(";");
+
+  const badgeA = document.createElement("div");
+  badgeA.textContent = "IN";
+  badgeA.style.cssText = [
+    "position:absolute",
+    "top:8px",
+    "left:8px",
+    "padding:0 7px",
+    "height:16px",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "border-radius:8px",
+    "font:700 10px sans-serif",
+    "color:rgba(244,248,252,0.92)",
+    "background:var(--mkr-dark-label, #1f1f1f)",
+    "pointer-events:none",
+    "display:none",
+  ].join(";");
+
+  const badgeB = document.createElement("div");
+  badgeB.textContent = "LUT";
+  badgeB.style.cssText = [
+    "position:absolute",
+    "top:8px",
+    "right:8px",
+    "padding:0 7px",
+    "height:16px",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "border-radius:8px",
+    "font:700 10px sans-serif",
+    "color:rgba(244,248,252,0.92)",
+    "background:var(--mkr-dark-label, #1f1f1f)",
+    "pointer-events:none",
+    "display:none",
+  ].join(";");
+
+  const status = document.createElement("div");
+  status.style.cssText = [
+    "position:absolute",
+    "left:50%",
+    "top:50%",
+    "transform:translate(-50%, -50%)",
+    "font:600 12px sans-serif",
+    "color:rgba(244,244,244,0.92)",
+    "text-align:center",
+    "padding:8px 10px",
+    "background:var(--mkr-dark-label, #1f1f1f)",
+    "border-radius:8px",
+    "pointer-events:none",
+    "max-width:90%",
+    "white-space:normal",
+  ].join(";");
+  status.textContent = "Select a LUT or connect an image";
+
+  clip.appendChild(imageA);
+  previewRoot.appendChild(checker);
+  previewRoot.appendChild(imageB);
+  previewRoot.appendChild(clip);
+  previewRoot.appendChild(line);
+  previewRoot.appendChild(handle);
+  previewRoot.appendChild(badgeA);
+  previewRoot.appendChild(badgeB);
+  previewRoot.appendChild(status);
+  root.appendChild(previewRoot);
+
+  state.previewDom = { root: previewRoot, imageA, imageB, clip, line, handle, badgeA, badgeB, status };
+
+  const splitFromEvent = (event) => {
+    const rect = previewRoot.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const raw = (event.clientX - rect.left) / rect.width;
+    const split = Math.max(0.02, Math.min(0.98, Number(raw) || 0.5));
+    state.previewSplit = Number(split.toFixed(3));
+    setSplitVisuals(state.previewDom, state.previewSplit);
+    markDirty(node);
+  };
+
+  let dragging = false;
+  previewRoot.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    previewRoot.setPointerCapture?.(event.pointerId);
+    splitFromEvent(event);
+    event.preventDefault();
+  });
+  previewRoot.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    splitFromEvent(event);
+    event.preventDefault();
+  });
+  const stopDrag = (event) => {
+    dragging = false;
+    previewRoot.releasePointerCapture?.(event.pointerId);
+  };
+  previewRoot.addEventListener("pointerup", stopDrag);
+  previewRoot.addEventListener("pointercancel", stopDrag);
+  previewRoot.addEventListener("pointerleave", () => {
+    dragging = false;
+  });
+
+  setSplitVisuals(state.previewDom, state.previewSplit);
+
+  select.addEventListener("change", () => {
+    setXLUTSetting(node, "lut_name", select.value);
+    updateXLUTControls(node, state);
+    refreshBottomPreview(node, state, true);
+  });
+
+  browseButton.addEventListener("click", (event) => {
+    openPopup(node, state, event);
+  });
+
+  const widget = node.addDOMWidget?.(CONTROLS_WIDGET_NAME, "DOM", root, {
+    serialize: false,
+    hideOnZoom: false,
+    margin: 0,
+    getMinHeight: () => 176,
+    getMaxHeight: () => 220,
+  });
+  if (widget) widget.serialize = false;
+
+  state.controlsWidget = widget;
+  state.controlsDom = {
+    root,
+    select,
+    browseButton,
+    strength,
+    size,
+    styleStrength,
+    applyToggle,
+  };
+}
+
+function updateXLUTControls(node, state) {
+  ensureNodeShape(node);
+  hideXLUTWidgets(node);
+  removeGeneratedInputs(node, HIDDEN_WIDGET_NAMES);
+  ensureControlsWidget(node, state);
+  const dom = state.controlsDom;
+  if (!dom) return;
+
+  const settings = readXLUTSettings(node);
+  const current = String(settings.lut_name ?? LUT_NONE);
+  const choices = [LUT_NONE, ...state.entries.map((entry) => String(entry?.label || "")).filter(Boolean)];
+  if (!choices.includes(current) && current && current !== LUT_NONE) {
+    choices.push(current);
+  }
+  if (
+    dom.select.options.length !== choices.length ||
+    choices.some((choice, index) => dom.select.options[index]?.value !== String(choice))
+  ) {
+    dom.select.innerHTML = "";
+    for (const choice of choices) {
+      const option = document.createElement("option");
+      option.value = String(choice);
+      option.textContent = String(choice);
+      dom.select.appendChild(option);
+    }
+  }
+  dom.select.value = current;
+  dom.strength.setValue(settings.strength ?? 1);
+  dom.size.setValue(settings.generated_lut_size ?? 33);
+  dom.styleStrength.setValue(settings.generated_style_strength ?? 1);
+  dom.applyToggle.setValue(!!settings.apply_generated_lut);
+
+  const isGenerated = current === LUT_NONE;
+  const hasLutImage = inputIsConnected(node, "lut_image");
+  dom.size.setVisible(isGenerated);
+  dom.styleStrength.setVisible(isGenerated);
+  dom.applyToggle.setVisible(isGenerated && hasLutImage);
+  normalizePreviewWidgetStack(node, state);
 }
 
 function closePopup(state) {
@@ -624,10 +1398,9 @@ function renderCard(node, state, entry, selected) {
   button.appendChild(right);
 
   button.onclick = () => {
-    const lutWidget = getWidget(node, "lut_name");
     const label = String(entry.label || LUT_NONE);
-    setWidgetValue(node, lutWidget, label);
-    markDirty(node);
+    setXLUTSetting(node, "lut_name", label);
+    updateXLUTControls(node, state);
     refreshBottomPreview(node, state, true);
     closePopup(state);
   };
@@ -639,14 +1412,7 @@ function renderList(node, state) {
   const listEl = state.listEl;
   if (!listEl) return;
 
-  const lutWidget = getWidget(node, "lut_name");
   const selected = selectedLutValue(node);
-  const choices = [LUT_NONE, ...state.entries.map((e) => String(e.label || "")).filter(Boolean)];
-  setWidgetChoices(lutWidget, choices);
-  if (!choices.includes(selected)) {
-    setWidgetValue(node, lutWidget, LUT_NONE);
-  }
-
   listEl.innerHTML = "";
 
   const noneBtn = document.createElement("button");
@@ -663,8 +1429,8 @@ function renderList(node, state) {
   noneBtn.style.cursor = "pointer";
   noneBtn.style.gridColumn = "1 / -1";
   noneBtn.onclick = () => {
-    setWidgetValue(node, lutWidget, LUT_NONE);
-    markDirty(node);
+    setXLUTSetting(node, "lut_name", LUT_NONE);
+    updateXLUTControls(node, state);
     refreshBottomPreview(node, state, true);
     closePopup(state);
   };
@@ -712,6 +1478,7 @@ async function loadCatalog(node, state, force = false) {
     }
 
     renderList(node, state);
+    updateXLUTControls(node, state);
     refreshBottomPreview(node, state, true);
     markDirty(node);
   } catch (error) {
@@ -766,7 +1533,15 @@ function setImageElSrc(imageEl, src) {
 }
 
 function ensureBottomPreviewWidget(node, state) {
-  if (state.previewDom) return;
+  if (state.previewDom && !state.previewWidget) return;
+  const previewReady =
+    !!state.previewDom &&
+    !!state.previewWidget &&
+    Array.isArray(node?.widgets) &&
+    node.widgets.includes(state.previewWidget);
+  if (previewReady) return;
+  state.previewDom = null;
+  state.previewWidget = null;
 
   const root = document.createElement("div");
   root.style.cssText = [
@@ -969,25 +1744,66 @@ function ensureBottomPreviewWidget(node, state) {
 }
 
 function normalizePreviewWidgetStack(node, state) {
-  if (!Array.isArray(node?.widgets) || !state?.previewWidget) return false;
+  if (!Array.isArray(node?.widgets)) return false;
   let changed = false;
 
-  const domWidgets = node.widgets.filter((w) => String(w?.name || "") === PREVIEW_WIDGET_NAME);
-  if (domWidgets.length > 1) {
-    node.widgets = node.widgets.filter((w) => String(w?.name || "") !== PREVIEW_WIDGET_NAME || w === state.previewWidget);
+  const controlWidgets = node.widgets.filter((w) => String(w?.name || "") === CONTROLS_WIDGET_NAME);
+  if (controlWidgets.length > 1 && state?.controlsWidget) {
+    node.widgets = node.widgets.filter((w) => String(w?.name || "") !== CONTROLS_WIDGET_NAME || w === state.controlsWidget);
     changed = true;
   }
 
-  const idx = node.widgets.indexOf(state.previewWidget);
-  if (idx > -1 && idx !== node.widgets.length - 1) {
-    node.widgets.splice(idx, 1);
-    node.widgets.push(state.previewWidget);
-    changed = true;
+  if (state?.previewWidget) {
+    const domWidgets = node.widgets.filter((w) => String(w?.name || "") === PREVIEW_WIDGET_NAME);
+    if (domWidgets.length > 1) {
+      node.widgets = node.widgets.filter((w) => String(w?.name || "") !== PREVIEW_WIDGET_NAME || w === state.previewWidget);
+      changed = true;
+    }
+  } else {
+    const before = node.widgets.length;
+    node.widgets = node.widgets.filter((w) => String(w?.name || "") !== PREVIEW_WIDGET_NAME);
+    changed = changed || node.widgets.length !== before;
+  }
+
+  if (state?.controlsWidget) {
+    const controlsIndex = node.widgets.indexOf(state.controlsWidget);
+    if (controlsIndex > -1 && controlsIndex !== 0) {
+      const [controlsWidget] = node.widgets.splice(controlsIndex, 1);
+      node.widgets.unshift(controlsWidget);
+      changed = true;
+    }
+  }
+
+  if (state?.previewWidget) {
+    const previewIndex = node.widgets.indexOf(state.previewWidget);
+    const targetIndex = state?.controlsWidget ? 1 : 0;
+    if (previewIndex > -1 && previewIndex !== targetIndex) {
+      const [previewWidget] = node.widgets.splice(previewIndex, 1);
+      node.widgets.splice(targetIndex, 0, previewWidget);
+      changed = true;
+    }
+  }
+
+  if (state?.controlsWidget) {
+    const innerWidth = Math.max(220, DEFAULT_NODE_WIDTH - 20);
+    const nodeHeight = DEFAULT_NODE_HEIGHT;
+    if (state?.previewWidget) {
+      const controlsHeight = resolveXLUTControlsHeight(state);
+      const previewY = LAYOUT_TOP + controlsHeight + LAYOUT_GAP;
+      const previewHeight = Math.max(PREVIEW_MIN_H, nodeHeight - previewY - LAYOUT_BOTTOM);
+      changed = applyWidgetBox(state.controlsWidget, innerWidth, controlsHeight, LAYOUT_TOP) || changed;
+      changed = applyWidgetBox(state.previewWidget, innerWidth, previewHeight, previewY) || changed;
+    } else {
+      const panelHeight = Math.max(PREVIEW_MIN_H + 120, nodeHeight - LAYOUT_TOP - LAYOUT_BOTTOM);
+      changed = applyWidgetBox(state.controlsWidget, innerWidth, panelHeight, LAYOUT_TOP) || changed;
+    }
   }
   return changed;
 }
 
 function refreshBottomPreview(node, state, force = false) {
+  ensureNodeShape(node);
+  ensureControlsWidget(node, state);
   ensureBottomPreviewWidget(node, state);
   if (!state.previewDom) return;
   const stackChanged = normalizePreviewWidgetStack(node, state);
@@ -1078,14 +1894,16 @@ function refreshBottomPreview(node, state, force = false) {
 function wrapWidgetCallbacks(node, state) {
   for (const widget of node.widgets || []) {
     const name = String(widget?.name || "");
-    if (!name || name === PREVIEW_WIDGET_NAME) continue;
+    if (!name || name === PREVIEW_WIDGET_NAME || name === CONTROLS_WIDGET_NAME) continue;
     if (widget.__mkrXLUTWrapped) continue;
     const original = widget.callback;
     widget.callback = function wrappedCallback() {
       if (typeof original === "function") {
         original.apply(this, arguments);
       }
-      if (name === "lut_name" && state.popupRoot && state.popupRoot.style.display !== "none") {
+      syncXLUTWidgetVisibility(node);
+      updateXLUTControls(node, state);
+      if (state.popupRoot && state.popupRoot.style.display !== "none") {
         renderList(node, state);
       }
       refreshBottomPreview(node, state, true);
@@ -1100,24 +1918,59 @@ function attachXLUTChooser(node) {
   node.__mkrXLUTChooserAttached = true;
 
   const state = makeState(node);
+  ensureNodeShape(node);
+  syncXLUTWidgetVisibility(node);
+  updateXLUTControls(node, state);
   ensureBottomPreviewWidget(node, state);
   wrapWidgetCallbacks(node, state);
 
+  const originalDrawForeground = node.onDrawForeground;
+  node.onDrawForeground = function onDrawForeground() {
+    ensureNodeShape(this);
+    return originalDrawForeground?.apply(this, arguments);
+  };
+
+  const isHiddenBackendWidget = (widget) => {
+    const name = String(widget?.name || "");
+    if (!name) return false;
+    if (name === PREVIEW_WIDGET_NAME || name === CONTROLS_WIDGET_NAME) return false;
+    return HIDDEN_WIDGET_NAMES.includes(name) || widget?.hidden === true || widget?.type === "hidden";
+  };
+
+  if (!node.__mkrXLUTWidgetHitPatched) {
+    node.__mkrXLUTWidgetHitPatched = true;
+
+    const originalGetWidgetOnPos = typeof node.getWidgetOnPos === "function" ? node.getWidgetOnPos : null;
+    if (originalGetWidgetOnPos) {
+      node.getWidgetOnPos = function getWidgetOnPosMasked() {
+        const widget = originalGetWidgetOnPos.apply(this, arguments);
+        return isHiddenBackendWidget(widget) ? null : widget;
+      };
+    }
+
+    const originalGetWidgetAtPos = typeof node.getWidgetAtPos === "function" ? node.getWidgetAtPos : null;
+    if (originalGetWidgetAtPos) {
+      node.getWidgetAtPos = function getWidgetAtPosMasked() {
+        const widget = originalGetWidgetAtPos.apply(this, arguments);
+        return isHiddenBackendWidget(widget) ? null : widget;
+      };
+    }
+  }
+
   const originalMouseDown = node.onMouseDown;
   node.onMouseDown = function onMouseDown(event, pos) {
-    const point = getLocalPos(this, event, pos);
-    const widget = getWidget(this, "lut_name");
-    const rect = widgetRect(this, widget);
-    if (rect && pointInRect(point, rect)) {
-      openPopup(this, state, event);
-      return true;
-    }
+    const hitOnPos = this.getWidgetOnPos?.apply(this, arguments);
+    if (isHiddenBackendWidget(hitOnPos)) return true;
+    const hitAtPos = this.getWidgetAtPos?.apply(this, arguments);
+    if (isHiddenBackendWidget(hitAtPos)) return true;
     return originalMouseDown?.apply(this, arguments);
   };
 
   const originalConnectionsChange = node.onConnectionsChange;
   node.onConnectionsChange = function onConnectionsChange() {
     const out = originalConnectionsChange?.apply(this, arguments);
+    syncXLUTWidgetVisibility(this);
+    updateXLUTControls(this, state);
     wrapWidgetCallbacks(this, state);
     refreshBottomPreview(this, state, true);
     return out;
@@ -1126,6 +1979,9 @@ function attachXLUTChooser(node) {
   const originalConfigure = node.onConfigure;
   node.onConfigure = function onConfigure() {
     const out = originalConfigure?.apply(this, arguments);
+    ensureNodeShape(this);
+    syncXLUTWidgetVisibility(this);
+    updateXLUTControls(this, state);
     wrapWidgetCallbacks(this, state);
     refreshBottomPreview(this, state, true);
     return out;
@@ -1134,6 +1990,8 @@ function attachXLUTChooser(node) {
   const originalResize = node.onResize;
   node.onResize = function onResize() {
     const out = originalResize?.apply(this, arguments);
+    ensureNodeShape(this);
+    updateXLUTControls(this, state);
     refreshBottomPreview(this, state, true);
     return out;
   };
@@ -1141,11 +1999,14 @@ function attachXLUTChooser(node) {
   const originalExecuted = node.onExecuted;
   node.onExecuted = function onExecuted() {
     const out = originalExecuted?.apply(this, arguments);
+    ensureNodeShape(this);
+    updateXLUTControls(this, state);
     refreshBottomPreview(this, state, true);
     return out;
   };
 
   state.previewTimer = setInterval(() => {
+    ensureNodeShape(node);
     refreshBottomPreview(node, state, false);
   }, PREVIEW_POLL_MS);
 
@@ -1178,6 +2039,7 @@ function attachXLUTChooser(node) {
   };
 
   loadCatalog(node, state, false);
+  updateXLUTControls(node, state);
   refreshBottomPreview(node, state, true);
 }
 
@@ -1199,6 +2061,10 @@ app.registerExtension({
     };
   },
   async nodeCreated(node) {
+    if (!isXLUTNode(node)) return;
+    attachXLUTChooser(node);
+  },
+  loadedGraphNode(node) {
     if (!isXLUTNode(node)) return;
     attachXLUTChooser(node);
   },

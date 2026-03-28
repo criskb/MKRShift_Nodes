@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -119,6 +120,78 @@ def _discover_luts() -> Dict[str, str]:
 def _lut_options() -> List[str]:
     discovered = _discover_luts()
     return [NO_LUT_SELECTED] + list(discovered.keys())
+
+
+def _default_xlut_settings() -> Dict[str, object]:
+    return {
+        "lut_name": NO_LUT_SELECTED,
+        "strength": 1.0,
+        "generated_lut_size": 33,
+        "generated_style_strength": 1.0,
+        "apply_generated_lut": True,
+    }
+
+
+def _parse_xlut_bool(value, fallback: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"true", "1", "yes", "on"}:
+            return True
+        if token in {"false", "0", "no", "off"}:
+            return False
+    return fallback
+
+
+def _normalize_xlut_settings(payload: object) -> Dict[str, object]:
+    defaults = _default_xlut_settings()
+    data = payload if isinstance(payload, dict) else {}
+    lut_name = str(data.get("lut_name", defaults["lut_name"]) or NO_LUT_SELECTED).strip() or NO_LUT_SELECTED
+    try:
+        strength = float(data.get("strength", defaults["strength"]))
+    except Exception:
+        strength = float(defaults["strength"])
+    try:
+        generated_lut_size = int(round(float(data.get("generated_lut_size", defaults["generated_lut_size"]))))
+    except Exception:
+        generated_lut_size = int(defaults["generated_lut_size"])
+    try:
+        generated_style_strength = float(data.get("generated_style_strength", defaults["generated_style_strength"]))
+    except Exception:
+        generated_style_strength = float(defaults["generated_style_strength"])
+    return {
+        "lut_name": lut_name,
+        "strength": max(0.0, min(1.0, strength)),
+        "generated_lut_size": max(4, min(64, generated_lut_size)),
+        "generated_style_strength": max(0.0, min(2.0, generated_style_strength)),
+        "apply_generated_lut": _parse_xlut_bool(data.get("apply_generated_lut"), bool(defaults["apply_generated_lut"])),
+    }
+
+
+def _parse_xlut_settings_payload(settings_json: str = "{}", legacy: Optional[dict] = None) -> Dict[str, object]:
+    payload: object = {}
+    raw = str(settings_json or "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                payload = parsed
+            elif isinstance(parsed, str) and parsed.strip():
+                payload = {"lut_name": parsed.strip()}
+        except Exception:
+            payload = {"lut_name": raw}
+
+    if isinstance(legacy, dict):
+        merged = payload.copy() if isinstance(payload, dict) else {}
+        for key in _default_xlut_settings().keys():
+            if key in legacy and key not in merged:
+                merged[key] = legacy[key]
+        payload = merged
+
+    return _normalize_xlut_settings(payload)
 
 
 def _resolve_lut_path(lut_name: str) -> Tuple[Optional[str], str]:
@@ -646,15 +719,16 @@ def _apply_lut_to_image_tensor(image: torch.Tensor, lut: LutCube, strength: floa
 class xLUT:
     @classmethod
     def INPUT_TYPES(cls):
-        lut_choices = _lut_options()
         return {
             "required": {
                 "image": ("IMAGE",),
-                "lut_name": (lut_choices, {"default": NO_LUT_SELECTED}),
-                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "generated_lut_size": ("INT", {"default": 33, "min": 4, "max": 64, "step": 1}),
-                "generated_style_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "apply_generated_lut": ("BOOLEAN", {"default": True}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(_default_xlut_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "lut_image": ("IMAGE",),
@@ -669,13 +743,16 @@ class xLUT:
     def run(
         self,
         image: torch.Tensor,
-        lut_name: str = NO_LUT_SELECTED,
-        strength: float = 1.0,
-        generated_lut_size: int = 33,
-        generated_style_strength: float = 1.0,
-        apply_generated_lut: bool = True,
+        settings_json: str = "{}",
         lut_image: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = _parse_xlut_settings_payload(settings_json, legacy=legacy_settings)
+        lut_name = str(settings["lut_name"])
+        strength = float(settings["strength"])
+        generated_lut_size = int(settings["generated_lut_size"])
+        generated_style_strength = float(settings["generated_style_strength"])
+        apply_generated_lut = bool(settings["apply_generated_lut"])
         generated_info = ""
         lut: Optional[LutCube] = None
         lut_payload: Optional[Dict[str, object]] = None

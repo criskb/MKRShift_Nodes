@@ -438,6 +438,28 @@ def _merge_audio_empty(source: Optional[Path], warnings: List[str]):
     return (payload, "", 0.0, _json_text({"warnings": warnings}))
 
 
+def _build_audio_padding(waveform: np.ndarray, sample_count: int, mode: str) -> np.ndarray:
+    count = int(max(0, sample_count))
+    channels = int(waveform.shape[0])
+    if count <= 0:
+        return np.zeros((channels, 0), dtype=np.float32)
+
+    fill_mode = str(mode or "silence").strip().lower()
+    if fill_mode == "silence" or waveform.shape[1] <= 0:
+        return np.zeros((channels, count), dtype=np.float32)
+
+    if fill_mode == "mirror":
+        if waveform.shape[1] == 1:
+            cycle = waveform
+        else:
+            cycle = np.concatenate([waveform, np.flip(waveform, axis=1)], axis=1)
+    else:
+        cycle = waveform
+
+    reps = int(max(1, math.ceil(float(count) / float(max(1, cycle.shape[1])))))
+    return np.tile(cycle, (1, reps))[:, :count].astype(np.float32, copy=False)
+
+
 class MKRVideoWatermark:
     @classmethod
     def INPUT_TYPES(cls):
@@ -759,8 +781,10 @@ class MKRAudioEQ3Band:
                 "low_gain_db": ("FLOAT", {"default": 0.0, "min": -24.0, "max": 24.0, "step": 0.1}),
                 "mid_gain_db": ("FLOAT", {"default": 0.0, "min": -24.0, "max": 24.0, "step": 0.1}),
                 "high_gain_db": ("FLOAT", {"default": 0.0, "min": -24.0, "max": 24.0, "step": 0.1}),
+                "output_gain_db": ("FLOAT", {"default": 0.0, "min": -24.0, "max": 24.0, "step": 0.1}),
                 "low_mid_hz": ("FLOAT", {"default": 250.0, "min": 20.0, "max": 4000.0, "step": 1.0}),
                 "mid_high_hz": ("FLOAT", {"default": 3000.0, "min": 200.0, "max": 16000.0, "step": 1.0}),
+                "normalize_peak": ("BOOLEAN", {"default": False}),
                 "output_format": (["auto", "wav", "mp3", "flac", "ogg"], {"default": "auto"}),
                 "filename_prefix": ("STRING", {"default": "MKR_audio_eq3"}),
                 "subfolder": ("STRING", {"default": ""}),
@@ -782,8 +806,10 @@ class MKRAudioEQ3Band:
         low_gain_db: float = 0.0,
         mid_gain_db: float = 0.0,
         high_gain_db: float = 0.0,
+        output_gain_db: float = 0.0,
         low_mid_hz: float = 250.0,
         mid_high_hz: float = 3000.0,
+        normalize_peak: bool = False,
         output_format: str = "auto",
         filename_prefix: str = "MKR_audio_eq3",
         subfolder: str = "",
@@ -841,6 +867,11 @@ class MKRAudioEQ3Band:
             spec = np.fft.rfft(w[ch].astype(np.float64))
             spec *= gain.astype(np.float64)
             out[ch] = np.fft.irfft(spec, n=n).astype(np.float32)
+        out *= float(10.0 ** (float(output_gain_db) / 20.0))
+        if bool(normalize_peak):
+            peak = float(np.max(np.abs(out)))
+            if peak > 1e-9:
+                out *= float(0.98 / peak)
         out = np.clip(out, -1.0, 1.0)
 
         payload, path, duration, summary = _save_audio_result(
@@ -858,8 +889,10 @@ class MKRAudioEQ3Band:
             "low_gain_db": float(low_gain_db),
             "mid_gain_db": float(mid_gain_db),
             "high_gain_db": float(high_gain_db),
+            "output_gain_db": float(output_gain_db),
             "low_mid_hz": float(f1),
             "mid_high_hz": float(f2),
+            "normalize_peak": bool(normalize_peak),
         }
         return (payload, path, float(duration), _merge_summary(summary, extra))
 
@@ -949,6 +982,8 @@ class MKRAudioPadTrimDuration:
                 "audio": ("*",),
                 "target_duration_sec": ("FLOAT", {"default": 10.0, "min": 0.01, "max": 86400.0, "step": 0.01}),
                 "pad_position": (["end", "start", "both"], {"default": "end"}),
+                "pad_mode": (["silence", "loop", "mirror"], {"default": "silence"}),
+                "trim_anchor": (["end", "start", "center"], {"default": "end"}),
                 "output_format": (["auto", "wav", "mp3", "flac", "ogg"], {"default": "auto"}),
                 "filename_prefix": ("STRING", {"default": "MKR_audio_padtrim"}),
                 "subfolder": ("STRING", {"default": ""}),
@@ -969,6 +1004,8 @@ class MKRAudioPadTrimDuration:
         audio: Any,
         target_duration_sec: float = 10.0,
         pad_position: str = "end",
+        pad_mode: str = "silence",
+        trim_anchor: str = "end",
         output_format: str = "auto",
         filename_prefix: str = "MKR_audio_padtrim",
         subfolder: str = "",
@@ -988,22 +1025,30 @@ class MKRAudioPadTrimDuration:
         current = int(w.shape[1])
         out = w
 
+        anchor = str(trim_anchor or "end").strip().lower()
         if current > target_samples:
-            out = w[:, :target_samples]
+            if anchor == "start":
+                out = w[:, current - target_samples :]
+            elif anchor == "center":
+                start = int(max(0, (current - target_samples) // 2))
+                out = w[:, start : start + target_samples]
+            else:
+                out = w[:, :target_samples]
         elif current < target_samples:
             pad = target_samples - current
             mode = str(pad_position or "end").strip().lower()
+            fill_mode = str(pad_mode or "silence").strip().lower()
             if mode == "start":
-                left = np.zeros((w.shape[0], pad), dtype=np.float32)
+                left = _build_audio_padding(w, pad, fill_mode)
                 out = np.concatenate([left, w], axis=1)
             elif mode == "both":
                 left_n = pad // 2
                 right_n = pad - left_n
-                left = np.zeros((w.shape[0], left_n), dtype=np.float32)
-                right = np.zeros((w.shape[0], right_n), dtype=np.float32)
+                left = _build_audio_padding(w, left_n, fill_mode)
+                right = _build_audio_padding(w, right_n, fill_mode)
                 out = np.concatenate([left, w, right], axis=1)
             else:
-                right = np.zeros((w.shape[0], pad), dtype=np.float32)
+                right = _build_audio_padding(w, pad, fill_mode)
                 out = np.concatenate([w, right], axis=1)
 
         payload, path, duration, summary = _save_audio_result(
@@ -1021,6 +1066,8 @@ class MKRAudioPadTrimDuration:
             "target_duration_sec": float(target_duration_sec),
             "output_samples": int(out.shape[1]),
             "pad_position": str(pad_position),
+            "pad_mode": str(pad_mode),
+            "trim_anchor": str(trim_anchor),
         }
         return (payload, path, float(duration), _merge_summary(summary, extra))
 
@@ -1031,7 +1078,7 @@ class MKRAudioChannelRouter:
         return {
             "required": {
                 "audio": ("*",),
-                "mode": (["keep", "mono_mix", "left_only", "right_only", "swap_lr", "stereo_from_mono"], {"default": "keep"}),
+                "mode": (["keep", "mono_mix", "left_only", "right_only", "swap_lr", "stereo_from_mono", "mid_side_encode", "mid_side_decode"], {"default": "keep"}),
                 "output_format": (["auto", "wav", "mp3", "flac", "ogg"], {"default": "auto"}),
                 "filename_prefix": ("STRING", {"default": "MKR_audio_channel_router"}),
                 "subfolder": ("STRING", {"default": ""}),
@@ -1091,6 +1138,25 @@ class MKRAudioChannelRouter:
                 out = np.repeat(w, 2, axis=0)
             else:
                 out = w[:2, :]
+        elif m == "mid_side_encode":
+            if w.shape[0] == 1:
+                warnings.append("Input is mono; side channel will be silent")
+                out = np.repeat(w, 2, axis=0)
+                out[1, :] = 0.0
+            else:
+                mid = 0.5 * (w[0] + w[1])
+                side = 0.5 * (w[0] - w[1])
+                out = np.stack([mid, side], axis=0).astype(np.float32, copy=False)
+        elif m == "mid_side_decode":
+            if w.shape[0] < 2:
+                warnings.append("Input has no side channel; decoding as dual mono")
+                out = np.repeat(w[0:1, :], 2, axis=0)
+            else:
+                mid = w[0]
+                side = w[1]
+                left = mid + side
+                right = mid - side
+                out = np.stack([left, right], axis=0).astype(np.float32, copy=False)
 
         out = np.clip(out, -1.0, 1.0)
         payload, path, duration, summary = _save_audio_result(

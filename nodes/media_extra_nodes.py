@@ -103,6 +103,22 @@ def _resample_waveform(waveform: np.ndarray, src_rate: int, dst_rate: int) -> np
     return out
 
 
+def _shift_waveform_samples(waveform: np.ndarray, shift_samples: int) -> np.ndarray:
+    shift = int(shift_samples)
+    src = waveform.astype(np.float32, copy=False)
+    if shift == 0:
+        return src
+    channels = int(src.shape[0])
+    if shift > 0:
+        pad = np.zeros((channels, shift), dtype=np.float32)
+        return np.concatenate([pad, src], axis=1)
+
+    trim = int(min(src.shape[1], abs(shift)))
+    if trim >= src.shape[1]:
+        return np.zeros((channels, 1), dtype=np.float32)
+    return src[:, trim:]
+
+
 def _save_audio_waveform(
     waveform: np.ndarray,
     sample_rate: int,
@@ -580,6 +596,7 @@ class MKRAudioMix:
                 "audio_b": ("*",),
                 "gain_a_db": ("FLOAT", {"default": 0.0, "min": -40.0, "max": 40.0, "step": 0.1}),
                 "gain_b_db": ("FLOAT", {"default": 0.0, "min": -40.0, "max": 40.0, "step": 0.1}),
+                "offset_b_ms": ("INT", {"default": 0, "min": -600000, "max": 600000, "step": 1}),
                 "normalize_peak": ("BOOLEAN", {"default": True}),
                 "output_format": (["auto", "wav", "mp3", "flac", "ogg"], {"default": "auto"}),
                 "filename_prefix": ("STRING", {"default": "MKR_audio_mix"}),
@@ -602,6 +619,7 @@ class MKRAudioMix:
         audio_b: Any,
         gain_a_db: float = 0.0,
         gain_b_db: float = 0.0,
+        offset_b_ms: int = 0,
         normalize_peak: bool = True,
         output_format: str = "auto",
         filename_prefix: str = "MKR_audio_mix",
@@ -612,6 +630,7 @@ class MKRAudioMix:
         warnings: List[str] = []
         path_a = _extract_input_file(audio_a)
         path_b = _extract_input_file(audio_b)
+        offset_ms = int(offset_b_ms)
 
         out_dir = _output_dir(subfolder)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -633,11 +652,19 @@ class MKRAudioMix:
                 warnings.append(f"No codec profile for '{fmt}'")
                 return (_make_audio_payload(path=path_a), "", 0.0, _json_text({"warnings": warnings}))
 
-            filter_chain = (
-                f"[0:a]volume={float(gain_a_db):.3f}dB[a0];"
-                f"[1:a]volume={float(gain_b_db):.3f}dB[a1];"
-                f"[a0][a1]amix=inputs=2:normalize=0[m]"
-            )
+            filter_parts = [
+                f"[0:a]volume={float(gain_a_db):.3f}dB[a0]",
+                f"[1:a]volume={float(gain_b_db):.3f}dB[a1]",
+            ]
+            mix_input_b = "a1"
+            if offset_ms > 0:
+                filter_parts.append(f"[a1]adelay={int(offset_ms)}:all=1[a1o]")
+                mix_input_b = "a1o"
+            elif offset_ms < 0:
+                filter_parts.append(f"[a1]atrim=start={abs(float(offset_ms)) / 1000.0:.6f},asetpts=PTS-STARTPTS[a1o]")
+                mix_input_b = "a1o"
+            filter_parts.append(f"[a0][{mix_input_b}]amix=inputs=2:normalize=0[m]")
+            filter_chain = ";".join(filter_parts)
 
             args: List[str] = [
                 "-y",
@@ -664,6 +691,7 @@ class MKRAudioMix:
                 summary = {
                     "output_path": str(target),
                     "mode": "file_ffmpeg",
+                    "offset_b_ms": int(offset_ms),
                     "warnings": warnings,
                 }
                 return (payload, str(target), float(duration), _json_text(summary))
@@ -678,6 +706,7 @@ class MKRAudioMix:
         target_sr = int(max(1, max(int(sra), int(srb))))
         ra = _resample_waveform(wa, int(sra), target_sr)
         rb = _resample_waveform(wb, int(srb), target_sr)
+        rb = _shift_waveform_samples(rb, int(round(float(offset_ms) * float(target_sr) / 1000.0)))
 
         channels = max(int(ra.shape[0]), int(rb.shape[0]))
         ra = _align_channels(ra, channels)
@@ -709,6 +738,7 @@ class MKRAudioMix:
         summary = {
             "output_path": str(target),
             "mode": "waveform",
+            "offset_b_ms": int(offset_ms),
             "warnings": warnings,
         }
         return (payload, str(target), duration, _json_text(summary))

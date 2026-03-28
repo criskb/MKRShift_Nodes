@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -7,6 +8,7 @@ import torch
 from ..categories import GCODE_INPUT, GCODE_PRINTER
 from ..lib.gcode_mesh import _bed_align_mesh, _center_mesh_xy, _load_mesh_file, _render_mesh_preview, _transform_mesh
 from ..lib.gcode_shared import _json_text, _normalize_profile, _pil_to_batch
+from ..lib.settings_bundle import parse_settings_payload
 from ..lib.gcode_slicer import (
     _build_prusa_orca_config_text,
     _load_orca_profiles,
@@ -116,22 +118,35 @@ class MKRGCodeOrcaProfileLoader:
 class MKRGCodeLoadMeshModel:
     SEARCH_ALIASES = ["load stl", "load obj", "import mesh", "3d model loader", "mesh import"]
 
+    @staticmethod
+    def _default_settings() -> Dict[str, Any]:
+        return {
+            "model_path": "",
+            "center_xy": True,
+            "bed_align": True,
+            "scale": 1.0,
+            "target_longest_mm": 0.0,
+            "rotate_x_deg": 0.0,
+            "rotate_y_deg": 0.0,
+            "rotate_z_deg": 0.0,
+            "translate_x_mm": 0.0,
+            "translate_y_mm": 0.0,
+            "translate_z_mm": 0.0,
+            "preview_view": "isometric",
+            "preview_size": 768,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model_path": ("STRING", {"default": ""}),
-                "center_xy": ("BOOLEAN", {"default": True}),
-                "bed_align": ("BOOLEAN", {"default": True}),
-                "scale": ("FLOAT", {"default": 1.0, "min": 0.001, "max": 1000.0, "step": 0.01}),
-                "rotate_x_deg": ("FLOAT", {"default": 0.0, "min": -360.0, "max": 360.0, "step": 1.0}),
-                "rotate_y_deg": ("FLOAT", {"default": 0.0, "min": -360.0, "max": 360.0, "step": 1.0}),
-                "rotate_z_deg": ("FLOAT", {"default": 0.0, "min": -360.0, "max": 360.0, "step": 1.0}),
-                "translate_x_mm": ("FLOAT", {"default": 0.0, "min": -1000.0, "max": 1000.0, "step": 0.1}),
-                "translate_y_mm": ("FLOAT", {"default": 0.0, "min": -1000.0, "max": 1000.0, "step": 0.1}),
-                "translate_z_mm": ("FLOAT", {"default": 0.0, "min": -1000.0, "max": 1000.0, "step": 0.1}),
-                "preview_view": (["isometric", "top"], {"default": "isometric"}),
-                "preview_size": ("INT", {"default": 768, "min": 128, "max": 2048, "step": 16}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             }
         }
 
@@ -142,38 +157,65 @@ class MKRGCodeLoadMeshModel:
 
     def load(
         self,
-        model_path: str = "",
-        center_xy: bool = True,
-        bed_align: bool = True,
-        scale: float = 1.0,
-        rotate_x_deg: float = 0.0,
-        rotate_y_deg: float = 0.0,
-        rotate_z_deg: float = 0.0,
-        translate_x_mm: float = 0.0,
-        translate_y_mm: float = 0.0,
-        translate_z_mm: float = 0.0,
-        preview_view: str = "isometric",
-        preview_size: int = 768,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "scale": {"min": 0.001, "max": 1000.0},
+                "target_longest_mm": {"min": 0.0, "max": 4000.0},
+                "rotate_x_deg": {"min": -360.0, "max": 360.0},
+                "rotate_y_deg": {"min": -360.0, "max": 360.0},
+                "rotate_z_deg": {"min": -360.0, "max": 360.0},
+                "translate_x_mm": {"min": -1000.0, "max": 1000.0},
+                "translate_y_mm": {"min": -1000.0, "max": 1000.0},
+                "translate_z_mm": {"min": -1000.0, "max": 1000.0},
+                "preview_size": {"min": 128, "max": 2048, "integer": True},
+            },
+            boolean_keys={"center_xy", "bed_align"},
+            legacy=legacy_settings,
+        )
+        preview_view = str(settings.get("preview_view", "isometric") or "isometric")
+        if preview_view not in {"isometric", "top"}:
+            preview_view = "isometric"
         warnings = []
         try:
-            path = Path(model_path).expanduser()
+            path = Path(str(settings["model_path"] or "")).expanduser()
             mesh = _load_mesh_file(path)
-            if bool(center_xy):
+            if bool(settings["center_xy"]):
                 mesh = _center_mesh_xy(mesh)
             mesh = _transform_mesh(
                 mesh,
-                scale=scale,
-                rotate_x_deg=rotate_x_deg,
-                rotate_y_deg=rotate_y_deg,
-                rotate_z_deg=rotate_z_deg,
-                translate_x_mm=translate_x_mm,
-                translate_y_mm=translate_y_mm,
-                translate_z_mm=translate_z_mm,
+                scale=float(settings["scale"]),
+                rotate_x_deg=float(settings["rotate_x_deg"]),
+                rotate_y_deg=float(settings["rotate_y_deg"]),
+                rotate_z_deg=float(settings["rotate_z_deg"]),
+                translate_x_mm=0.0,
+                translate_y_mm=0.0,
+                translate_z_mm=0.0,
             )
-            if bool(bed_align):
+            target_longest = float(settings["target_longest_mm"])
+            if target_longest > 1e-6:
+                bounds = mesh.get("bounds", {}) if isinstance(mesh.get("bounds"), dict) else {}
+                longest = max(
+                    float(bounds.get("max_x", 0.0)) - float(bounds.get("min_x", 0.0)),
+                    float(bounds.get("max_y", 0.0)) - float(bounds.get("min_y", 0.0)),
+                    float(bounds.get("max_z", 0.0)) - float(bounds.get("min_z", 0.0)),
+                )
+                if longest > 1e-6:
+                    mesh = _transform_mesh(mesh, scale=(target_longest / longest))
+            mesh = _transform_mesh(
+                mesh,
+                scale=1.0,
+                translate_x_mm=float(settings["translate_x_mm"]),
+                translate_y_mm=float(settings["translate_y_mm"]),
+                translate_z_mm=float(settings["translate_z_mm"]),
+            )
+            if bool(settings["bed_align"]):
                 mesh = _bed_align_mesh(mesh)
-            preview = _pil_to_batch([_render_mesh_preview(mesh, size=int(preview_size), view_mode=preview_view)])
+            preview = _pil_to_batch([_render_mesh_preview(mesh, size=int(settings["preview_size"]), view_mode=preview_view)])
             info = {
                 "source_path": str(path),
                 "tri_count": int(mesh.get("tri_count", 0)),
@@ -188,5 +230,5 @@ class MKRGCodeLoadMeshModel:
             return (mesh, preview, _json_text(info), summary)
         except Exception as exc:
             warnings.append(str(exc))
-            info = {"source_path": str(model_path), "warnings": warnings}
-            return ({}, _empty_preview(int(preview_size)), _json_text(info), "Mesh load failed")
+            info = {"source_path": str(settings.get("model_path", "")), "warnings": warnings}
+            return ({}, _empty_preview(int(settings["preview_size"])), _json_text(info), "Mesh load failed")

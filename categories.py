@@ -35,6 +35,7 @@ INSPECT_PREVIEW = f"{ROOT}/Inspect/Preview"
 # Color pipeline nodes.
 COLOR_LUT = f"{ROOT}/Color/LUT"
 COLOR_GRADE = f"{ROOT}/Color/Grade"
+COLOR_FINISH = f"{ROOT}/Color/Finish"
 COLOR_TOOLS = f"{ROOT}/Color/Tools"
 COLOR_ANALYZE = f"{ROOT}/Color/Analyze"
 
@@ -46,6 +47,7 @@ FX_CONCEPT = f"{VFX_ROOT}/Concept"
 FX_PLAY = f"{VFX_ROOT}/Play"
 FX_OPTICS = f"{VFX_ROOT}/Optics"
 FX_DISTORT = f"{VFX_ROOT}/Distortion"
+FX_COMPOSITE = f"{VFX_ROOT}/Composite"
 
 # Utility nodes.
 UTILITY_MASK = f"{ROOT}/Utility/Mask"

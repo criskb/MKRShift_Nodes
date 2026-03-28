@@ -23,8 +23,10 @@ from MKRShift_Nodes.categories import (  # noqa: E402
     ADDONS_WORKFLOW,
     BRIDGE_BLENDER,
     COLOR_ANALYZE,
+    COLOR_FINISH,
     CORE_CHARACTER,
     CORE_PROMPT,
+    FX_COMPOSITE,
     INSPECT_COMPARE,
     FX_DISTORT,
     FX_OPTICS,
@@ -185,8 +187,10 @@ from MKRShift_Nodes.nodes.vfx_finishing_nodes import x1AnamorphicStreaks, x1Heat
 from MKRShift_Nodes.nodes.vfx_optics_nodes import x1LensDirtBloom, x1ShockwaveDistort  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite  # noqa: E402
 from MKRShift_Nodes.nodes.layer_stack_nodes import MKRLayerStackComposite  # noqa: E402
-from MKRShift_Nodes.nodes.xcine import x1LensBreathing  # noqa: E402
+from MKRShift_Nodes.nodes.xcine import x1HighlightRollOff, x1LensBreathing, x1SkinToneProtect  # noqa: E402
 from MKRShift_Nodes.nodes.xconcepts import x1LensDistort, x1WarpDisplace  # noqa: E402
+from MKRShift_Nodes.nodes.xcolor import x1ColorMatch, x1GamutMap  # noqa: E402
+from MKRShift_Nodes.nodes.xphoto import x1HighlightRecovery  # noqa: E402
 
 
 class CategoryTaxonomyTests(unittest.TestCase):
@@ -344,12 +348,19 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(x1LensDirtBloom.CATEGORY, FX_OPTICS)
         self.assertEqual(x1LensDistort.CATEGORY, FX_OPTICS)
         self.assertEqual(x1LensBreathing.CATEGORY, FX_OPTICS)
-        self.assertEqual(MKRLayerStackComposite.CATEGORY, FX_PHOTO)
+        self.assertEqual(MKRLayerStackComposite.CATEGORY, FX_COMPOSITE)
         self.assertEqual(x1HeatHaze.CATEGORY, FX_DISTORT)
         self.assertEqual(x1ShockwaveDistort.CATEGORY, FX_DISTORT)
         self.assertEqual(x1WarpDisplace.CATEGORY, FX_DISTORT)
-        self.assertEqual(x1LightWrapComposite.CATEGORY, FX_OPTICS)
+        self.assertEqual(x1LightWrapComposite.CATEGORY, FX_COMPOSITE)
         self.assertEqual(x1EdgeAberration.CATEGORY, FX_DISTORT)
+
+    def test_color_finishing_nodes_live_under_finish_branch(self) -> None:
+        self.assertEqual(x1HighlightRecovery.CATEGORY, COLOR_FINISH)
+        self.assertEqual(x1ColorMatch.CATEGORY, COLOR_FINISH)
+        self.assertEqual(x1GamutMap.CATEGORY, COLOR_FINISH)
+        self.assertEqual(x1HighlightRollOff.CATEGORY, COLOR_FINISH)
+        self.assertEqual(x1SkinToneProtect.CATEGORY, COLOR_FINISH)
 
 
 if __name__ == "__main__":

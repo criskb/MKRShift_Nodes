@@ -1,7 +1,10 @@
 import { app } from "../../../scripts/app.js";
+import { ensureMkrUIStyles } from "./uiSystem.js";
 
 const EXT = "mkrshift.x1maskgen.preview";
 const STATE_KEY = "__mkrX1MaskState";
+const SETTINGS_WIDGET_NAME = "settings_json";
+const CONTROLS_WIDGET_NAME = "mkr_x1maskgen_controls_ui";
 const DOM_WIDGET_NAME = "mkr_x1maskgen_preview_ui";
 const RUNTIME_VERSION = "node2-2026-03-01f";
 const ACCENT_STYLE_ID = "mkrshift-accent-style";
@@ -17,13 +20,93 @@ const ACCENT_STYLE_CSS = `
 `;
 
 const DEFAULT_W = 360;
-const DEFAULT_H = 520;
+const DEFAULT_H = 400;
 const PREVIEW_MIN_H = 178;
+const MASK_PREVIEW_HEIGHT = 254;
 const PREVIEW_MARGIN = 8;
 const LIVE_DEBOUNCE_MS = 90;
 const ACCENT_LIME = "#D2FD51";
 const LOCAL_PREVIEW_MAX_DIM = 360;
 const URL_REFRESH_BUCKET_MS = 900;
+const CONTROLS_HEIGHT = 290;
+const LAYOUT_TOP = 76;
+const LAYOUT_GAP = 8;
+const LAYOUT_BOTTOM = 4;
+const LEGACY_MASK_WIDGET_ORDER = [
+  "mode",
+  "channel",
+  "threshold",
+  "softness",
+  "min_value",
+  "max_value",
+  "hue_center",
+  "hue_width",
+  "target_r",
+  "target_g",
+  "target_b",
+  "color_tolerance",
+  "edge_radius",
+  "edge_strength",
+  "center_x",
+  "center_y",
+  "radius",
+  "falloff",
+  "combine_mode",
+  "expand_pixels",
+  "blur_radius",
+  "mask_gamma",
+  "invert_mask",
+];
+const HIDDEN_WIDGET_NAMES = [SETTINGS_WIDGET_NAME, ...LEGACY_MASK_WIDGET_ORDER];
+const MASK_MODE_VALUES = ["luminance", "channel", "hue", "saturation", "value", "skin_tones", "chroma_key", "edge", "radial"];
+const MASK_CHANNEL_VALUES = ["luma", "red", "green", "blue", "alpha"];
+const MASK_COMBINE_VALUES = ["replace", "multiply", "maximum", "minimum", "add"];
+const MASK_DEFAULT_SETTINGS = {
+  mode: "luminance",
+  channel: "luma",
+  threshold: 0.5,
+  softness: 0.08,
+  min_value: 0.2,
+  max_value: 0.8,
+  hue_center: 120,
+  hue_width: 24,
+  target_r: 0,
+  target_g: 1,
+  target_b: 0,
+  color_tolerance: 0.25,
+  edge_radius: 1,
+  edge_strength: 1,
+  center_x: 0.5,
+  center_y: 0.5,
+  radius: 0.28,
+  falloff: 1,
+  combine_mode: "replace",
+  expand_pixels: 0,
+  blur_radius: 0,
+  mask_gamma: 1,
+  invert_mask: false,
+};
+const MASK_NUMERIC_SPECS = {
+  threshold: { min: 0, max: 1, fallback: 0.5 },
+  softness: { min: 0, max: 1, fallback: 0.08 },
+  min_value: { min: 0, max: 1, fallback: 0.2 },
+  max_value: { min: 0, max: 1, fallback: 0.8 },
+  hue_center: { min: 0, max: 360, fallback: 120 },
+  hue_width: { min: 0, max: 180, fallback: 24 },
+  target_r: { min: 0, max: 1, fallback: 0 },
+  target_g: { min: 0, max: 1, fallback: 1 },
+  target_b: { min: 0, max: 1, fallback: 0 },
+  color_tolerance: { min: 0, max: 1, fallback: 0.25 },
+  edge_radius: { min: 0, max: 32, fallback: 1 },
+  edge_strength: { min: 0, max: 4, fallback: 1 },
+  center_x: { min: 0, max: 1, fallback: 0.5 },
+  center_y: { min: 0, max: 1, fallback: 0.5 },
+  radius: { min: 0, max: 2, fallback: 0.28 },
+  falloff: { min: 0.05, max: 6, fallback: 1 },
+  expand_pixels: { min: -64, max: 64, fallback: 0, integer: true },
+  blur_radius: { min: 0, max: 64, fallback: 0 },
+  mask_gamma: { min: 0.1, max: 4, fallback: 1 },
+};
 let registered = false;
 const OBJECT_IDS = new WeakMap();
 let objectIdCounter = 1;
@@ -157,6 +240,7 @@ function buildInputImageUrlFromSourceNode(sourceNode) {
 }
 
 function ensureAccentStylesheet() {
+  ensureMkrUIStyles();
   if (document.getElementById(ACCENT_STYLE_ID)) return;
   const style = document.createElement("style");
   style.id = ACCENT_STYLE_ID;
@@ -198,6 +282,33 @@ function queueRedraw(node) {
   appRef?.graph?.setDirtyCanvas?.(true, true);
 }
 
+function ensureMaskNodeShape(node) {
+  if (!node) return;
+  const width = DEFAULT_W;
+  const height = Number(node.__mkrX1MaskLockedHeight || DEFAULT_H);
+  if (!node.__mkrX1MaskFixedComputeSize) {
+    node.__mkrX1MaskFixedComputeSize = true;
+    node.__mkrX1MaskOrigComputeSize = node.computeSize;
+    node.computeSize = function computeFixedMaskSize() {
+      return [width, Number(this.__mkrX1MaskLockedHeight || DEFAULT_H)];
+    };
+  }
+  node.resizable = false;
+  node.flags = typeof node.flags === "object" && node.flags !== null ? node.flags : {};
+  node.flags.resizable = false;
+  const currentWidth = Number(node.size?.[0] || 0);
+  const currentHeight = Number(node.size?.[1] || 0);
+  if (Math.abs(currentWidth - width) <= 0.5 && Math.abs(currentHeight - height) <= 0.5) return;
+  if (node.__mkrX1MaskSizing) return;
+  node.__mkrX1MaskSizing = true;
+  try {
+    node.setSize?.([width, height]);
+    node.size = [width, height];
+  } finally {
+    node.__mkrX1MaskSizing = false;
+  }
+}
+
 function ensureState(node) {
   if (!node[STATE_KEY]) {
     node[STATE_KEY] = {
@@ -213,6 +324,8 @@ function ensureState(node) {
       sourceImage: null,
       dom: null,
       domWidget: null,
+      controlsDom: null,
+      controlsWidget: null,
     };
   }
   return node[STATE_KEY];
@@ -370,7 +483,7 @@ function previewRectForNode(node) {
   const nodeH = Number.isFinite(node?.size?.[1]) ? Number(node.size[1]) : DEFAULT_H;
   const x = PREVIEW_MARGIN;
   const w = Math.max(1, nodeW - PREVIEW_MARGIN * 2);
-  const y = Math.max(76, nodeH - PREVIEW_MIN_H - PREVIEW_MARGIN);
+  const y = Math.max(76, nodeH - MASK_PREVIEW_HEIGHT - PREVIEW_MARGIN);
   const h = Math.max(1, nodeH - y - PREVIEW_MARGIN);
   return { x, y, w, h };
 }
@@ -419,6 +532,9 @@ function drawCanvasPreview(node, ctx, state) {
 }
 
 function createDomState(node, state) {
+  if (state.dom && !state.domWidget) {
+    return true;
+  }
   const root = document.createElement("div");
   root.style.cssText = [
     "position:relative",
@@ -544,21 +660,66 @@ function isDomMounted(state) {
 }
 
 function normalizeDomWidgetStack(node, state) {
-  if (!Array.isArray(node?.widgets) || !state?.domWidget) return false;
+  if (!Array.isArray(node?.widgets)) return false;
   let changed = false;
 
-  const domWidgets = node.widgets.filter((w) => String(w?.name || "") === DOM_WIDGET_NAME);
-  if (domWidgets.length > 1) {
-    node.widgets = node.widgets.filter((w) => String(w?.name || "") !== DOM_WIDGET_NAME || w === state.domWidget);
+  const controlWidgets = node.widgets.filter((w) => String(w?.name || "") === CONTROLS_WIDGET_NAME);
+  if (controlWidgets.length > 1 && state?.controlsWidget) {
+    node.widgets = node.widgets.filter((w) => String(w?.name || "") !== CONTROLS_WIDGET_NAME || w === state.controlsWidget);
     changed = true;
   }
 
-  const idx = node.widgets.indexOf(state.domWidget);
-  if (idx > -1 && idx !== node.widgets.length - 1) {
-    node.widgets.splice(idx, 1);
-    node.widgets.push(state.domWidget);
-    changed = true;
+  if (state?.domWidget) {
+    const domWidgets = node.widgets.filter((w) => String(w?.name || "") === DOM_WIDGET_NAME);
+    if (domWidgets.length > 1) {
+      node.widgets = node.widgets.filter((w) => String(w?.name || "") !== DOM_WIDGET_NAME || w === state.domWidget);
+      changed = true;
+    }
+  } else {
+    const before = node.widgets.length;
+    node.widgets = node.widgets.filter((w) => String(w?.name || "") !== DOM_WIDGET_NAME);
+    changed = changed || node.widgets.length !== before;
   }
+
+  if (state?.controlsWidget) {
+    const controlsIndex = node.widgets.indexOf(state.controlsWidget);
+    if (controlsIndex > -1 && controlsIndex !== 0) {
+      const [controlsWidget] = node.widgets.splice(controlsIndex, 1);
+      node.widgets.unshift(controlsWidget);
+      changed = true;
+    }
+  }
+
+  if (state?.domWidget) {
+    const previewIndex = node.widgets.indexOf(state.domWidget);
+    const targetIndex = state?.controlsWidget ? 1 : 0;
+    if (previewIndex > -1 && previewIndex !== targetIndex) {
+      const [previewWidget] = node.widgets.splice(previewIndex, 1);
+      node.widgets.splice(targetIndex, 0, previewWidget);
+      changed = true;
+    }
+  }
+
+  if (state?.controlsWidget) {
+    const innerWidth = Math.max(220, DEFAULT_W - 20);
+    const nodeHeight = Number(node?.__mkrX1MaskLockedHeight || node?.size?.[1] || DEFAULT_H);
+    if (state?.domWidget) {
+      const controlsHeight = resolveMaskControlsHeight(node, state);
+      const previewY = LAYOUT_TOP + controlsHeight + LAYOUT_GAP;
+      const previewHeight = Math.max(PREVIEW_MIN_H, nodeHeight - previewY - LAYOUT_BOTTOM);
+      changed = applyWidgetBox(state.controlsWidget, innerWidth, controlsHeight, LAYOUT_TOP) || changed;
+      changed = applyWidgetBox(state.domWidget, innerWidth, previewHeight, previewY) || changed;
+    } else {
+      const panelHeight = Math.max(PREVIEW_MIN_H + 120, nodeHeight - LAYOUT_TOP - LAYOUT_BOTTOM);
+      changed = applyWidgetBox(state.controlsWidget, innerWidth, panelHeight, LAYOUT_TOP) || changed;
+    }
+  }
+  node.__mkrX1MaskWidgetByName = new Map(
+    (node.widgets || [])
+      .filter(Boolean)
+      .map((widget) => [String(widget.name || ""), widget])
+      .filter(([name]) => !!name)
+  );
   return changed;
 }
 
@@ -612,16 +773,931 @@ function boolValue(value, fallback = false) {
   return fallback;
 }
 
+function clampChoice(value, valid, fallback) {
+  const token = String(value ?? fallback).trim().toLowerCase();
+  return valid.includes(token) ? token : fallback;
+}
+
+function parseSettingsWidgetValue(rawValue) {
+  const rawText = String(rawValue ?? "").trim();
+  if (!rawText) return {};
+  try {
+    const parsed = JSON.parse(rawText);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    if (typeof parsed === "string" && MASK_MODE_VALUES.includes(parsed.trim().toLowerCase())) {
+      return { mode: parsed.trim().toLowerCase() };
+    }
+  } catch (error) {
+    if (MASK_MODE_VALUES.includes(rawText.toLowerCase())) {
+      return { mode: rawText.toLowerCase() };
+    }
+  }
+  return {};
+}
+
+function normalizeMaskSettings(payload) {
+  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const next = { ...MASK_DEFAULT_SETTINGS };
+  next.mode = clampChoice(source.mode, MASK_MODE_VALUES, MASK_DEFAULT_SETTINGS.mode);
+  next.channel = clampChoice(source.channel, MASK_CHANNEL_VALUES, MASK_DEFAULT_SETTINGS.channel);
+  next.combine_mode = clampChoice(source.combine_mode, MASK_COMBINE_VALUES, MASK_DEFAULT_SETTINGS.combine_mode);
+  for (const [name, spec] of Object.entries(MASK_NUMERIC_SPECS)) {
+    const parsed = Number.parseFloat(String(source[name]));
+    const base = Number.isFinite(parsed) ? parsed : Number(spec.fallback);
+    const clamped = Math.max(spec.min, Math.min(spec.max, base));
+    next[name] = spec.integer ? Math.round(clamped) : clamped;
+  }
+  next.invert_mask = boolValue(source.invert_mask, MASK_DEFAULT_SETTINGS.invert_mask);
+  return next;
+}
+
+function serializeMaskSettings(settings) {
+  return JSON.stringify(normalizeMaskSettings(settings));
+}
+
+function buildLegacyMaskSettingsFromValues(values) {
+  if (!Array.isArray(values) || values.length < LEGACY_MASK_WIDGET_ORDER.length) return null;
+  const payload = {};
+  LEGACY_MASK_WIDGET_ORDER.forEach((name, index) => {
+    if (values[index] !== undefined) payload[name] = values[index];
+  });
+  return normalizeMaskSettings(payload);
+}
+
+function migrateLegacyMaskWorkflow(node) {
+  if (!node || node.__mkrX1MaskLegacyMigrated) return;
+  const settingsWidget = getWidget(node, SETTINGS_WIDGET_NAME);
+  if (!settingsWidget) {
+    node.__mkrX1MaskLegacyMigrated = true;
+    return;
+  }
+  const legacySettings = buildLegacyMaskSettingsFromValues(node.widgets_values);
+  if (!legacySettings) {
+    node.__mkrX1MaskLegacyMigrated = true;
+    return;
+  }
+  const serialized = serializeMaskSettings(legacySettings);
+  settingsWidget.value = serialized;
+  node.properties = typeof node.properties === "object" && node.properties !== null ? node.properties : {};
+  node.properties[SETTINGS_WIDGET_NAME] = serialized;
+  node.widgets_values = [serialized];
+  node.__mkrX1MaskLegacyMigrated = true;
+}
+
+function readMaskSettings(node) {
+  migrateLegacyMaskWorkflow(node);
+  const settingsWidget = getWidget(node, SETTINGS_WIDGET_NAME);
+  const widgetValue = settingsWidget?.value;
+  const propertyValue = node?.properties?.[SETTINGS_WIDGET_NAME];
+  const parsed = normalizeMaskSettings(
+    parseSettingsWidgetValue(widgetValue !== undefined ? widgetValue : propertyValue)
+  );
+  const serialized = serializeMaskSettings(parsed);
+  if (settingsWidget && settingsWidget.value !== serialized) {
+    settingsWidget.value = serialized;
+  }
+  if (node) {
+    node.properties = typeof node.properties === "object" && node.properties !== null ? node.properties : {};
+    node.properties[SETTINGS_WIDGET_NAME] = serialized;
+    node.widgets_values = [serialized];
+  }
+  return parsed;
+}
+
+function writeMaskSettings(node, patch, options = {}) {
+  const current = options.replace ? MASK_DEFAULT_SETTINGS : readMaskSettings(node);
+  const next = normalizeMaskSettings(
+    options.replace
+      ? (typeof patch === "string" ? parseSettingsWidgetValue(patch) : patch)
+      : { ...current, ...(typeof patch === "string" ? parseSettingsWidgetValue(patch) : patch) }
+  );
+  const serialized = serializeMaskSettings(next);
+  const settingsWidget = getWidget(node, SETTINGS_WIDGET_NAME);
+  if (settingsWidget) {
+    settingsWidget.value = serialized;
+  }
+  if (node) {
+    node.properties = typeof node.properties === "object" && node.properties !== null ? node.properties : {};
+    node.properties[SETTINGS_WIDGET_NAME] = serialized;
+    node.widgets_values = [serialized];
+  }
+  if (!options.silent && typeof settingsWidget?.callback === "function") {
+    settingsWidget.callback(serialized, getApp()?.graph, node, settingsWidget);
+  }
+  return next;
+}
+
 function getWidget(node, name) {
-  return node.widgets?.find((w) => String(w?.name || "") === name);
+  const key = String(name || "");
+  if (!key) return null;
+  const mapped = node?.__mkrX1MaskWidgetByName?.get?.(key);
+  if (mapped) return mapped;
+  return node.widgets?.find((w) => String(w?.name || "") === key) || null;
+}
+
+function setWidgetVisibility(widget, visible) {
+  return setWidgetVisibilityInternal(widget, visible, new Set());
+}
+
+function setWidgetVisibilityInternal(widget, visible, seen) {
+  if (!widget || seen.has(widget)) return false;
+  seen.add(widget);
+  if (!widget) return false;
+  widget.__mkrVisibilityState ??= {
+    type: widget.type,
+    computeSize: widget.computeSize,
+    computeLayoutSize: widget.computeLayoutSize,
+    draw: widget.draw,
+    disabled: widget.disabled,
+    options: widget.options ? { ...widget.options } : undefined,
+  };
+
+  const state = widget.__mkrVisibilityState;
+  const nextVisible = !!visible;
+  const currentVisible = widget.hidden !== true && widget.type !== "hidden";
+  let changed = currentVisible !== nextVisible;
+
+  if (nextVisible) {
+    widget.hidden = false;
+    widget.visible = true;
+    widget.type = state.type;
+    widget.disabled = state.disabled;
+    widget.computeSize = state.computeSize;
+    widget.computeLayoutSize = state.computeLayoutSize;
+    widget.draw = state.draw;
+    widget.last_y = widget.last_y || 0;
+    widget.y = widget.y || 0;
+    widget.options = {
+      ...(state.options || {}),
+      hidden: false,
+      visible: true,
+      serialize: true,
+    };
+  } else {
+    widget.hidden = true;
+    widget.visible = false;
+    widget.type = "hidden";
+    widget.disabled = true;
+    widget.computeSize = () => [0, -4];
+    widget.computeLayoutSize = () => ({
+      minHeight: 0,
+      maxHeight: 0,
+      minWidth: 0,
+      preferredWidth: 0,
+    });
+    widget.draw = () => {};
+    widget.last_y = 0;
+    widget.y = 0;
+    widget.options = {
+      ...(state.options || widget.options || {}),
+      hidden: true,
+      visible: false,
+      serialize: true,
+    };
+    for (const key of ["element", "inputEl", "textarea", "controlEl"]) {
+      const el = widget?.[key];
+      if (el?.style) {
+        el.style.display = "none";
+        el.style.visibility = "hidden";
+        el.style.height = "0px";
+        el.style.minHeight = "0px";
+        el.style.maxHeight = "0px";
+        el.style.margin = "0";
+        el.style.padding = "0";
+        el.style.overflow = "hidden";
+      }
+    }
+  }
+
+  const linked = Array.isArray(widget.linkedWidgets)
+    ? widget.linkedWidgets
+    : Array.isArray(widget.linked_widgets)
+      ? widget.linked_widgets
+      : [];
+  for (const linkedWidget of linked) {
+    changed = setWidgetVisibilityInternal(linkedWidget, visible, seen) || changed;
+  }
+
+  return changed;
+}
+
+function trySetWidgetY(widget, y) {
+  if (!widget) return false;
+  let changed = false;
+  for (const key of ["y", "last_y", "_y"]) {
+    const current = Number(widget?.[key]);
+    if (Number.isFinite(current) && Math.abs(current - y) <= 0.5) continue;
+    try {
+      widget[key] = y;
+      changed = true;
+    } catch {
+    }
+  }
+  return changed;
+}
+
+function applyWidgetBox(widget, width, height, y) {
+  if (!widget) return false;
+  const w = Math.max(220, Math.round(width));
+  const h = Math.max(72, Math.round(height));
+  let changed = false;
+  widget.computeSize = () => [w, h];
+  widget.computeLayoutSize = () => ({
+    minHeight: h,
+    maxHeight: h,
+    minWidth: w,
+    preferredWidth: w,
+  });
+  if (widget.element?.style) {
+    widget.element.style.width = `${w}px`;
+    widget.element.style.height = `${h}px`;
+    widget.element.style.minHeight = `${h}px`;
+    widget.element.style.maxHeight = `${h}px`;
+    widget.element.style.marginLeft = "auto";
+    widget.element.style.marginRight = "auto";
+    widget.element.style.boxSizing = "border-box";
+    widget.element.style.overflow = "hidden";
+  }
+  changed = trySetWidgetY(widget, y) || changed;
+  return changed;
+}
+
+function resolveMaskControlsHeight(node, state) {
+  const root = state?.controlsDom?.root;
+  const measured = Math.ceil(Number(root?.scrollHeight || root?.getBoundingClientRect?.().height || 0));
+  const rows = Array.isArray(state?.controlsDom?.rows)
+    ? state.controlsDom.rows.filter((control) => control?.element?.style?.display !== "none").length
+    : 0;
+  const estimated = rows > 0 ? 82 + (rows * 28) + (Math.max(0, rows - 1) * 8) : CONTROLS_HEIGHT;
+  const height = Math.max(estimated, measured > 0 ? measured + 4 : 0, 190);
+  const nodeHeight = Number(node?.__mkrX1MaskLockedHeight || node?.size?.[1] || DEFAULT_H);
+  return Math.min(height, nodeHeight - LAYOUT_TOP - LAYOUT_GAP - LAYOUT_BOTTOM - MASK_PREVIEW_HEIGHT);
+}
+
+function resolveMaskNodeHeightForMode(mode) {
+  return DEFAULT_H;
+}
+
+function resolveMaskPanelHeight(state) {
+  const visibleRows = Array.isArray(state?.controlsDom?.rows)
+    ? state.controlsDom.rows.filter((control) => control?.element?.style?.display !== "none").length
+    : 0;
+  const rows = Math.max(6, visibleRows);
+  const controlsEstimate = 48 + (rows * 22) + (Math.max(0, rows - 1) * 8);
+  const panelHeight = controlsEstimate + 70 + MASK_PREVIEW_HEIGHT;
+  return Math.max(panelHeight, 350);
+}
+
+function inputIsConnected(node, inputName) {
+  const input = node?.inputs?.find((entry) => String(entry?.name || "") === String(inputName || ""));
+  return readInputLinkIds(input).length > 0;
+}
+
+function syncMaskWidgetVisibility(node) {
+  if (!node) return false;
+  let changed = false;
+  for (const widget of node.widgets || []) {
+    const name = String(widget?.name || "");
+    if (!name || name === DOM_WIDGET_NAME || name === CONTROLS_WIDGET_NAME) continue;
+    changed = setWidgetVisibility(widget, false) || changed;
+  }
+  node.__mkrX1MaskWidgetByName = new Map(
+    (node.widgets || [])
+      .filter(Boolean)
+      .map((widget) => [String(widget.name || ""), widget])
+      .filter(([name]) => !!name)
+  );
+  delete node.__mkrX1MaskSerialWidgets;
+
+  if (changed) {
+    queueRedraw(node);
+  }
+  return changed;
+}
+
+function removeGeneratedInputs(node, names) {
+  if (!node || !Array.isArray(node.inputs) || node.inputs.length === 0) return false;
+  const hiddenNames = new Set((names || []).map((name) => String(name)));
+  const keep = [];
+  let changed = false;
+  for (const input of node.inputs) {
+    const name = String(input?.name || "");
+    if (hiddenNames.has(name)) {
+      changed = true;
+      continue;
+    }
+    keep.push(input);
+  }
+  if (changed) node.inputs = keep;
+  return changed;
 }
 
 function getWidgetValue(node, name, fallback) {
-  const widget = getWidget(node, name);
+  const key = String(name || "");
+  if (key && (key === SETTINGS_WIDGET_NAME || Object.prototype.hasOwnProperty.call(MASK_DEFAULT_SETTINGS, key))) {
+    const settings = readMaskSettings(node);
+    if (key === SETTINGS_WIDGET_NAME) {
+      return serializeMaskSettings(settings);
+    }
+    if (Object.prototype.hasOwnProperty.call(settings, key)) {
+      return settings[key];
+    }
+  }
+  const widget = getWidget(node, key);
   if (widget && widget.value !== undefined) return widget.value;
   const prop = node?.properties?.[name];
   if (prop !== undefined) return prop;
   return fallback;
+}
+
+function sanitizeMaskNumericValue(name, value) {
+  const spec = MASK_NUMERIC_SPECS?.[name];
+  if (!spec) return value;
+  const fallback = Number(spec.fallback);
+  const parsed = Number.parseFloat(String(value));
+  const base = Number.isFinite(parsed) ? parsed : fallback;
+  const clamped = Math.max(spec.min, Math.min(spec.max, base));
+  return spec.integer ? Math.round(clamped) : clamped;
+}
+
+function getSanitizedMaskValue(node, name, fallback) {
+  const raw = getWidgetValue(node, name, fallback);
+  const sanitized = sanitizeMaskNumericValue(name, raw);
+  if (sanitized !== raw) {
+    writeMaskSettings(node, { [name]: sanitized }, { silent: true });
+  }
+  return sanitized;
+}
+
+function setWidgetValue(node, name, value) {
+  const key = String(name || "");
+  if (!key) return;
+  if (key === SETTINGS_WIDGET_NAME || Object.prototype.hasOwnProperty.call(MASK_DEFAULT_SETTINGS, key)) {
+    writeMaskSettings(
+      node,
+      key === SETTINGS_WIDGET_NAME ? value : { [key]: value },
+      { replace: key === SETTINGS_WIDGET_NAME }
+    );
+    queueRedraw(node);
+    return;
+  }
+  const widget = getWidget(node, key);
+  if (!widget) return;
+  widget.value = value;
+  if (typeof widget.callback === "function") {
+    widget.callback(value, getApp()?.graph, node, widget);
+  }
+  queueRedraw(node);
+}
+
+function createMaskLabel(text) {
+  const label = document.createElement("div");
+  label.style.cssText = "font:600 11px sans-serif;color:rgba(229,235,242,0.82);";
+  label.textContent = text;
+  return label;
+}
+
+function createMaskNumber(value, min, max, step) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.value = String(value);
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.style.cssText = [
+    "width:64px",
+    "border-radius:8px",
+    "border:1px solid rgba(255,255,255,0.08)",
+    "background:rgba(9,10,13,0.48)",
+    "color:rgba(245,248,252,0.92)",
+    "padding:5px 6px",
+    "font:600 11px sans-serif",
+    "box-sizing:border-box",
+  ].join(";");
+  return input;
+}
+
+function createMaskRangeRow({ label, min, max, step, value, decimals = 2, onChange }) {
+  const row = document.createElement("div");
+  row.style.cssText = "display:grid;grid-template-columns:92px 1fr 64px;gap:8px;align-items:center;";
+  row.appendChild(createMaskLabel(label));
+
+  const range = document.createElement("input");
+  range.type = "range";
+  range.min = String(min);
+  range.max = String(max);
+  range.step = String(step);
+  range.value = String(value);
+  range.style.cssText = `width:100%;accent-color:${ACCENT_LIME};`;
+
+  const number = createMaskNumber(Number(value).toFixed(decimals), min, max, step);
+  const commit = (raw) => {
+    const parsed = Number.parseFloat(String(raw));
+    const next = Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : Number(value);
+    range.value = String(next);
+    number.value = next.toFixed(decimals);
+    onChange?.(next);
+  };
+  range.addEventListener("input", () => commit(range.value));
+  number.addEventListener("change", () => commit(number.value));
+
+  row.appendChild(range);
+  row.appendChild(number);
+  return {
+    element: row,
+    setValue(next) {
+      const parsed = Number.parseFloat(String(next));
+      const normalized = Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : Math.max(min, Math.min(max, Number(value) || 0));
+      range.value = String(normalized);
+      number.value = normalized.toFixed(decimals);
+    },
+    setVisible(visible) {
+      row.style.display = visible ? "grid" : "none";
+    },
+  };
+}
+
+function createMaskSelectRow({ label, options, value, onChange }) {
+  const row = document.createElement("div");
+  row.style.cssText = "display:grid;grid-template-columns:92px 1fr;gap:8px;align-items:center;";
+  row.appendChild(createMaskLabel(label));
+  const select = document.createElement("select");
+  select.style.cssText = [
+    "width:100%",
+    "border-radius:9px",
+    "border:1px solid rgba(255,255,255,0.08)",
+    "background:rgba(9,10,13,0.48)",
+    "color:rgba(245,248,252,0.92)",
+    "padding:7px 8px",
+    "font:600 11px sans-serif",
+    "box-sizing:border-box",
+  ].join(";");
+  for (const optionValue of options) {
+    const option = document.createElement("option");
+    option.value = String(optionValue);
+    option.textContent = String(optionValue);
+    select.appendChild(option);
+  }
+  select.value = String(value);
+  select.addEventListener("change", () => onChange?.(select.value));
+  row.appendChild(select);
+  return {
+    element: row,
+    setValue(next) {
+      select.value = String(next);
+    },
+    setVisible(visible) {
+      row.style.display = visible ? "grid" : "none";
+    },
+  };
+}
+
+function createMaskToggleRow({ label, checked, onChange }) {
+  const row = document.createElement("label");
+  row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
+  row.appendChild(createMaskLabel(label));
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = !!checked;
+  input.style.cssText = `accent-color:${ACCENT_LIME};`;
+  input.addEventListener("change", () => onChange?.(input.checked));
+  row.appendChild(input);
+  return {
+    element: row,
+    setValue(next) {
+      input.checked = !!next;
+    },
+  };
+}
+
+function ensureControlsDom(node, state) {
+  const controlsReady =
+    !!state.controlsDom &&
+    !!state.controlsWidget &&
+    !!state.dom &&
+    Array.isArray(node?.widgets) &&
+    node.widgets.includes(state.controlsWidget);
+  if (controlsReady) return;
+  state.controlsDom = null;
+  state.controlsWidget = null;
+  state.dom = null;
+  state.domWidget = null;
+
+  const root = document.createElement("div");
+  root.className = "mkr-seamless-panel";
+
+  const controls = document.createElement("div");
+  controls.style.cssText = "display:grid;gap:8px;";
+  root.appendChild(controls);
+
+  const mode = createMaskSelectRow({
+    label: "Mode",
+    options: ["luminance", "channel", "hue", "saturation", "value", "skin_tones", "chroma_key", "edge", "radial"],
+    value: getWidgetValue(node, "mode", "luminance"),
+    onChange: (next) => { setWidgetValue(node, "mode", next); updateMaskControls(node, state); scheduleLivePreview(node, state); },
+  });
+  const channel = createMaskSelectRow({
+    label: "Channel",
+    options: ["luma", "red", "green", "blue", "alpha"],
+    value: getWidgetValue(node, "channel", "luma"),
+    onChange: (next) => { setWidgetValue(node, "channel", next); scheduleLivePreview(node, state); },
+  });
+  const threshold = createMaskRangeRow({
+    label: "Threshold",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "threshold", 0.5),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "threshold", next); scheduleLivePreview(node, state); },
+  });
+  const softness = createMaskRangeRow({
+    label: "Softness",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "softness", 0.08),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "softness", next); scheduleLivePreview(node, state); },
+  });
+  const minValue = createMaskRangeRow({
+    label: "Min",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "min_value", 0.2),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "min_value", next); scheduleLivePreview(node, state); },
+  });
+  const maxValue = createMaskRangeRow({
+    label: "Max",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "max_value", 0.8),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "max_value", next); scheduleLivePreview(node, state); },
+  });
+  const hueCenter = createMaskRangeRow({
+    label: "Hue",
+    min: 0,
+    max: 360,
+    step: 0.1,
+    value: getWidgetValue(node, "hue_center", 120),
+    decimals: 1,
+    onChange: (next) => { setWidgetValue(node, "hue_center", next); scheduleLivePreview(node, state); },
+  });
+  const hueWidth = createMaskRangeRow({
+    label: "Hue Width",
+    min: 0,
+    max: 180,
+    step: 0.1,
+    value: getWidgetValue(node, "hue_width", 24),
+    decimals: 1,
+    onChange: (next) => { setWidgetValue(node, "hue_width", next); scheduleLivePreview(node, state); },
+  });
+  const colorTolerance = createMaskRangeRow({
+    label: "Tolerance",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "color_tolerance", 0.25),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "color_tolerance", next); scheduleLivePreview(node, state); },
+  });
+  const targetR = createMaskRangeRow({
+    label: "Target R",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "target_r", 0),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "target_r", next); scheduleLivePreview(node, state); },
+  });
+  const targetG = createMaskRangeRow({
+    label: "Target G",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "target_g", 1),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "target_g", next); scheduleLivePreview(node, state); },
+  });
+  const targetB = createMaskRangeRow({
+    label: "Target B",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "target_b", 0),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "target_b", next); scheduleLivePreview(node, state); },
+  });
+  const edgeRadius = createMaskRangeRow({
+    label: "Edge Rad",
+    min: 0,
+    max: 32,
+    step: 0.1,
+    value: getWidgetValue(node, "edge_radius", 1),
+    decimals: 1,
+    onChange: (next) => { setWidgetValue(node, "edge_radius", next); scheduleLivePreview(node, state); },
+  });
+  const edgeStrength = createMaskRangeRow({
+    label: "Edge Gain",
+    min: 0,
+    max: 4,
+    step: 0.01,
+    value: getWidgetValue(node, "edge_strength", 1),
+    onChange: (next) => { setWidgetValue(node, "edge_strength", next); scheduleLivePreview(node, state); },
+  });
+  const radius = createMaskRangeRow({
+    label: "Radius",
+    min: 0,
+    max: 2,
+    step: 0.001,
+    value: getWidgetValue(node, "radius", 0.28),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "radius", next); scheduleLivePreview(node, state); },
+  });
+  const centerX = createMaskRangeRow({
+    label: "Center X",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "center_x", 0.5),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "center_x", next); scheduleLivePreview(node, state); },
+  });
+  const centerY = createMaskRangeRow({
+    label: "Center Y",
+    min: 0,
+    max: 1,
+    step: 0.001,
+    value: getWidgetValue(node, "center_y", 0.5),
+    decimals: 3,
+    onChange: (next) => { setWidgetValue(node, "center_y", next); scheduleLivePreview(node, state); },
+  });
+  const falloff = createMaskRangeRow({
+    label: "Falloff",
+    min: 0.05,
+    max: 6,
+    step: 0.01,
+    value: getWidgetValue(node, "falloff", 1),
+    onChange: (next) => { setWidgetValue(node, "falloff", next); scheduleLivePreview(node, state); },
+  });
+  const expandPixels = createMaskRangeRow({
+    label: "Expand",
+    min: -64,
+    max: 64,
+    step: 1,
+    value: getWidgetValue(node, "expand_pixels", 0),
+    decimals: 0,
+    onChange: (next) => { setWidgetValue(node, "expand_pixels", Math.round(next)); scheduleLivePreview(node, state); },
+  });
+  const blurRadius = createMaskRangeRow({
+    label: "Blur",
+    min: 0,
+    max: 64,
+    step: 0.1,
+    value: getWidgetValue(node, "blur_radius", 0),
+    decimals: 1,
+    onChange: (next) => { setWidgetValue(node, "blur_radius", next); scheduleLivePreview(node, state); },
+  });
+  const maskGamma = createMaskRangeRow({
+    label: "Gamma",
+    min: 0.1,
+    max: 4,
+    step: 0.01,
+    value: getWidgetValue(node, "mask_gamma", 1),
+    onChange: (next) => { setWidgetValue(node, "mask_gamma", next); scheduleLivePreview(node, state); },
+  });
+  const invertMask = createMaskToggleRow({
+    label: "Invert",
+    checked: !!getWidgetValue(node, "invert_mask", false),
+    onChange: (checked) => { setWidgetValue(node, "invert_mask", checked); scheduleLivePreview(node, state); },
+  });
+
+  [
+    mode, channel, threshold, softness, minValue, maxValue, hueCenter, hueWidth,
+    colorTolerance, targetR, targetG, targetB, edgeRadius, edgeStrength, centerX, centerY,
+    radius, falloff, expandPixels, blurRadius, maskGamma, invertMask,
+  ].forEach((control) => controls.appendChild(control.element));
+
+  const previewRoot = document.createElement("div");
+  previewRoot.style.cssText = [
+    "position:relative",
+    `flex:0 0 ${MASK_PREVIEW_HEIGHT}px`,
+    `min-height:${MASK_PREVIEW_HEIGHT}px`,
+    `max-height:${MASK_PREVIEW_HEIGHT}px`,
+    "overflow:hidden",
+    "border-radius:10px",
+    "border:1px solid var(--mkr-dark-label-highlight, #2e2e2e)",
+    "background:var(--mkr-dark-label, #1f1f1f)",
+    "box-sizing:border-box",
+    "touch-action:none",
+    "user-select:none",
+    `--mkr-accent-lime:${ACCENT_LIME}`,
+  ].join(";");
+
+  const checker = document.createElement("div");
+  checker.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "background-image:linear-gradient(45deg, rgba(44,44,44,0.52) 25%, transparent 25%, transparent 75%, rgba(44,44,44,0.52) 75%, rgba(44,44,44,0.52)),linear-gradient(45deg, rgba(44,44,44,0.52) 25%, transparent 25%, transparent 75%, rgba(44,44,44,0.52) 75%, rgba(44,44,44,0.52))",
+    "background-position:0 0, 8px 8px",
+    "background-size:16px 16px",
+  ].join(";");
+
+  const image = document.createElement("img");
+  image.alt = "Mask Preview";
+  image.draggable = false;
+  image.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "width:100%",
+    "height:100%",
+    "object-fit:contain",
+    "display:none",
+    "pointer-events:none",
+  ].join(";");
+
+  const badgeMask = document.createElement("div");
+  badgeMask.textContent = "MASK";
+  badgeMask.style.cssText = [
+    "position:absolute",
+    "top:8px",
+    "left:8px",
+    "height:16px",
+    "padding:0 10px",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "border-radius:8px",
+    "font:700 10px sans-serif",
+    "color:rgba(244,248,252,0.92)",
+    "background:var(--mkr-dark-label, #1f1f1f)",
+    "pointer-events:none",
+  ].join(";");
+
+  const badgeCoverage = document.createElement("div");
+  badgeCoverage.style.cssText = [
+    "position:absolute",
+    "top:8px",
+    "right:8px",
+    "height:16px",
+    "padding:0 10px",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "border-radius:8px",
+    "font:700 10px sans-serif",
+    "color:var(--mkr-accent-lime, #D2FD51)",
+    "background:var(--mkr-dark-label, #1f1f1f)",
+    "pointer-events:none",
+  ].join(";");
+  badgeCoverage.textContent = "";
+
+  const status = document.createElement("div");
+  status.style.cssText = [
+    "position:absolute",
+    "left:50%",
+    "top:50%",
+    "transform:translate(-50%, -50%)",
+    "font:600 12px sans-serif",
+    "color:rgba(244,244,244,0.92)",
+    "text-align:center",
+    "padding:8px 10px",
+    "background:var(--mkr-dark-label, #1f1f1f)",
+    "border-radius:8px",
+    "pointer-events:none",
+    "max-width:90%",
+    "white-space:normal",
+  ].join(";");
+  status.textContent = "Connect image input and tweak controls";
+
+  previewRoot.appendChild(checker);
+  previewRoot.appendChild(image);
+  previewRoot.appendChild(badgeMask);
+  previewRoot.appendChild(badgeCoverage);
+  previewRoot.appendChild(status);
+  root.appendChild(previewRoot);
+
+  state.dom = { root: previewRoot, image, status, badgeCoverage };
+
+  const widget = node.addDOMWidget?.(CONTROLS_WIDGET_NAME, "DOM", root, {
+    serialize: false,
+    hideOnZoom: false,
+    margin: 0,
+    getMinHeight: () => 290,
+    getMaxHeight: () => 360,
+  });
+  if (widget) widget.serialize = false;
+
+  state.controlsWidget = widget;
+  state.controlsDom = {
+    root,
+    mode,
+    channel,
+    threshold,
+    softness,
+    minValue,
+    maxValue,
+    hueCenter,
+    hueWidth,
+    colorTolerance,
+    targetR,
+    targetG,
+    targetB,
+    edgeRadius,
+    edgeStrength,
+    centerX,
+    centerY,
+    radius,
+    falloff,
+    expandPixels,
+    blurRadius,
+    maskGamma,
+    invertMask,
+    rows: [
+      mode,
+      channel,
+      threshold,
+      softness,
+      minValue,
+      maxValue,
+      hueCenter,
+      hueWidth,
+      colorTolerance,
+      targetR,
+      targetG,
+      targetB,
+      edgeRadius,
+      edgeStrength,
+      centerX,
+      centerY,
+      radius,
+      falloff,
+      expandPixels,
+      blurRadius,
+      maskGamma,
+      invertMask,
+    ],
+  };
+}
+
+function updateMaskControls(node, state) {
+  const mode = String(getWidgetValue(node, "mode", "luminance")).toLowerCase();
+  node.__mkrX1MaskLockedHeight = resolveMaskNodeHeightForMode(mode);
+  ensureMaskNodeShape(node);
+  syncMaskWidgetVisibility(node);
+  removeGeneratedInputs(node, HIDDEN_WIDGET_NAMES);
+  ensureControlsDom(node, state);
+  const dom = state.controlsDom;
+  if (!dom) return;
+
+  dom.mode.setValue(mode);
+  dom.channel.setValue(getWidgetValue(node, "channel", "luma"));
+  dom.threshold.setValue(getSanitizedMaskValue(node, "threshold", 0.5));
+  dom.softness.setValue(getSanitizedMaskValue(node, "softness", 0.08));
+  dom.minValue.setValue(getSanitizedMaskValue(node, "min_value", 0.2));
+  dom.maxValue.setValue(getSanitizedMaskValue(node, "max_value", 0.8));
+  dom.hueCenter.setValue(getSanitizedMaskValue(node, "hue_center", 120));
+  dom.hueWidth.setValue(getSanitizedMaskValue(node, "hue_width", 24));
+  dom.colorTolerance.setValue(getSanitizedMaskValue(node, "color_tolerance", 0.25));
+  dom.targetR.setValue(getSanitizedMaskValue(node, "target_r", 0));
+  dom.targetG.setValue(getSanitizedMaskValue(node, "target_g", 1));
+  dom.targetB.setValue(getSanitizedMaskValue(node, "target_b", 0));
+  dom.edgeRadius.setValue(getSanitizedMaskValue(node, "edge_radius", 1));
+  dom.edgeStrength.setValue(getSanitizedMaskValue(node, "edge_strength", 1));
+  dom.centerX.setValue(getSanitizedMaskValue(node, "center_x", 0.5));
+  dom.centerY.setValue(getSanitizedMaskValue(node, "center_y", 0.5));
+  dom.radius.setValue(getSanitizedMaskValue(node, "radius", 0.28));
+  dom.falloff.setValue(getSanitizedMaskValue(node, "falloff", 1));
+  dom.expandPixels.setValue(getSanitizedMaskValue(node, "expand_pixels", 0));
+  dom.blurRadius.setValue(getSanitizedMaskValue(node, "blur_radius", 0));
+  dom.maskGamma.setValue(getSanitizedMaskValue(node, "mask_gamma", 1));
+  dom.invertMask.setValue(!!getWidgetValue(node, "invert_mask", false));
+
+  dom.channel.setVisible(mode === "channel");
+  dom.threshold.setVisible(mode === "channel" || mode === "luminance" || mode === "edge" || mode === "skin_tones");
+  dom.minValue.setVisible(mode === "saturation" || mode === "value");
+  dom.maxValue.setVisible(mode === "saturation" || mode === "value");
+  dom.hueCenter.setVisible(mode === "hue");
+  dom.hueWidth.setVisible(mode === "hue");
+  dom.colorTolerance.setVisible(mode === "chroma_key");
+  dom.targetR.setVisible(mode === "chroma_key");
+  dom.targetG.setVisible(mode === "chroma_key");
+  dom.targetB.setVisible(mode === "chroma_key");
+  dom.edgeRadius.setVisible(mode === "edge");
+  dom.edgeStrength.setVisible(mode === "edge");
+  dom.centerX.setVisible(mode === "radial");
+  dom.centerY.setVisible(mode === "radial");
+  dom.radius.setVisible(mode === "radial");
+  dom.falloff.setVisible(mode === "radial");
+  node.__mkrX1MaskLockedHeight = LAYOUT_TOP + resolveMaskPanelHeight(state) + LAYOUT_BOTTOM;
+  ensureMaskNodeShape(node);
+  normalizeDomWidgetStack(node, state);
 }
 
 function smoothstep(edge0, edge1, x) {
@@ -834,25 +1910,25 @@ function readMaskParams(node) {
   return {
     mode: String(getWidgetValue(node, "mode", "luminance")).toLowerCase(),
     channel: String(getWidgetValue(node, "channel", "luma")).toLowerCase(),
-    threshold: numberValue(getWidgetValue(node, "threshold", 0.5), 0.5),
-    softness: numberValue(getWidgetValue(node, "softness", 0.08), 0.08),
-    minValue: numberValue(getWidgetValue(node, "min_value", 0.2), 0.2),
-    maxValue: numberValue(getWidgetValue(node, "max_value", 0.8), 0.8),
-    hueCenter: numberValue(getWidgetValue(node, "hue_center", 120.0), 120.0),
-    hueWidth: numberValue(getWidgetValue(node, "hue_width", 24.0), 24.0),
-    targetR: numberValue(getWidgetValue(node, "target_r", 0.0), 0.0),
-    targetG: numberValue(getWidgetValue(node, "target_g", 1.0), 1.0),
-    targetB: numberValue(getWidgetValue(node, "target_b", 0.0), 0.0),
-    colorTolerance: numberValue(getWidgetValue(node, "color_tolerance", 0.25), 0.25),
-    edgeRadius: numberValue(getWidgetValue(node, "edge_radius", 1.0), 1.0),
-    edgeStrength: numberValue(getWidgetValue(node, "edge_strength", 1.0), 1.0),
-    centerX: numberValue(getWidgetValue(node, "center_x", 0.5), 0.5),
-    centerY: numberValue(getWidgetValue(node, "center_y", 0.5), 0.5),
-    radius: numberValue(getWidgetValue(node, "radius", 0.28), 0.28),
-    falloff: numberValue(getWidgetValue(node, "falloff", 1.0), 1.0),
-    expandPixels: numberValue(getWidgetValue(node, "expand_pixels", 0), 0),
-    blurRadius: numberValue(getWidgetValue(node, "blur_radius", 0.0), 0.0),
-    maskGamma: numberValue(getWidgetValue(node, "mask_gamma", 1.0), 1.0),
+    threshold: numberValue(getSanitizedMaskValue(node, "threshold", 0.5), 0.5),
+    softness: numberValue(getSanitizedMaskValue(node, "softness", 0.08), 0.08),
+    minValue: numberValue(getSanitizedMaskValue(node, "min_value", 0.2), 0.2),
+    maxValue: numberValue(getSanitizedMaskValue(node, "max_value", 0.8), 0.8),
+    hueCenter: numberValue(getSanitizedMaskValue(node, "hue_center", 120.0), 120.0),
+    hueWidth: numberValue(getSanitizedMaskValue(node, "hue_width", 24.0), 24.0),
+    targetR: numberValue(getSanitizedMaskValue(node, "target_r", 0.0), 0.0),
+    targetG: numberValue(getSanitizedMaskValue(node, "target_g", 1.0), 1.0),
+    targetB: numberValue(getSanitizedMaskValue(node, "target_b", 0.0), 0.0),
+    colorTolerance: numberValue(getSanitizedMaskValue(node, "color_tolerance", 0.25), 0.25),
+    edgeRadius: numberValue(getSanitizedMaskValue(node, "edge_radius", 1.0), 1.0),
+    edgeStrength: numberValue(getSanitizedMaskValue(node, "edge_strength", 1.0), 1.0),
+    centerX: numberValue(getSanitizedMaskValue(node, "center_x", 0.5), 0.5),
+    centerY: numberValue(getSanitizedMaskValue(node, "center_y", 0.5), 0.5),
+    radius: numberValue(getSanitizedMaskValue(node, "radius", 0.28), 0.28),
+    falloff: numberValue(getSanitizedMaskValue(node, "falloff", 1.0), 1.0),
+    expandPixels: numberValue(getSanitizedMaskValue(node, "expand_pixels", 0), 0),
+    blurRadius: numberValue(getSanitizedMaskValue(node, "blur_radius", 0.0), 0.0),
+    maskGamma: numberValue(getSanitizedMaskValue(node, "mask_gamma", 1.0), 1.0),
     invertMask: boolValue(getWidgetValue(node, "invert_mask", false), false),
   };
 }
@@ -1132,11 +2208,12 @@ function scheduleLivePreview(node, state) {
 }
 
 function widgetSignature(node) {
-  if (!Array.isArray(node?.widgets)) return "";
+  const widgets = Array.isArray(node?.widgets) ? node.widgets : [];
+  if (!widgets.length) return "";
   const parts = [];
-  for (const widget of node.widgets) {
+  for (const widget of widgets) {
     const name = String(widget?.name || "");
-    if (!name || name === DOM_WIDGET_NAME) continue;
+    if (!name || name === DOM_WIDGET_NAME || name === CONTROLS_WIDGET_NAME) continue;
     const value = widget?.value;
     parts.push(`${name}=${typeof value === "object" ? JSON.stringify(value) : String(value)}`);
   }
@@ -1146,13 +2223,14 @@ function widgetSignature(node) {
 function wrapWidgetCallbacks(node, state) {
   for (const widget of node.widgets || []) {
     const name = String(widget?.name || "");
-    if (!name || name === DOM_WIDGET_NAME) continue;
+    if (!name || name === DOM_WIDGET_NAME || name === CONTROLS_WIDGET_NAME) continue;
     if (widget.__mkrX1MaskWrapped) continue;
     const original = widget.callback;
     widget.callback = function wrappedCallback() {
       if (typeof original === "function") {
         original.apply(this, arguments);
       }
+      updateMaskControls(node, state);
       scheduleLivePreview(node, state);
     };
     widget.__mkrX1MaskWrapped = true;
@@ -1179,6 +2257,7 @@ function ensureCanvasHooks(node, state) {
 
   const originalDraw = node.onDrawForeground;
   node.onDrawForeground = function onDrawForeground(ctx) {
+    ensureMaskNodeShape(this);
     if (typeof originalDraw === "function") {
       originalDraw.apply(this, arguments);
     }
@@ -1193,29 +2272,66 @@ function ensureMaskUI(node) {
   migrateRuntime(node);
   if (node.__mkrX1MaskUIAttached) return;
   node.__mkrX1MaskUIAttached = true;
-  node.resizable = true;
-
-  if (!Array.isArray(node.size) || node.size.length < 2) {
-    node.size = [DEFAULT_W, DEFAULT_H];
-  }
-  node.size[0] = Math.max(DEFAULT_W, Number(node.size[0] || DEFAULT_W));
-  node.size[1] = Math.max(DEFAULT_H, Number(node.size[1] || DEFAULT_H));
+  ensureMaskNodeShape(node);
 
   const state = ensureState(node);
   if (typeof node.addDOMWidget === "function") {
+    ensureControlsDom(node, state);
     createDomState(node, state);
   }
 
+  updateMaskControls(node, state);
   normalizeDomWidgetStack(node, state);
   wrapWidgetCallbacks(node, state);
   state.widgetSig = `${widgetSignature(node)}|image=${resolveLinkedImageSource(node, "image").signature}`;
   ensureCanvasHooks(node, state);
+
+  const isHiddenBackendWidget = (widget) => {
+    const name = String(widget?.name || "");
+    if (!name) return false;
+    if (name === CONTROLS_WIDGET_NAME || name === DOM_WIDGET_NAME) return false;
+    return HIDDEN_WIDGET_NAMES.includes(name) || widget?.hidden === true || widget?.type === "hidden";
+  };
+
+  if (!node.__mkrX1MaskWidgetHitPatched) {
+    node.__mkrX1MaskWidgetHitPatched = true;
+
+    const originalGetWidgetOnPos = typeof node.getWidgetOnPos === "function" ? node.getWidgetOnPos : null;
+    if (originalGetWidgetOnPos) {
+      node.getWidgetOnPos = function getWidgetOnPosMasked() {
+        const widget = originalGetWidgetOnPos.apply(this, arguments);
+        return isHiddenBackendWidget(widget) ? null : widget;
+      };
+    }
+
+    const originalGetWidgetAtPos = typeof node.getWidgetAtPos === "function" ? node.getWidgetAtPos : null;
+    if (originalGetWidgetAtPos) {
+      node.getWidgetAtPos = function getWidgetAtPosMasked() {
+        const widget = originalGetWidgetAtPos.apply(this, arguments);
+        return isHiddenBackendWidget(widget) ? null : widget;
+      };
+    }
+
+    const originalMouseDown = typeof node.onMouseDown === "function" ? node.onMouseDown : null;
+    node.onMouseDown = function onMouseDownMasked() {
+      const hitOnPos = originalGetWidgetOnPos?.apply(this, arguments);
+      if (isHiddenBackendWidget(hitOnPos)) {
+        return true;
+      }
+      const hitAtPos = originalGetWidgetAtPos?.apply(this, arguments);
+      if (isHiddenBackendWidget(hitAtPos)) {
+        return true;
+      }
+      return originalMouseDown?.apply(this, arguments) ?? false;
+    };
+  }
 
   const originalExecuted = node.onExecuted;
   node.onExecuted = function onExecuted(message) {
     if (typeof originalExecuted === "function") {
       originalExecuted.apply(this, arguments);
     }
+    ensureMaskNodeShape(this);
     applyOutputMessage(this, state, message || {});
   };
 
@@ -1227,6 +2343,7 @@ function ensureMaskUI(node) {
     state.sourceImage = null;
     state.sourceSrc = "";
     state.sourceSig = "";
+    updateMaskControls(this, state);
     wrapWidgetCallbacks(this, state);
     scheduleLivePreview(this, state);
   };
@@ -1236,6 +2353,8 @@ function ensureMaskUI(node) {
     if (typeof originalConfigure === "function") {
       originalConfigure.apply(this, arguments);
     }
+    ensureMaskNodeShape(this);
+    updateMaskControls(this, state);
     wrapWidgetCallbacks(this, state);
     scheduleLivePreview(this, state);
   };
@@ -1245,12 +2364,15 @@ function ensureMaskUI(node) {
     if (typeof originalResize === "function") {
       originalResize.apply(this, arguments);
     }
+    ensureMaskNodeShape(this);
+    updateMaskControls(this, state);
     updateDomVisuals(this, state);
     queueRedraw(this);
   };
 
   if (!state.pollTimer) {
     state.pollTimer = setInterval(() => {
+      ensureMaskNodeShape(node);
       const inputSig = resolveLinkedImageSource(node, "image").signature;
       const next = `${widgetSignature(node)}|image=${inputSig}`;
       if (next !== state.widgetSig) {

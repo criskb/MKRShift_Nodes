@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 
-from ..categories import FX_PHOTO
+from ..categories import FX_COMPOSITE
 from ..lib.layer_stack_shared import composite_single_layer, fit_image_batch_to_rgba, fit_optional_mask
 from ..lib.image_shared import to_image_batch
 
@@ -53,7 +53,7 @@ class MKRLayerStackComposite:
     RETURN_TYPES = ("IMAGE", "MASK", "STRING")
     RETURN_NAMES = ("image", "combined_mask", "layer_info")
     FUNCTION = "composite"
-    CATEGORY = FX_PHOTO
+    CATEGORY = FX_COMPOSITE
 
     def composite(
         self,

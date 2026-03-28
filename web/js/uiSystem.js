@@ -51,6 +51,25 @@ export function ensureMkrUIStyles() {
       box-sizing: border-box;
     }
 
+    .mkr-seamless-panel {
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: hidden;
+      padding: 4px 4px 10px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: #eef1f4;
+      font-family: "Segoe UI", "SF Pro Display", "Helvetica Neue", sans-serif;
+      box-sizing: border-box;
+    }
+
     .mkr-header {
       margin-bottom: 10px;
       padding: 8px 10px;
@@ -298,13 +317,16 @@ export function ensureMkrUIStyles() {
   document.head.appendChild(style);
 }
 
-export function createPanelShell({ kicker, title, subtitle }) {
+export function createPanelShell({ kicker, title, subtitle, showHeader = true }) {
   const panel = el("div", "mkr-panel");
-  const header = el("div", "mkr-header");
-  header.appendChild(el("div", "mkr-kicker", kicker));
-  header.appendChild(el("h3", "mkr-title", title));
-  if (subtitle) header.appendChild(el("p", "mkr-subtitle", subtitle));
-  panel.appendChild(header);
+  let header = null;
+  if (showHeader) {
+    header = el("div", "mkr-header");
+    header.appendChild(el("div", "mkr-kicker", kicker));
+    header.appendChild(el("h3", "mkr-title", title));
+    if (subtitle) header.appendChild(el("p", "mkr-subtitle", subtitle));
+    panel.appendChild(header);
+  }
   return { panel, header };
 }
 

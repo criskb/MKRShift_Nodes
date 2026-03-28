@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 import numpy as np
@@ -15,6 +16,7 @@ from ..lib.procedural_texture_shared import (
     procedural_weave_pattern,
     shape_scalar_field,
 )
+from ..lib.settings_bundle import parse_settings_payload
 from ..lib.scalar_map_shared import blur_single_channel, mask_tensor_to_np
 from ..lib.texture_shared import cross_seam_mask, edge_match_low_frequency, roll_image_np, smooth_seams, tile_grid_mask
 
@@ -40,7 +42,7 @@ def _resolve_offset_pixels(h: int, w: int, mode: str, offset_x: float, offset_y:
     return int(round(float(offset_y) * float(h))), int(round(float(offset_x) * float(w)))
 
 
-def _offset_seam_mask(h: int, w: int, shift_y: int, shift_x: int, seam_width: float) -> np.ndarray:
+def _offset_seam_mask(h: int, w: int, shift_y: int, shift_x: int, seam_width: float, seam_softness: float) -> np.ndarray:
     seam_x = None if int(shift_x) % max(1, int(w)) == 0 else float(int(shift_x) % int(w))
     seam_y = None if int(shift_y) % max(1, int(h)) == 0 else float(int(shift_y) % int(h))
     return cross_seam_mask(
@@ -49,7 +51,7 @@ def _offset_seam_mask(h: int, w: int, shift_y: int, shift_x: int, seam_width: fl
         seam_x=seam_x,
         seam_y=seam_y,
         half_width=float(max(0.0, seam_width)),
-        softness=float(max(0.0, seam_width) * 0.5),
+        softness=float(max(0.0, seam_softness)),
     )
 
 
@@ -116,6 +118,7 @@ def _delight_rgb(
     detail_preserve: float,
     shadow_lift: float,
     highlight_compress: float,
+    saturation_restore: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     h, s, v = rgb_to_hsv_np(rgb)
     light_field = blur_single_channel(v, radius=blur_radius)
@@ -150,9 +153,20 @@ def _delight_rgb(
     ).astype(np.float32, copy=False)
 
     effect = np.clip(effect_mask, 0.0, 1.0).astype(np.float32, copy=False)
+    sat_restore = float(np.clip(saturation_restore, 0.0, 1.0))
+    sat_gain = np.clip(
+        1.0 + ((shadow_weight * 0.18) + (highlight_weight * 0.08)) * sat_restore,
+        0.55,
+        1.4,
+    ).astype(np.float32, copy=False)
+    corrected_s = np.clip(s * sat_gain, 0.0, 1.0).astype(np.float32, copy=False)
+    blended_s = ((s * (1.0 - effect)) + (corrected_s * effect)).astype(np.float32, copy=False)
     blended_v = ((v * (1.0 - effect)) + (final_v * effect)).astype(np.float32, copy=False)
-    adjustment_mask = np.clip(np.abs(blended_v - v) * 2.5, 0.0, 1.0).astype(np.float32, copy=False)
-    return hsv_to_rgb_np(h, s, blended_v), adjustment_mask
+    adjustment_mask = np.clip((np.abs(blended_v - v) * 2.25) + (np.abs(blended_s - s) * 0.85), 0.0, 1.0).astype(
+        np.float32,
+        copy=False,
+    )
+    return hsv_to_rgb_np(h, blended_s, blended_v), adjustment_mask
 
 
 def _albedo_safe_rgb(
@@ -162,6 +176,7 @@ def _albedo_safe_rgb(
     saturation_limit: float,
     shadow_lift: float,
     highlight_rolloff: float,
+    midtone_preserve: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     src = np.clip(rgb[..., :3], 0.0, 1.0).astype(np.float32, copy=False)
     h, s, v = rgb_to_hsv_np(src)
@@ -201,6 +216,14 @@ def _albedo_safe_rgb(
     max_channel = np.maximum(np.max(hue_preserved, axis=-1, keepdims=True), 1e-6)
     hue_preserved = np.where(max_channel > 1.0, hue_preserved / max_channel, hue_preserved).astype(np.float32, copy=False)
     safe_rgb = hue_preserved
+    preserve = float(np.clip(midtone_preserve, 0.0, 1.0))
+    if preserve > 1e-6:
+        midtone_gate = np.clip(1.0 - (np.abs(v - 0.5) / 0.5), 0.0, 1.0).astype(np.float32, copy=False)
+        preserve_mix = np.clip(midtone_gate * preserve, 0.0, 1.0).astype(np.float32, copy=False)
+        safe_rgb = np.clip((safe_rgb * (1.0 - preserve_mix[..., None])) + (src * preserve_mix[..., None]), 0.0, 1.0).astype(
+            np.float32,
+            copy=False,
+        )
     adjustment_mask = np.clip(np.mean(np.abs(safe_rgb - src), axis=-1) * 7.0, 0.0, 1.0).astype(np.float32, copy=False)
     return safe_rgb, adjustment_mask
 
@@ -237,6 +260,7 @@ def _macro_variation_rgb(
     macro_scale_px: float,
     strength: float,
     hue_variation: float,
+    saturation_variation: float,
     value_variation: float,
     contrast_variation: float,
     seed: int,
@@ -244,7 +268,7 @@ def _macro_variation_rgb(
     h_px, w_px = rgb.shape[:2]
     field = _macro_variation_field(h=int(h_px), w=int(w_px), macro_scale_px=macro_scale_px, seed=seed)
     field = blur_single_channel(field, radius=max(1.0, float(macro_scale_px) * 0.08))
-    centered = np.clip(((field * 2.0) - 1.0) * 1.25, -1.0, 1.0).astype(np.float32, copy=False)
+    centered = np.clip(((field * 2.0) - 1.0) * 1.45, -1.0, 1.0).astype(np.float32, copy=False)
     amt = float(np.clip(strength, 0.0, 1.0))
 
     contrasted = np.clip(
@@ -254,6 +278,10 @@ def _macro_variation_rgb(
     ).astype(np.float32, copy=False)
     h, s, v = rgb_to_hsv_np(contrasted)
     h = np.mod(h + (centered * float(max(0.0, hue_variation)) * amt), 1.0).astype(np.float32, copy=False)
+    s = np.clip(s * (1.0 + (centered * float(max(0.0, saturation_variation)) * amt)), 0.0, 1.0).astype(
+        np.float32,
+        copy=False,
+    )
     v = np.clip(v * (1.0 + (centered * float(max(0.0, value_variation)) * amt)), 0.0, 1.0).astype(
         np.float32,
         copy=False,
@@ -268,6 +296,7 @@ def _detile_blend_rgb(
     blend_strength: float,
     color_match_blur: float,
     detail_preserve: float,
+    variation_breakup: float,
     seed: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     h_px, w_px = rgb.shape[:2]
@@ -278,6 +307,16 @@ def _detile_blend_rgb(
     field = _macro_variation_field(h=int(h_px), w=int(w_px), macro_scale_px=macro_scale_px, seed=seed)
     field = blur_single_channel(field, radius=max(1.0, float(macro_scale_px) * 0.08))
     mix = smoothstep_np(0.28, 0.72, field).astype(np.float32, copy=False)
+    breakup = float(np.clip(variation_breakup, 0.0, 1.0))
+    if breakup > 1e-6:
+        breakup_field = _macro_variation_field(
+            h=int(h_px),
+            w=int(w_px),
+            macro_scale_px=max(16.0, float(macro_scale_px) * 0.72),
+            seed=int(seed) + 19,
+        )
+        breakup_field = blur_single_channel(breakup_field, radius=max(1.0, float(macro_scale_px) * 0.04))
+        mix = np.clip(mix + (((breakup_field * 2.0) - 1.0) * breakup * 0.24), 0.0, 1.0).astype(np.float32, copy=False)
     amt = float(np.clip(blend_strength, 0.0, 1.0))
     mix = np.clip(mix * amt, 0.0, 1.0).astype(np.float32, copy=False)
 
@@ -314,15 +353,28 @@ def _detile_blend_rgb(
 
 
 class x1TextureOffset:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "mode": "half_tile",
+            "offset_x": 0.5,
+            "offset_y": 0.5,
+            "seam_width": 6.0,
+            "seam_softness": 3.0,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "mode": (["half_tile", "fraction", "pixels"],),
-                "offset_x": ("FLOAT", {"default": 0.5, "min": -4096.0, "max": 4096.0, "step": 0.01}),
-                "offset_y": ("FLOAT", {"default": 0.5, "min": -4096.0, "max": 4096.0, "step": 0.01}),
-                "seam_width": ("FLOAT", {"default": 6.0, "min": 0.0, "max": 256.0, "step": 0.5}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
         }
 
@@ -334,27 +386,52 @@ class x1TextureOffset:
     def run(
         self,
         image: torch.Tensor,
-        mode: str = "half_tile",
-        offset_x: float = 0.5,
-        offset_y: float = 0.5,
-        seam_width: float = 6.0,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "offset_x": {"min": -4096.0, "max": 4096.0},
+                "offset_y": {"min": -4096.0, "max": 4096.0},
+                "seam_width": {"min": 0.0, "max": 256.0},
+                "seam_softness": {"min": 0.0, "max": 256.0},
+            },
+            legacy=legacy_settings,
+        )
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
         out_np = np.empty_like(src_np)
         mask_np = np.zeros((int(b), int(h), int(w)), dtype=np.float32)
 
-        shift_y, shift_x = _resolve_offset_pixels(int(h), int(w), mode, offset_x, offset_y)
-        seam_mask = _offset_seam_mask(int(h), int(w), shift_y, shift_x, seam_width)
+        mode = str(settings["mode"]).lower()
+        if mode not in {"half_tile", "fraction", "pixels"}:
+            mode = "half_tile"
+        shift_y, shift_x = _resolve_offset_pixels(int(h), int(w), mode, settings["offset_x"], settings["offset_y"])
+        seam_mask = _offset_seam_mask(
+            int(h),
+            int(w),
+            shift_y,
+            shift_x,
+            float(max(0.0, settings["seam_width"])),
+            float(max(0.0, settings["seam_softness"])),
+        )
 
         for idx in range(int(b)):
             out_np[idx] = roll_image_np(src_np[idx], shift_y=shift_y, shift_x=shift_x)
             mask_np[idx] = seam_mask
 
         info = (
-            "x1TextureOffset: mode={}, shift_x={}px, shift_y={}px, seam_width={:.1f}px"
-        ).format(str(mode).lower(), int(shift_x), int(shift_y), float(max(0.0, seam_width)))
+            "x1TextureOffset: mode={}, shift_x={}px, shift_y={}px, seam_width={:.1f}px, seam_softness={:.1f}px"
+        ).format(
+            mode,
+            int(shift_x),
+            int(shift_y),
+            float(max(0.0, settings["seam_width"])),
+            float(max(0.0, settings["seam_softness"])),
+        )
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
             torch.from_numpy(mask_np).to(device=batch.device, dtype=batch.dtype),
@@ -363,16 +440,29 @@ class x1TextureOffset:
 
 
 class x1TextureSeamless:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "blend_width": 24.0,
+            "edge_match_strength": 0.85,
+            "edge_match_blur": 18.0,
+            "detail_preserve": 0.65,
+            "seam_blur": 12.0,
+            "seam_softness": 12.0,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "blend_width": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 512.0, "step": 0.5}),
-                "edge_match_strength": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "edge_match_blur": ("FLOAT", {"default": 18.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "detail_preserve": ("FLOAT", {"default": 0.65, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "seam_blur": ("FLOAT", {"default": 12.0, "min": 0.0, "max": 256.0, "step": 0.5}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
         }
 
@@ -384,12 +474,22 @@ class x1TextureSeamless:
     def run(
         self,
         image: torch.Tensor,
-        blend_width: float = 24.0,
-        edge_match_strength: float = 0.85,
-        edge_match_blur: float = 18.0,
-        detail_preserve: float = 0.65,
-        seam_blur: float = 12.0,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "blend_width": {"min": 1.0, "max": 512.0},
+                "edge_match_strength": {"min": 0.0, "max": 1.0},
+                "edge_match_blur": {"min": 0.0, "max": 256.0},
+                "detail_preserve": {"min": 0.0, "max": 1.0},
+                "seam_blur": {"min": 0.0, "max": 256.0},
+                "seam_softness": {"min": 0.5, "max": 256.0},
+            },
+            legacy=legacy_settings,
+        )
         batch = to_image_batch(image)
         b, h, w, c = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -398,7 +498,7 @@ class x1TextureSeamless:
 
         shift_y = int(h // 2)
         shift_x = int(w // 2)
-        bw = float(max(1.0, blend_width))
+        bw = float(max(1.0, settings["blend_width"]))
         edge_band = max(1, int(round(bw)))
         seam_mask_center = cross_seam_mask(
             h=int(h),
@@ -406,7 +506,7 @@ class x1TextureSeamless:
             seam_x=float(shift_x),
             seam_y=float(shift_y),
             half_width=bw,
-            softness=max(1.0, bw * 0.5),
+            softness=float(max(0.5, settings["seam_softness"])),
         )
         seam_mask_output = roll_image_np(seam_mask_center, shift_y=-shift_y, shift_x=-shift_x)
 
@@ -414,32 +514,32 @@ class x1TextureSeamless:
             sample = src_np[idx]
             rgb = edge_match_low_frequency(
                 image=sample[..., :3],
-                blur_radius=float(max(0.0, edge_match_blur)),
+                blur_radius=float(max(0.0, settings["edge_match_blur"])),
                 edge_band=edge_band,
-                strength=float(np.clip(edge_match_strength, 0.0, 1.0)),
+                strength=float(np.clip(settings["edge_match_strength"], 0.0, 1.0)),
             )
             rgb = roll_image_np(rgb, shift_y=shift_y, shift_x=shift_x)
             rgb = smooth_seams(
                 image=rgb,
                 seam_mask=seam_mask_center,
-                blur_radius=float(max(0.0, seam_blur)),
-                detail_preserve=float(np.clip(detail_preserve, 0.0, 1.0)),
+                blur_radius=float(max(0.0, settings["seam_blur"])),
+                detail_preserve=float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
             )
             rgb = roll_image_np(rgb, shift_y=-shift_y, shift_x=-shift_x)
 
             if c == 4:
                 alpha = edge_match_low_frequency(
                     image=sample[..., 3],
-                    blur_radius=float(max(0.0, edge_match_blur)),
+                    blur_radius=float(max(0.0, settings["edge_match_blur"])),
                     edge_band=edge_band,
-                    strength=float(np.clip(edge_match_strength, 0.0, 1.0)),
+                    strength=float(np.clip(settings["edge_match_strength"], 0.0, 1.0)),
                 )
                 alpha = roll_image_np(alpha, shift_y=shift_y, shift_x=shift_x)
                 alpha = smooth_seams(
                     image=alpha,
                     seam_mask=seam_mask_center,
-                    blur_radius=float(max(0.0, seam_blur)),
-                    detail_preserve=float(np.clip(detail_preserve, 0.0, 1.0)),
+                    blur_radius=float(max(0.0, settings["seam_blur"])),
+                    detail_preserve=float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
                 )
                 alpha = roll_image_np(alpha, shift_y=-shift_y, shift_x=-shift_x)
                 out_np[idx] = np.concatenate([rgb, alpha[..., None]], axis=-1).astype(np.float32, copy=False)
@@ -449,13 +549,14 @@ class x1TextureSeamless:
 
         info = (
             "x1TextureSeamless: blend_width={:.1f}px, edge_match_strength={:.2f}, edge_match_blur={:.1f}px, "
-            "detail_preserve={:.2f}, seam_blur={:.1f}px"
+            "detail_preserve={:.2f}, seam_blur={:.1f}px, seam_softness={:.1f}px"
         ).format(
             bw,
-            float(np.clip(edge_match_strength, 0.0, 1.0)),
-            float(max(0.0, edge_match_blur)),
-            float(np.clip(detail_preserve, 0.0, 1.0)),
-            float(max(0.0, seam_blur)),
+            float(np.clip(settings["edge_match_strength"], 0.0, 1.0)),
+            float(max(0.0, settings["edge_match_blur"])),
+            float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
+            float(max(0.0, settings["seam_blur"])),
+            float(max(0.5, settings["seam_softness"])),
         )
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
@@ -465,16 +566,29 @@ class x1TextureSeamless:
 
 
 class x1TextureTilePreview:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "tiles_x": 3,
+            "tiles_y": 3,
+            "show_seams": True,
+            "seam_width": 2.0,
+            "seam_opacity": 0.65,
+            "seam_softness": 1.0,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "tiles_x": ("INT", {"default": 3, "min": 1, "max": 8, "step": 1}),
-                "tiles_y": ("INT", {"default": 3, "min": 1, "max": 8, "step": 1}),
-                "show_seams": ("BOOLEAN", {"default": True}),
-                "seam_width": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 32.0, "step": 0.5}),
-                "seam_opacity": ("FLOAT", {"default": 0.65, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
         }
 
@@ -486,32 +600,47 @@ class x1TextureTilePreview:
     def run(
         self,
         image: torch.Tensor,
-        tiles_x: int = 3,
-        tiles_y: int = 3,
-        show_seams: bool = True,
-        seam_width: float = 2.0,
-        seam_opacity: float = 0.65,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "tiles_x": {"min": 1, "max": 8, "integer": True},
+                "tiles_y": {"min": 1, "max": 8, "integer": True},
+                "seam_width": {"min": 0.0, "max": 32.0},
+                "seam_opacity": {"min": 0.0, "max": 1.0},
+                "seam_softness": {"min": 0.0, "max": 32.0},
+            },
+            boolean_keys={"show_seams"},
+            legacy=legacy_settings,
+        )
         batch = to_image_batch(image)
         b, h, w, c = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
 
         out_samples: list[np.ndarray] = []
         mask_samples: list[np.ndarray] = []
-        tiled_h = int(h) * int(max(1, tiles_y))
-        tiled_w = int(w) * int(max(1, tiles_x))
+        tiles_x = int(max(1, settings["tiles_x"]))
+        tiles_y = int(max(1, settings["tiles_y"]))
+        seam_width = float(max(0.0, settings["seam_width"]))
+        seam_opacity = float(np.clip(settings["seam_opacity"], 0.0, 1.0))
+        seam_softness = float(max(0.0, settings["seam_softness"]))
+        tiled_h = int(h) * tiles_y
+        tiled_w = int(w) * tiles_x
         seam_mask = tile_grid_mask(
             h=tiled_h,
             w=tiled_w,
-            tiles_y=int(max(1, tiles_y)),
-            tiles_x=int(max(1, tiles_x)),
-            half_width=float(max(0.0, seam_width)),
-            softness=max(0.5, float(max(0.0, seam_width)) * 0.5),
+            tiles_y=tiles_y,
+            tiles_x=tiles_x,
+            half_width=seam_width,
+            softness=max(0.5, seam_softness),
         )
 
         for idx in range(int(b)):
-            tiled = _tile_image_np(src_np[idx], tiles_y=int(tiles_y), tiles_x=int(tiles_x))
-            if bool(show_seams):
+            tiled = _tile_image_np(src_np[idx], tiles_y=tiles_y, tiles_x=tiles_x)
+            if bool(settings["show_seams"]):
                 rgb = _overlay_seams(tiled[..., :3], seam_mask=seam_mask, opacity=seam_opacity)
                 if c == 4:
                     tiled = np.concatenate([rgb, tiled[..., 3:4]], axis=-1).astype(np.float32, copy=False)
@@ -523,13 +652,14 @@ class x1TextureTilePreview:
         out_np = np.stack(out_samples, axis=0).astype(np.float32, copy=False)
         mask_np = np.stack(mask_samples, axis=0).astype(np.float32, copy=False)
         info = (
-            "x1TextureTilePreview: tiles_x={}, tiles_y={}, seam_width={:.1f}px, show_seams={}, seam_opacity={:.2f}"
+            "x1TextureTilePreview: tiles_x={}, tiles_y={}, seam_width={:.1f}px, seam_softness={:.1f}px, show_seams={}, seam_opacity={:.2f}"
         ).format(
-            int(max(1, tiles_x)),
-            int(max(1, tiles_y)),
-            float(max(0.0, seam_width)),
-            bool(show_seams),
-            float(np.clip(seam_opacity, 0.0, 1.0)),
+            tiles_x,
+            tiles_y,
+            seam_width,
+            seam_softness,
+            bool(settings["show_seams"]),
+            seam_opacity,
         )
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
@@ -539,15 +669,27 @@ class x1TextureTilePreview:
 
 
 class x1TextureEdgePad:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "source_mode": "alpha",
+            "pad_pixels": 16,
+            "alpha_threshold": 0.01,
+            "expand_alpha": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "source_mode": (["alpha", "mask", "luma_nonzero"],),
-                "pad_pixels": ("INT", {"default": 16, "min": 1, "max": 512, "step": 1}),
-                "alpha_threshold": ("FLOAT", {"default": 0.01, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "expand_alpha": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "source_mask": ("MASK",),
@@ -562,21 +704,31 @@ class x1TextureEdgePad:
     def run(
         self,
         image: torch.Tensor,
-        source_mode: str = "alpha",
-        pad_pixels: int = 16,
-        alpha_threshold: float = 0.01,
-        expand_alpha: bool = False,
+        settings_json: str = "{}",
         source_mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "pad_pixels": {"min": 1, "max": 512, "integer": True},
+                "alpha_threshold": {"min": 0.0, "max": 1.0},
+            },
+            boolean_keys={"expand_alpha"},
+            legacy=legacy_settings,
+        )
         batch = to_image_batch(image)
         b, h, w, c = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
         out_np = np.empty_like(src_np)
         fill_mask_np = np.zeros((int(b), int(h), int(w)), dtype=np.float32)
         source_mask_np = mask_tensor_to_np(source_mask, int(b), int(h), int(w)) if torch.is_tensor(source_mask) else None
-        threshold = float(np.clip(alpha_threshold, 0.0, 1.0))
+        threshold = float(np.clip(settings["alpha_threshold"], 0.0, 1.0))
 
-        resolved_source = str(source_mode).lower()
+        resolved_source = str(settings["source_mode"]).lower()
+        if resolved_source not in {"alpha", "mask", "luma_nonzero"}:
+            resolved_source = "alpha"
         for idx in range(int(b)):
             sample = src_np[idx]
             rgb = sample[..., :3]
@@ -590,12 +742,12 @@ class x1TextureEdgePad:
                 valid = luma_np(rgb) > threshold
                 resolved = "luma_nonzero"
 
-            padded_rgb, fill_mask = _edge_pad_rgb(rgb, valid, int(max(1, pad_pixels)))
+            padded_rgb, fill_mask = _edge_pad_rgb(rgb, valid, int(max(1, settings["pad_pixels"])))
             fill_mask_np[idx] = fill_mask
 
             if c == 4:
                 alpha = sample[..., 3:4]
-                if bool(expand_alpha):
+                if bool(settings["expand_alpha"]):
                     alpha = np.maximum(alpha, fill_mask[..., None]).astype(np.float32, copy=False)
                 out_np[idx] = np.concatenate([padded_rgb, alpha], axis=-1).astype(np.float32, copy=False)
             else:
@@ -604,7 +756,7 @@ class x1TextureEdgePad:
 
         info = (
             "x1TextureEdgePad: source_mode={}, pad_pixels={}, alpha_threshold={:.3f}, expand_alpha={}"
-        ).format(resolved_source, int(max(1, pad_pixels)), threshold, bool(expand_alpha))
+        ).format(resolved_source, int(max(1, settings["pad_pixels"])), threshold, bool(settings["expand_alpha"]))
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
             torch.from_numpy(fill_mask_np).to(device=batch.device, dtype=batch.dtype),
@@ -613,18 +765,31 @@ class x1TextureEdgePad:
 
 
 class x1TextureDelight:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "blur_radius": 32.0,
+            "flatten_strength": 0.85,
+            "detail_preserve": 0.8,
+            "shadow_lift": 0.3,
+            "highlight_compress": 0.2,
+            "saturation_restore": 0.18,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "blur_radius": ("FLOAT", {"default": 32.0, "min": 1.0, "max": 512.0, "step": 0.5}),
-                "flatten_strength": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "detail_preserve": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "shadow_lift": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "highlight_compress": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -639,15 +804,25 @@ class x1TextureDelight:
     def run(
         self,
         image: torch.Tensor,
-        blur_radius: float = 32.0,
-        flatten_strength: float = 0.85,
-        detail_preserve: float = 0.8,
-        shadow_lift: float = 0.3,
-        highlight_compress: float = 0.2,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "blur_radius": {"min": 1.0, "max": 512.0},
+                "flatten_strength": {"min": 0.0, "max": 2.0},
+                "detail_preserve": {"min": 0.0, "max": 1.0},
+                "shadow_lift": {"min": 0.0, "max": 2.0},
+                "highlight_compress": {"min": 0.0, "max": 2.0},
+                "saturation_restore": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
         batch = to_image_batch(image)
         b, h, w, c = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -659,8 +834,8 @@ class x1TextureDelight:
             batch=int(b),
             h=int(h),
             w=int(w),
-            feather_radius=float(max(0.0, mask_feather)),
-            invert_mask=bool(invert_mask),
+            feather_radius=float(max(0.0, settings["mask_feather"])),
+            invert_mask=bool(settings["invert_mask"]),
             device=batch.device,
             dtype=batch.dtype,
         )
@@ -672,11 +847,12 @@ class x1TextureDelight:
             delighted_rgb, adjustment_mask = _delight_rgb(
                 rgb=sample[..., :3],
                 effect_mask=effect_mask_np[idx],
-                blur_radius=float(max(1.0, blur_radius)),
-                flatten_strength=float(max(0.0, flatten_strength)),
-                detail_preserve=float(np.clip(detail_preserve, 0.0, 1.0)),
-                shadow_lift=float(max(0.0, shadow_lift)),
-                highlight_compress=float(max(0.0, highlight_compress)),
+                blur_radius=float(max(1.0, settings["blur_radius"])),
+                flatten_strength=float(max(0.0, settings["flatten_strength"])),
+                detail_preserve=float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
+                shadow_lift=float(max(0.0, settings["shadow_lift"])),
+                highlight_compress=float(max(0.0, settings["highlight_compress"])),
+                saturation_restore=float(np.clip(settings["saturation_restore"], 0.0, 1.0)),
             )
             adjustment_mask_np[idx] = adjustment_mask
             if c == 4:
@@ -686,16 +862,18 @@ class x1TextureDelight:
 
         info = (
             "x1TextureDelight: blur_radius={:.1f}px, flatten_strength={:.2f}, detail_preserve={:.2f}, "
-            "shadow_lift={:.2f}, highlight_compress={:.2f}, mask_feather={:.1f}px, mask_coverage={:.2f}%{}"
+            "shadow_lift={:.2f}, highlight_compress={:.2f}, saturation_restore={:.2f}, "
+            "mask_feather={:.1f}px, mask_coverage={:.2f}%{}"
         ).format(
-            float(max(1.0, blur_radius)),
-            float(max(0.0, flatten_strength)),
-            float(np.clip(detail_preserve, 0.0, 1.0)),
-            float(max(0.0, shadow_lift)),
-            float(max(0.0, highlight_compress)),
-            float(max(0.0, mask_feather)),
+            float(max(1.0, settings["blur_radius"])),
+            float(max(0.0, settings["flatten_strength"])),
+            float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
+            float(max(0.0, settings["shadow_lift"])),
+            float(max(0.0, settings["highlight_compress"])),
+            float(np.clip(settings["saturation_restore"], 0.0, 1.0)),
+            float(max(0.0, settings["mask_feather"])),
             coverage,
-            " (inverted)" if invert_mask else "",
+            " (inverted)" if settings["invert_mask"] else "",
         )
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
@@ -705,18 +883,31 @@ class x1TextureDelight:
 
 
 class x1TextureAlbedoSafe:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "target_black": 0.04,
+            "target_white": 0.82,
+            "saturation_limit": 0.85,
+            "shadow_lift": 0.35,
+            "highlight_rolloff": 0.55,
+            "midtone_preserve": 0.28,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "target_black": ("FLOAT", {"default": 0.04, "min": 0.0, "max": 0.5, "step": 0.005}),
-                "target_white": ("FLOAT", {"default": 0.82, "min": 0.1, "max": 1.0, "step": 0.005}),
-                "saturation_limit": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "shadow_lift": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "highlight_rolloff": ("FLOAT", {"default": 0.55, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -731,15 +922,25 @@ class x1TextureAlbedoSafe:
     def run(
         self,
         image: torch.Tensor,
-        target_black: float = 0.04,
-        target_white: float = 0.82,
-        saturation_limit: float = 0.85,
-        shadow_lift: float = 0.35,
-        highlight_rolloff: float = 0.55,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "target_black": {"min": 0.0, "max": 0.5},
+                "target_white": {"min": 0.1, "max": 1.0},
+                "saturation_limit": {"min": 0.0, "max": 1.0},
+                "shadow_lift": {"min": 0.0, "max": 1.0},
+                "highlight_rolloff": {"min": 0.0, "max": 1.0},
+                "midtone_preserve": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
         batch = to_image_batch(image)
         b, h, w, c = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -751,8 +952,8 @@ class x1TextureAlbedoSafe:
             batch=int(b),
             h=int(h),
             w=int(w),
-            feather_radius=float(max(0.0, mask_feather)),
-            invert_mask=bool(invert_mask),
+            feather_radius=float(max(0.0, settings["mask_feather"])),
+            invert_mask=bool(settings["invert_mask"]),
             device=batch.device,
             dtype=batch.dtype,
         )
@@ -763,11 +964,12 @@ class x1TextureAlbedoSafe:
             sample = src_np[idx]
             safe_rgb, adjust_mask = _albedo_safe_rgb(
                 rgb=sample[..., :3],
-                target_black=float(np.clip(target_black, 0.0, 0.5)),
-                target_white=float(np.clip(target_white, 0.1, 1.0)),
-                saturation_limit=float(np.clip(saturation_limit, 0.0, 1.0)),
-                shadow_lift=float(np.clip(shadow_lift, 0.0, 1.0)),
-                highlight_rolloff=float(np.clip(highlight_rolloff, 0.0, 1.0)),
+                target_black=float(np.clip(settings["target_black"], 0.0, 0.5)),
+                target_white=float(np.clip(settings["target_white"], 0.1, 1.0)),
+                saturation_limit=float(np.clip(settings["saturation_limit"], 0.0, 1.0)),
+                shadow_lift=float(np.clip(settings["shadow_lift"], 0.0, 1.0)),
+                highlight_rolloff=float(np.clip(settings["highlight_rolloff"], 0.0, 1.0)),
+                midtone_preserve=float(np.clip(settings["midtone_preserve"], 0.0, 1.0)),
             )
             effect = effect_mask_np[idx][..., None]
             mixed_rgb = np.clip((sample[..., :3] * (1.0 - effect)) + (safe_rgb * effect), 0.0, 1.0).astype(
@@ -782,16 +984,18 @@ class x1TextureAlbedoSafe:
 
         info = (
             "x1TextureAlbedoSafe: target_black={:.3f}, target_white={:.3f}, saturation_limit={:.2f}, "
-            "shadow_lift={:.2f}, highlight_rolloff={:.2f}, mask_feather={:.1f}px, mask_coverage={:.2f}%{}"
+            "shadow_lift={:.2f}, highlight_rolloff={:.2f}, midtone_preserve={:.2f}, "
+            "mask_feather={:.1f}px, mask_coverage={:.2f}%{}"
         ).format(
-            float(np.clip(target_black, 0.0, 0.5)),
-            float(np.clip(target_white, 0.1, 1.0)),
-            float(np.clip(saturation_limit, 0.0, 1.0)),
-            float(np.clip(shadow_lift, 0.0, 1.0)),
-            float(np.clip(highlight_rolloff, 0.0, 1.0)),
-            float(max(0.0, mask_feather)),
+            float(np.clip(settings["target_black"], 0.0, 0.5)),
+            float(np.clip(settings["target_white"], 0.1, 1.0)),
+            float(np.clip(settings["saturation_limit"], 0.0, 1.0)),
+            float(np.clip(settings["shadow_lift"], 0.0, 1.0)),
+            float(np.clip(settings["highlight_rolloff"], 0.0, 1.0)),
+            float(np.clip(settings["midtone_preserve"], 0.0, 1.0)),
+            float(max(0.0, settings["mask_feather"])),
             coverage,
-            " (inverted)" if invert_mask else "",
+            " (inverted)" if settings["invert_mask"] else "",
         )
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
@@ -801,19 +1005,32 @@ class x1TextureAlbedoSafe:
 
 
 class x1TextureMacroVariation:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "macro_scale_px": 160.0,
+            "strength": 0.55,
+            "hue_variation": 0.02,
+            "saturation_variation": 0.12,
+            "value_variation": 0.12,
+            "contrast_variation": 0.18,
+            "seed": 11,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "macro_scale_px": ("FLOAT", {"default": 160.0, "min": 16.0, "max": 2048.0, "step": 1.0}),
-                "strength": ("FLOAT", {"default": 0.55, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "hue_variation": ("FLOAT", {"default": 0.02, "min": 0.0, "max": 0.25, "step": 0.001}),
-                "value_variation": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "contrast_variation": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "seed": ("INT", {"default": 11, "min": 0, "max": 2_147_483_647, "step": 1}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -828,16 +1045,26 @@ class x1TextureMacroVariation:
     def run(
         self,
         image: torch.Tensor,
-        macro_scale_px: float = 160.0,
-        strength: float = 0.55,
-        hue_variation: float = 0.02,
-        value_variation: float = 0.12,
-        contrast_variation: float = 0.18,
-        seed: int = 11,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "macro_scale_px": {"min": 16.0, "max": 2048.0},
+                "strength": {"min": 0.0, "max": 1.0},
+                "hue_variation": {"min": 0.0, "max": 0.25},
+                "saturation_variation": {"min": 0.0, "max": 1.0},
+                "value_variation": {"min": 0.0, "max": 1.0},
+                "contrast_variation": {"min": 0.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
         batch = to_image_batch(image)
         b, h, w, c = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -849,8 +1076,8 @@ class x1TextureMacroVariation:
             batch=int(b),
             h=int(h),
             w=int(w),
-            feather_radius=float(max(0.0, mask_feather)),
-            invert_mask=bool(invert_mask),
+            feather_radius=float(max(0.0, settings["mask_feather"])),
+            invert_mask=bool(settings["invert_mask"]),
             device=batch.device,
             dtype=batch.dtype,
         )
@@ -861,12 +1088,13 @@ class x1TextureMacroVariation:
             sample = src_np[idx]
             varied_rgb, variation_mask = _macro_variation_rgb(
                 rgb=sample[..., :3],
-                macro_scale_px=float(max(16.0, macro_scale_px)),
-                strength=float(np.clip(strength, 0.0, 1.0)),
-                hue_variation=float(max(0.0, hue_variation)),
-                value_variation=float(max(0.0, value_variation)),
-                contrast_variation=float(max(0.0, contrast_variation)),
-                seed=int(seed + idx),
+                macro_scale_px=float(max(16.0, settings["macro_scale_px"])),
+                strength=float(np.clip(settings["strength"], 0.0, 1.0)),
+                hue_variation=float(max(0.0, settings["hue_variation"])),
+                saturation_variation=float(max(0.0, settings["saturation_variation"])),
+                value_variation=float(max(0.0, settings["value_variation"])),
+                contrast_variation=float(max(0.0, settings["contrast_variation"])),
+                seed=int(settings["seed"] + idx),
             )
             effect = effect_mask_np[idx][..., None]
             mixed_rgb = np.clip((sample[..., :3] * (1.0 - effect)) + (varied_rgb * effect), 0.0, 1.0).astype(
@@ -881,18 +1109,19 @@ class x1TextureMacroVariation:
 
         info = (
             "x1TextureMacroVariation: macro_scale_px={:.1f}, strength={:.2f}, hue_variation={:.3f}, "
-            "value_variation={:.2f}, contrast_variation={:.2f}, seed={}, mask_feather={:.1f}px, "
+            "saturation_variation={:.2f}, value_variation={:.2f}, contrast_variation={:.2f}, seed={}, mask_feather={:.1f}px, "
             "mask_coverage={:.2f}%{}"
         ).format(
-            float(max(16.0, macro_scale_px)),
-            float(np.clip(strength, 0.0, 1.0)),
-            float(max(0.0, hue_variation)),
-            float(max(0.0, value_variation)),
-            float(max(0.0, contrast_variation)),
-            int(seed),
-            float(max(0.0, mask_feather)),
+            float(max(16.0, settings["macro_scale_px"])),
+            float(np.clip(settings["strength"], 0.0, 1.0)),
+            float(max(0.0, settings["hue_variation"])),
+            float(max(0.0, settings["saturation_variation"])),
+            float(max(0.0, settings["value_variation"])),
+            float(max(0.0, settings["contrast_variation"])),
+            int(settings["seed"]),
+            float(max(0.0, settings["mask_feather"])),
             coverage,
-            " (inverted)" if invert_mask else "",
+            " (inverted)" if settings["invert_mask"] else "",
         )
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
@@ -902,18 +1131,31 @@ class x1TextureMacroVariation:
 
 
 class x1TextureDetileBlend:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "macro_scale_px": 196.0,
+            "blend_strength": 0.55,
+            "color_match_blur": 20.0,
+            "detail_preserve": 0.72,
+            "variation_breakup": 0.22,
+            "seed": 101,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "macro_scale_px": ("FLOAT", {"default": 196.0, "min": 16.0, "max": 2048.0, "step": 1.0}),
-                "blend_strength": ("FLOAT", {"default": 0.55, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "color_match_blur": ("FLOAT", {"default": 20.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "detail_preserve": ("FLOAT", {"default": 0.72, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "seed": ("INT", {"default": 101, "min": 0, "max": 2_147_483_647, "step": 1}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -928,15 +1170,25 @@ class x1TextureDetileBlend:
     def run(
         self,
         image: torch.Tensor,
-        macro_scale_px: float = 196.0,
-        blend_strength: float = 0.55,
-        color_match_blur: float = 20.0,
-        detail_preserve: float = 0.72,
-        seed: int = 101,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "macro_scale_px": {"min": 16.0, "max": 2048.0},
+                "blend_strength": {"min": 0.0, "max": 1.0},
+                "color_match_blur": {"min": 0.0, "max": 256.0},
+                "detail_preserve": {"min": 0.0, "max": 1.0},
+                "variation_breakup": {"min": 0.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
         batch = to_image_batch(image)
         b, h, w, c = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -948,8 +1200,8 @@ class x1TextureDetileBlend:
             batch=int(b),
             h=int(h),
             w=int(w),
-            feather_radius=float(max(0.0, mask_feather)),
-            invert_mask=bool(invert_mask),
+            feather_radius=float(max(0.0, settings["mask_feather"])),
+            invert_mask=bool(settings["invert_mask"]),
             device=batch.device,
             dtype=batch.dtype,
         )
@@ -960,11 +1212,12 @@ class x1TextureDetileBlend:
             sample = src_np[idx]
             detiled_rgb, detile_mask = _detile_blend_rgb(
                 rgb=sample[..., :3],
-                macro_scale_px=float(max(16.0, macro_scale_px)),
-                blend_strength=float(np.clip(blend_strength, 0.0, 1.0)),
-                color_match_blur=float(max(0.0, color_match_blur)),
-                detail_preserve=float(np.clip(detail_preserve, 0.0, 1.0)),
-                seed=int(seed + idx),
+                macro_scale_px=float(max(16.0, settings["macro_scale_px"])),
+                blend_strength=float(np.clip(settings["blend_strength"], 0.0, 1.0)),
+                color_match_blur=float(max(0.0, settings["color_match_blur"])),
+                detail_preserve=float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
+                variation_breakup=float(np.clip(settings["variation_breakup"], 0.0, 1.0)),
+                seed=int(settings["seed"] + idx),
             )
             effect = effect_mask_np[idx][..., None]
             mixed_rgb = np.clip((sample[..., :3] * (1.0 - effect)) + (detiled_rgb * effect), 0.0, 1.0).astype(
@@ -979,16 +1232,17 @@ class x1TextureDetileBlend:
 
         info = (
             "x1TextureDetileBlend: macro_scale_px={:.1f}, blend_strength={:.2f}, color_match_blur={:.1f}px, "
-            "detail_preserve={:.2f}, seed={}, mask_feather={:.1f}px, mask_coverage={:.2f}%{}"
+            "detail_preserve={:.2f}, variation_breakup={:.2f}, seed={}, mask_feather={:.1f}px, mask_coverage={:.2f}%{}"
         ).format(
-            float(max(16.0, macro_scale_px)),
-            float(np.clip(blend_strength, 0.0, 1.0)),
-            float(max(0.0, color_match_blur)),
-            float(np.clip(detail_preserve, 0.0, 1.0)),
-            int(seed),
-            float(max(0.0, mask_feather)),
+            float(max(16.0, settings["macro_scale_px"])),
+            float(np.clip(settings["blend_strength"], 0.0, 1.0)),
+            float(max(0.0, settings["color_match_blur"])),
+            float(np.clip(settings["detail_preserve"], 0.0, 1.0)),
+            float(np.clip(settings["variation_breakup"], 0.0, 1.0)),
+            int(settings["seed"]),
+            float(max(0.0, settings["mask_feather"])),
             coverage,
-            " (inverted)" if invert_mask else "",
+            " (inverted)" if settings["invert_mask"] else "",
         )
         return (
             _to_tensor(out_np, device=batch.device, dtype=batch.dtype),
@@ -998,21 +1252,34 @@ class x1TextureDetileBlend:
 
 
 class x1TextureNoiseField:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "variant": "fbm",
+            "scale_px": 160.0,
+            "octaves": 5,
+            "lacunarity": 2.0,
+            "gain": 0.55,
+            "detail_mix": 0.18,
+            "contrast": 1.15,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 17,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "variant": (["fbm", "value", "turbulence", "ridged"],),
-                "scale_px": ("FLOAT", {"default": 160.0, "min": 2.0, "max": 4096.0, "step": 1.0}),
-                "octaves": ("INT", {"default": 5, "min": 1, "max": 8, "step": 1}),
-                "lacunarity": ("FLOAT", {"default": 2.0, "min": 1.1, "max": 4.0, "step": 0.05}),
-                "gain": ("FLOAT", {"default": 0.55, "min": 0.01, "max": 1.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.15, "min": 0.05, "max": 4.0, "step": 0.01}),
-                "balance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "invert": ("BOOLEAN", {"default": False}),
-                "seed": ("INT", {"default": 17, "min": 0, "max": 2_147_483_647, "step": 1}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
         }
 
@@ -1023,70 +1290,117 @@ class x1TextureNoiseField:
 
     def run(
         self,
-        width: int = 1024,
-        height: int = 1024,
-        variant: str = "fbm",
-        scale_px: float = 160.0,
-        octaves: int = 5,
-        lacunarity: float = 2.0,
-        gain: float = 0.55,
-        contrast: float = 1.15,
-        balance: float = 0.0,
-        invert: bool = False,
-        seed: int = 17,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
-        resolved_variant = str(variant).lower()
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "scale_px": {"min": 2.0, "max": 4096.0},
+                "octaves": {"min": 1, "max": 8, "integer": True},
+                "lacunarity": {"min": 1.1, "max": 4.0},
+                "gain": {"min": 0.01, "max": 1.0},
+                "detail_mix": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
+        )
+        resolved_variant = str(settings["variant"]).lower()
+        if resolved_variant not in {"fbm", "value", "turbulence", "ridged"}:
+            resolved_variant = "fbm"
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        scale_px = float(max(2.0, settings["scale_px"]))
+        octaves = 1 if resolved_variant == "value" else int(max(1, settings["octaves"]))
+        lacunarity = float(max(1.1, settings["lacunarity"]))
+        gain = float(np.clip(settings["gain"], 0.01, 1.0))
+        detail_mix = float(np.clip(settings["detail_mix"], 0.0, 1.0))
+        seed = int(settings["seed"])
         field = procedural_noise_field(
-            h=int(max(64, height)),
-            w=int(max(64, width)),
-            scale_px=float(max(2.0, scale_px)),
-            octaves=1 if resolved_variant == "value" else int(max(1, octaves)),
-            lacunarity=float(max(1.1, lacunarity)),
-            gain=float(np.clip(gain, 0.01, 1.0)),
-            seed=int(seed),
+            h=int(height),
+            w=int(width),
+            scale_px=scale_px,
+            octaves=octaves,
+            lacunarity=lacunarity,
+            gain=gain,
+            seed=seed,
             variant=resolved_variant,
         )
+        if detail_mix > 1e-6:
+            fine_scale = max(2.0, scale_px * 0.42)
+            detail_variant = resolved_variant if resolved_variant != "value" else "fbm"
+            detail_field = procedural_noise_field(
+                h=int(height),
+                w=int(width),
+                scale_px=fine_scale,
+                octaves=min(8, max(2, octaves + 1)),
+                lacunarity=lacunarity,
+                gain=gain,
+                seed=seed + 101,
+                variant=detail_variant,
+            )
+            field = np.clip((field * (1.0 - detail_mix)) + (detail_field * detail_mix), 0.0, 1.0).astype(np.float32, copy=False)
         shaped = shape_scalar_field(
             field=field,
-            contrast=float(max(0.05, contrast)),
-            balance=float(np.clip(balance, -1.0, 1.0)),
-            invert=bool(invert),
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
         )
         image_t, mask_t = _field_output(shaped)
         info = (
             "x1TextureNoiseField: size={}x{}, variant={}, scale_px={:.1f}, octaves={}, "
-            "lacunarity={:.2f}, gain={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
+            "lacunarity={:.2f}, gain={:.2f}, detail_mix={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
         ).format(
-            int(max(64, width)),
-            int(max(64, height)),
+            int(width),
+            int(height),
             resolved_variant,
-            float(max(2.0, scale_px)),
-            1 if resolved_variant == "value" else int(max(1, octaves)),
-            float(max(1.1, lacunarity)),
-            float(np.clip(gain, 0.01, 1.0)),
-            float(max(0.05, contrast)),
-            float(np.clip(balance, -1.0, 1.0)),
-            int(seed),
-            " (inverted)" if invert else "",
+            float(scale_px),
+            int(octaves),
+            float(lacunarity),
+            float(gain),
+            float(detail_mix),
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            seed,
+            " (inverted)" if settings["invert"] else "",
         )
         return image_t, mask_t, info
 
 
 class x1TextureCellPattern:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "pattern_mode": "fill",
+            "cell_scale_px": 96.0,
+            "jitter": 0.85,
+            "edge_width": 0.18,
+            "softness": 0.0,
+            "contrast": 1.2,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 31,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "pattern_mode": (["fill", "edge", "cracks", "distance", "bevel"],),
-                "cell_scale_px": ("FLOAT", {"default": 96.0, "min": 4.0, "max": 4096.0, "step": 1.0}),
-                "jitter": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "edge_width": ("FLOAT", {"default": 0.18, "min": 0.01, "max": 1.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.2, "min": 0.05, "max": 4.0, "step": 0.01}),
-                "balance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "invert": ("BOOLEAN", {"default": False}),
-                "seed": ("INT", {"default": 31, "min": 0, "max": 2_147_483_647, "step": 1}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
         }
 
@@ -1097,68 +1411,102 @@ class x1TextureCellPattern:
 
     def run(
         self,
-        width: int = 1024,
-        height: int = 1024,
-        pattern_mode: str = "fill",
-        cell_scale_px: float = 96.0,
-        jitter: float = 0.85,
-        edge_width: float = 0.18,
-        contrast: float = 1.2,
-        balance: float = 0.0,
-        invert: bool = False,
-        seed: int = 31,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
-        field = procedural_cell_pattern(
-            h=int(max(64, height)),
-            w=int(max(64, width)),
-            cell_scale_px=float(max(4.0, cell_scale_px)),
-            jitter=float(np.clip(jitter, 0.0, 1.0)),
-            edge_width=float(np.clip(edge_width, 0.01, 1.0)),
-            seed=int(seed),
-            pattern_mode=str(pattern_mode).lower(),
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "cell_scale_px": {"min": 4.0, "max": 4096.0},
+                "jitter": {"min": 0.0, "max": 1.0},
+                "edge_width": {"min": 0.01, "max": 1.0},
+                "softness": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
         )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        pattern_mode = str(settings["pattern_mode"]).lower()
+        if pattern_mode not in {"fill", "edge", "cracks", "distance", "bevel"}:
+            pattern_mode = "fill"
+        field = procedural_cell_pattern(
+            h=int(height),
+            w=int(width),
+            cell_scale_px=float(max(4.0, settings["cell_scale_px"])),
+            jitter=float(np.clip(settings["jitter"], 0.0, 1.0)),
+            edge_width=float(np.clip(settings["edge_width"], 0.01, 1.0)),
+            seed=int(settings["seed"]),
+            pattern_mode=pattern_mode,
+        )
+        softness = float(np.clip(settings["softness"], 0.0, 1.0))
+        if softness > 1e-6:
+            field = blur_single_channel(
+                field,
+                radius=max(0.5, float(max(4.0, settings["cell_scale_px"])) * (0.08 * softness)),
+            )
         shaped = shape_scalar_field(
             field=field,
-            contrast=float(max(0.05, contrast)),
-            balance=float(np.clip(balance, -1.0, 1.0)),
-            invert=bool(invert),
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
         )
         image_t, mask_t = _field_output(shaped)
         info = (
             "x1TextureCellPattern: size={}x{}, mode={}, cell_scale_px={:.1f}, jitter={:.2f}, "
-            "edge_width={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
+            "edge_width={:.2f}, softness={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
         ).format(
-            int(max(64, width)),
-            int(max(64, height)),
-            str(pattern_mode).lower(),
-            float(max(4.0, cell_scale_px)),
-            float(np.clip(jitter, 0.0, 1.0)),
-            float(np.clip(edge_width, 0.01, 1.0)),
-            float(max(0.05, contrast)),
-            float(np.clip(balance, -1.0, 1.0)),
-            int(seed),
-            " (inverted)" if invert else "",
+            int(width),
+            int(height),
+            pattern_mode,
+            float(max(4.0, settings["cell_scale_px"])),
+            float(np.clip(settings["jitter"], 0.0, 1.0)),
+            float(np.clip(settings["edge_width"], 0.01, 1.0)),
+            softness,
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
         )
         return image_t, mask_t, info
 
 
 class x1TextureStrata:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "profile": "soft",
+            "band_scale_px": 180.0,
+            "direction_deg": 24.0,
+            "warp_strength": 0.32,
+            "breakup_scale_px": 112.0,
+            "breakup_strength": 0.38,
+            "micro_breakup": 0.18,
+            "contrast": 1.15,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 53,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "profile": (["soft", "veins", "terrace"],),
-                "band_scale_px": ("FLOAT", {"default": 180.0, "min": 4.0, "max": 4096.0, "step": 1.0}),
-                "direction_deg": ("FLOAT", {"default": 24.0, "min": -180.0, "max": 180.0, "step": 0.5}),
-                "warp_strength": ("FLOAT", {"default": 0.32, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "breakup_scale_px": ("FLOAT", {"default": 112.0, "min": 4.0, "max": 4096.0, "step": 1.0}),
-                "breakup_strength": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.15, "min": 0.05, "max": 4.0, "step": 0.01}),
-                "balance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "invert": ("BOOLEAN", {"default": False}),
-                "seed": ("INT", {"default": 53, "min": 0, "max": 2_147_483_647, "step": 1}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
         }
 
@@ -1169,54 +1517,83 @@ class x1TextureStrata:
 
     def run(
         self,
-        width: int = 1024,
-        height: int = 1024,
-        profile: str = "soft",
-        band_scale_px: float = 180.0,
-        direction_deg: float = 24.0,
-        warp_strength: float = 0.32,
-        breakup_scale_px: float = 112.0,
-        breakup_strength: float = 0.38,
-        contrast: float = 1.15,
-        balance: float = 0.0,
-        invert: bool = False,
-        seed: int = 53,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
-        field = procedural_strata_pattern(
-            h=int(max(64, height)),
-            w=int(max(64, width)),
-            band_scale_px=float(max(4.0, band_scale_px)),
-            direction_deg=float(direction_deg),
-            warp_strength=float(np.clip(warp_strength, 0.0, 1.0)),
-            breakup_scale_px=float(max(4.0, breakup_scale_px)),
-            breakup_strength=float(np.clip(breakup_strength, 0.0, 1.0)),
-            seed=int(seed),
-            profile=str(profile).lower(),
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "band_scale_px": {"min": 4.0, "max": 4096.0},
+                "direction_deg": {"min": -180.0, "max": 180.0},
+                "warp_strength": {"min": 0.0, "max": 1.0},
+                "breakup_scale_px": {"min": 4.0, "max": 4096.0},
+                "breakup_strength": {"min": 0.0, "max": 1.0},
+                "micro_breakup": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
         )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        profile = str(settings["profile"]).lower()
+        if profile not in {"soft", "veins", "terrace"}:
+            profile = "soft"
+        field = procedural_strata_pattern(
+            h=int(height),
+            w=int(width),
+            band_scale_px=float(max(4.0, settings["band_scale_px"])),
+            direction_deg=float(settings["direction_deg"]),
+            warp_strength=float(np.clip(settings["warp_strength"], 0.0, 1.0)),
+            breakup_scale_px=float(max(4.0, settings["breakup_scale_px"])),
+            breakup_strength=float(np.clip(settings["breakup_strength"], 0.0, 1.0)),
+            seed=int(settings["seed"]),
+            profile=profile,
+        )
+        micro_breakup = float(np.clip(settings["micro_breakup"], 0.0, 1.0))
+        if micro_breakup > 1e-6:
+            fine_breakup = procedural_noise_field(
+                h=int(height),
+                w=int(width),
+                scale_px=max(4.0, float(settings["breakup_scale_px"]) * 0.32),
+                octaves=3,
+                lacunarity=2.0,
+                gain=0.55,
+                seed=int(settings["seed"]) + 37,
+                variant="fbm",
+            )
+            mix = micro_breakup * 0.22
+            field = np.clip((field * (1.0 - mix)) + (fine_breakup * mix), 0.0, 1.0).astype(np.float32, copy=False)
         shaped = shape_scalar_field(
             field=field,
-            contrast=float(max(0.05, contrast)),
-            balance=float(np.clip(balance, -1.0, 1.0)),
-            invert=bool(invert),
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
         )
         image_t, mask_t = _field_output(shaped)
         info = (
             "x1TextureStrata: size={}x{}, profile={}, band_scale_px={:.1f}, direction_deg={:.1f}, "
-            "warp_strength={:.2f}, breakup_scale_px={:.1f}, breakup_strength={:.2f}, "
+            "warp_strength={:.2f}, breakup_scale_px={:.1f}, breakup_strength={:.2f}, micro_breakup={:.2f}, "
             "contrast={:.2f}, balance={:.2f}, seed={}{}"
         ).format(
-            int(max(64, width)),
-            int(max(64, height)),
-            str(profile).lower(),
-            float(max(4.0, band_scale_px)),
-            float(direction_deg),
-            float(np.clip(warp_strength, 0.0, 1.0)),
-            float(max(4.0, breakup_scale_px)),
-            float(np.clip(breakup_strength, 0.0, 1.0)),
-            float(max(0.05, contrast)),
-            float(np.clip(balance, -1.0, 1.0)),
-            int(seed),
-            " (inverted)" if invert else "",
+            int(width),
+            int(height),
+            profile,
+            float(max(4.0, settings["band_scale_px"])),
+            float(settings["direction_deg"]),
+            float(np.clip(settings["warp_strength"], 0.0, 1.0)),
+            float(max(4.0, settings["breakup_scale_px"])),
+            float(np.clip(settings["breakup_strength"], 0.0, 1.0)),
+            micro_breakup,
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
         )
         return image_t, mask_t, info
 
@@ -1224,19 +1601,32 @@ class x1TextureStrata:
 class x1TextureHexTiles:
     SEARCH_ALIASES = ["honeycomb", "hexagon", "scales"]
 
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "pattern_mode": "fill",
+            "hex_scale_px": 84.0,
+            "line_width": 0.18,
+            "softness": 0.0,
+            "contrast": 1.15,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 67,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "pattern_mode": (["fill", "lines", "centers", "bevel"],),
-                "hex_scale_px": ("FLOAT", {"default": 84.0, "min": 4.0, "max": 4096.0, "step": 1.0}),
-                "line_width": ("FLOAT", {"default": 0.18, "min": 0.01, "max": 1.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.15, "min": 0.05, "max": 4.0, "step": 0.01}),
-                "balance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "invert": ("BOOLEAN", {"default": False}),
-                "seed": ("INT", {"default": 67, "min": 0, "max": 2_147_483_647, "step": 1}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
         }
 
@@ -1247,44 +1637,62 @@ class x1TextureHexTiles:
 
     def run(
         self,
-        width: int = 1024,
-        height: int = 1024,
-        pattern_mode: str = "fill",
-        hex_scale_px: float = 84.0,
-        line_width: float = 0.18,
-        contrast: float = 1.15,
-        balance: float = 0.0,
-        invert: bool = False,
-        seed: int = 67,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
-        field = procedural_hex_pattern(
-            h=int(max(64, height)),
-            w=int(max(64, width)),
-            hex_scale_px=float(max(4.0, hex_scale_px)),
-            line_width=float(np.clip(line_width, 0.01, 1.0)),
-            seed=int(seed),
-            pattern_mode=str(pattern_mode).lower(),
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "hex_scale_px": {"min": 4.0, "max": 4096.0},
+                "line_width": {"min": 0.01, "max": 1.0},
+                "softness": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
         )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        pattern_mode = str(settings["pattern_mode"]).lower()
+        if pattern_mode not in {"fill", "lines", "centers", "bevel"}:
+            pattern_mode = "fill"
+        field = procedural_hex_pattern(
+            h=int(height),
+            w=int(width),
+            hex_scale_px=float(max(4.0, settings["hex_scale_px"])),
+            line_width=float(np.clip(settings["line_width"], 0.01, 1.0)),
+            seed=int(settings["seed"]),
+            pattern_mode=pattern_mode,
+        )
+        softness = float(np.clip(settings["softness"], 0.0, 1.0))
+        if softness > 1e-6:
+            field = blur_single_channel(field, radius=max(0.5, float(settings["hex_scale_px"]) * (0.06 * softness)))
         shaped = shape_scalar_field(
             field=field,
-            contrast=float(max(0.05, contrast)),
-            balance=float(np.clip(balance, -1.0, 1.0)),
-            invert=bool(invert),
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
         )
         image_t, mask_t = _field_output(shaped)
         info = (
-            "x1TextureHexTiles: size={}x{}, mode={}, hex_scale_px={:.1f}, line_width={:.2f}, "
+            "x1TextureHexTiles: size={}x{}, mode={}, hex_scale_px={:.1f}, line_width={:.2f}, softness={:.2f}, "
             "contrast={:.2f}, balance={:.2f}, seed={}{}"
         ).format(
-            int(max(64, width)),
-            int(max(64, height)),
-            str(pattern_mode).lower(),
-            float(max(4.0, hex_scale_px)),
-            float(np.clip(line_width, 0.01, 1.0)),
-            float(max(0.05, contrast)),
-            float(np.clip(balance, -1.0, 1.0)),
-            int(seed),
-            " (inverted)" if invert else "",
+            int(width),
+            int(height),
+            pattern_mode,
+            float(max(4.0, settings["hex_scale_px"])),
+            float(np.clip(settings["line_width"], 0.01, 1.0)),
+            softness,
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
         )
         return image_t, mask_t, info
 
@@ -1292,21 +1700,34 @@ class x1TextureHexTiles:
 class x1TextureWeavePattern:
     SEARCH_ALIASES = ["fabric", "cloth", "carbon fiber"]
 
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "width": 1024,
+            "height": 1024,
+            "style": "plain",
+            "warp_scale_px": 32.0,
+            "weft_scale_px": 32.0,
+            "thread_width": 0.72,
+            "relief": 0.82,
+            "fiber_variation": 0.22,
+            "contrast": 1.2,
+            "balance": 0.0,
+            "invert": False,
+            "seed": 79,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "width": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "height": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 1}),
-                "style": (["plain", "twill", "basket"],),
-                "warp_scale_px": ("FLOAT", {"default": 32.0, "min": 4.0, "max": 4096.0, "step": 1.0}),
-                "weft_scale_px": ("FLOAT", {"default": 32.0, "min": 4.0, "max": 4096.0, "step": 1.0}),
-                "thread_width": ("FLOAT", {"default": 0.72, "min": 0.05, "max": 0.98, "step": 0.01}),
-                "relief": ("FLOAT", {"default": 0.82, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.2, "min": 0.05, "max": 4.0, "step": 0.01}),
-                "balance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
-                "invert": ("BOOLEAN", {"default": False}),
-                "seed": ("INT", {"default": 79, "min": 0, "max": 2_147_483_647, "step": 1}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
         }
 
@@ -1317,49 +1738,78 @@ class x1TextureWeavePattern:
 
     def run(
         self,
-        width: int = 1024,
-        height: int = 1024,
-        style: str = "plain",
-        warp_scale_px: float = 32.0,
-        weft_scale_px: float = 32.0,
-        thread_width: float = 0.72,
-        relief: float = 0.82,
-        contrast: float = 1.2,
-        balance: float = 0.0,
-        invert: bool = False,
-        seed: int = 79,
+        settings_json: str = "{}",
+        **legacy_settings,
     ):
-        field = procedural_weave_pattern(
-            h=int(max(64, height)),
-            w=int(max(64, width)),
-            warp_scale_px=float(max(4.0, warp_scale_px)),
-            weft_scale_px=float(max(4.0, weft_scale_px)),
-            thread_width=float(np.clip(thread_width, 0.05, 0.98)),
-            relief=float(np.clip(relief, 0.0, 1.0)),
-            seed=int(seed),
-            style=str(style).lower(),
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "width": {"min": 64, "max": 4096, "integer": True},
+                "height": {"min": 64, "max": 4096, "integer": True},
+                "warp_scale_px": {"min": 4.0, "max": 4096.0},
+                "weft_scale_px": {"min": 4.0, "max": 4096.0},
+                "thread_width": {"min": 0.05, "max": 0.98},
+                "relief": {"min": 0.0, "max": 1.0},
+                "fiber_variation": {"min": 0.0, "max": 1.0},
+                "contrast": {"min": 0.05, "max": 4.0},
+                "balance": {"min": -1.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2_147_483_647, "integer": True},
+            },
+            boolean_keys={"invert"},
+            legacy=legacy_settings,
         )
+        width = int(max(64, settings["width"]))
+        height = int(max(64, settings["height"]))
+        style = str(settings["style"]).lower()
+        if style not in {"plain", "twill", "basket"}:
+            style = "plain"
+        field = procedural_weave_pattern(
+            h=int(height),
+            w=int(width),
+            warp_scale_px=float(max(4.0, settings["warp_scale_px"])),
+            weft_scale_px=float(max(4.0, settings["weft_scale_px"])),
+            thread_width=float(np.clip(settings["thread_width"], 0.05, 0.98)),
+            relief=float(np.clip(settings["relief"], 0.0, 1.0)),
+            seed=int(settings["seed"]),
+            style=style,
+        )
+        fiber_variation = float(np.clip(settings["fiber_variation"], 0.0, 1.0))
+        if fiber_variation > 1e-6:
+            fiber = procedural_noise_field(
+                h=int(height),
+                w=int(width),
+                scale_px=max(4.0, min(float(settings["warp_scale_px"]), float(settings["weft_scale_px"])) * 0.7),
+                octaves=3,
+                lacunarity=2.1,
+                gain=0.58,
+                seed=int(settings["seed"]) + 121,
+                variant="fbm",
+            )
+            fiber = ((fiber * 2.0) - 1.0).astype(np.float32, copy=False)
+            field = np.clip(field * (1.0 + (fiber * fiber_variation * 0.22)), 0.0, 1.0).astype(np.float32, copy=False)
         shaped = shape_scalar_field(
             field=field,
-            contrast=float(max(0.05, contrast)),
-            balance=float(np.clip(balance, -1.0, 1.0)),
-            invert=bool(invert),
+            contrast=float(max(0.05, settings["contrast"])),
+            balance=float(np.clip(settings["balance"], -1.0, 1.0)),
+            invert=bool(settings["invert"]),
         )
         image_t, mask_t = _field_output(shaped)
         info = (
             "x1TextureWeavePattern: size={}x{}, style={}, warp_scale_px={:.1f}, weft_scale_px={:.1f}, "
-            "thread_width={:.2f}, relief={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
+            "thread_width={:.2f}, relief={:.2f}, fiber_variation={:.2f}, contrast={:.2f}, balance={:.2f}, seed={}{}"
         ).format(
-            int(max(64, width)),
-            int(max(64, height)),
-            str(style).lower(),
-            float(max(4.0, warp_scale_px)),
-            float(max(4.0, weft_scale_px)),
-            float(np.clip(thread_width, 0.05, 0.98)),
-            float(np.clip(relief, 0.0, 1.0)),
-            float(max(0.05, contrast)),
-            float(np.clip(balance, -1.0, 1.0)),
-            int(seed),
-            " (inverted)" if invert else "",
+            int(width),
+            int(height),
+            style,
+            float(max(4.0, settings["warp_scale_px"])),
+            float(max(4.0, settings["weft_scale_px"])),
+            float(np.clip(settings["thread_width"], 0.05, 0.98)),
+            float(np.clip(settings["relief"], 0.0, 1.0)),
+            fiber_variation,
+            float(max(0.05, settings["contrast"])),
+            float(np.clip(settings["balance"], -1.0, 1.0)),
+            int(settings["seed"]),
+            " (inverted)" if settings["invert"] else "",
         )
         return image_t, mask_t, info

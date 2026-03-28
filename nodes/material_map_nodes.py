@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 import numpy as np
@@ -19,6 +20,7 @@ from ..lib.material_response_shared import (
     resolve_transmission_scalar,
     soft_gate as _response_soft_gate,
 )
+from ..lib.settings_bundle import parse_settings_payload
 from ..lib.scalar_map_shared import blur_single_channel, mask_tensor_to_np, normalize_scalar, scalar_from_source
 
 
@@ -300,25 +302,37 @@ def _resolve_emissive_source(
 
 
 class x1RoughnessMap:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "source_mode": "combined_roughness",
+            "normalize_mode": "auto_percentile",
+            "value_min": 0.0,
+            "value_max": 1.0,
+            "percentile_low": 2.0,
+            "percentile_high": 98.0,
+            "detail_radius": 2.0,
+            "detail_strength": 0.45,
+            "gamma": 1.0,
+            "contrast": 1.1,
+            "blur_radius": 0.0,
+            "invert_values": False,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "source_mode": (["combined_roughness", "luma", "value", "saturation", "detail", "mask"],),
-                "normalize_mode": (["auto_percentile", "manual_range", "auto_range"],),
-                "value_min": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "value_max": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "percentile_low": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "percentile_high": ("FLOAT", {"default": 98.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "detail_radius": ("FLOAT", {"default": 2.0, "min": 0.1, "max": 64.0, "step": 0.1}),
-                "detail_strength": ("FLOAT", {"default": 0.45, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "gamma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.1, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 128.0, "step": 0.1}),
-                "invert_values": ("BOOLEAN", {"default": False}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "source_mask": ("MASK",),
@@ -334,23 +348,44 @@ class x1RoughnessMap:
     def run(
         self,
         image: torch.Tensor,
-        source_mode: str = "combined_roughness",
-        normalize_mode: str = "auto_percentile",
-        value_min: float = 0.0,
-        value_max: float = 1.0,
-        percentile_low: float = 2.0,
-        percentile_high: float = 98.0,
-        detail_radius: float = 2.0,
-        detail_strength: float = 0.45,
-        gamma: float = 1.0,
-        contrast: float = 1.1,
-        blur_radius: float = 0.0,
-        invert_values: bool = False,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         source_mask: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "value_min": {"min": 0.0, "max": 1.0},
+                "value_max": {"min": 0.0, "max": 1.0},
+                "percentile_low": {"min": 0.0, "max": 100.0},
+                "percentile_high": {"min": 0.0, "max": 100.0},
+                "detail_radius": {"min": 0.1, "max": 64.0},
+                "detail_strength": {"min": 0.0, "max": 2.0},
+                "gamma": {"min": 0.1, "max": 4.0},
+                "contrast": {"min": 0.1, "max": 4.0},
+                "blur_radius": {"min": 0.0, "max": 128.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_values", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        source_mode = str(settings["source_mode"])
+        normalize_mode = str(settings["normalize_mode"])
+        value_min = float(settings["value_min"])
+        value_max = float(settings["value_max"])
+        percentile_low = float(settings["percentile_low"])
+        percentile_high = float(settings["percentile_high"])
+        detail_radius = float(settings["detail_radius"])
+        detail_strength = float(settings["detail_strength"])
+        gamma = float(settings["gamma"])
+        contrast = float(settings["contrast"])
+        blur_radius = float(settings["blur_radius"])
+        invert_values = bool(settings["invert_values"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
+
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -408,26 +443,38 @@ class x1RoughnessMap:
 
 
 class x1SpecularMap:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "source_mode": "combined_specular",
+            "normalize_mode": "auto_percentile",
+            "value_min": 0.0,
+            "value_max": 1.0,
+            "percentile_low": 2.0,
+            "percentile_high": 98.0,
+            "detail_radius": 2.0,
+            "detail_strength": 0.35,
+            "saturation_suppress": 0.75,
+            "gamma": 0.75,
+            "contrast": 1.25,
+            "blur_radius": 0.0,
+            "invert_values": False,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "source_mode": (["combined_specular", "value", "luma", "saturation", "detail", "mask"],),
-                "normalize_mode": (["auto_percentile", "manual_range", "auto_range"],),
-                "value_min": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "value_max": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "percentile_low": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "percentile_high": ("FLOAT", {"default": 98.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "detail_radius": ("FLOAT", {"default": 2.0, "min": 0.1, "max": 64.0, "step": 0.1}),
-                "detail_strength": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "saturation_suppress": ("FLOAT", {"default": 0.75, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "gamma": ("FLOAT", {"default": 0.75, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.25, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 128.0, "step": 0.1}),
-                "invert_values": ("BOOLEAN", {"default": False}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "source_mask": ("MASK",),
@@ -443,24 +490,46 @@ class x1SpecularMap:
     def run(
         self,
         image: torch.Tensor,
-        source_mode: str = "combined_specular",
-        normalize_mode: str = "auto_percentile",
-        value_min: float = 0.0,
-        value_max: float = 1.0,
-        percentile_low: float = 2.0,
-        percentile_high: float = 98.0,
-        detail_radius: float = 2.0,
-        detail_strength: float = 0.35,
-        saturation_suppress: float = 0.75,
-        gamma: float = 0.75,
-        contrast: float = 1.25,
-        blur_radius: float = 0.0,
-        invert_values: bool = False,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         source_mask: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "value_min": {"min": 0.0, "max": 1.0},
+                "value_max": {"min": 0.0, "max": 1.0},
+                "percentile_low": {"min": 0.0, "max": 100.0},
+                "percentile_high": {"min": 0.0, "max": 100.0},
+                "detail_radius": {"min": 0.1, "max": 64.0},
+                "detail_strength": {"min": 0.0, "max": 2.0},
+                "saturation_suppress": {"min": 0.0, "max": 1.0},
+                "gamma": {"min": 0.1, "max": 4.0},
+                "contrast": {"min": 0.1, "max": 4.0},
+                "blur_radius": {"min": 0.0, "max": 128.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_values", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        source_mode = str(settings["source_mode"])
+        normalize_mode = str(settings["normalize_mode"])
+        value_min = float(settings["value_min"])
+        value_max = float(settings["value_max"])
+        percentile_low = float(settings["percentile_low"])
+        percentile_high = float(settings["percentile_high"])
+        detail_radius = float(settings["detail_radius"])
+        detail_strength = float(settings["detail_strength"])
+        saturation_suppress = float(settings["saturation_suppress"])
+        gamma = float(settings["gamma"])
+        contrast = float(settings["contrast"])
+        blur_radius = float(settings["blur_radius"])
+        invert_values = bool(settings["invert_values"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
+
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -519,25 +588,37 @@ class x1SpecularMap:
 
 
 class x1MetalnessMap:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "source_mode": "combined_metalness",
+            "normalize_mode": "auto_percentile",
+            "value_min": 0.0,
+            "value_max": 1.0,
+            "percentile_low": 2.0,
+            "percentile_high": 98.0,
+            "detail_radius": 2.0,
+            "detail_strength": 0.25,
+            "gamma": 1.0,
+            "contrast": 1.15,
+            "blur_radius": 0.0,
+            "invert_values": False,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "source_mode": (["combined_metalness", "value", "luma", "saturation", "detail", "mask"],),
-                "normalize_mode": (["auto_percentile", "manual_range", "auto_range"],),
-                "value_min": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "value_max": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "percentile_low": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "percentile_high": ("FLOAT", {"default": 98.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "detail_radius": ("FLOAT", {"default": 2.0, "min": 0.1, "max": 64.0, "step": 0.1}),
-                "detail_strength": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "gamma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.15, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 128.0, "step": 0.1}),
-                "invert_values": ("BOOLEAN", {"default": False}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "source_mask": ("MASK",),
@@ -553,23 +634,44 @@ class x1MetalnessMap:
     def run(
         self,
         image: torch.Tensor,
-        source_mode: str = "combined_metalness",
-        normalize_mode: str = "auto_percentile",
-        value_min: float = 0.0,
-        value_max: float = 1.0,
-        percentile_low: float = 2.0,
-        percentile_high: float = 98.0,
-        detail_radius: float = 2.0,
-        detail_strength: float = 0.25,
-        gamma: float = 1.0,
-        contrast: float = 1.15,
-        blur_radius: float = 0.0,
-        invert_values: bool = False,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         source_mask: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "value_min": {"min": 0.0, "max": 1.0},
+                "value_max": {"min": 0.0, "max": 1.0},
+                "percentile_low": {"min": 0.0, "max": 100.0},
+                "percentile_high": {"min": 0.0, "max": 100.0},
+                "detail_radius": {"min": 0.1, "max": 64.0},
+                "detail_strength": {"min": 0.0, "max": 2.0},
+                "gamma": {"min": 0.1, "max": 4.0},
+                "contrast": {"min": 0.1, "max": 4.0},
+                "blur_radius": {"min": 0.0, "max": 128.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_values", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        source_mode = str(settings["source_mode"])
+        normalize_mode = str(settings["normalize_mode"])
+        value_min = float(settings["value_min"])
+        value_max = float(settings["value_max"])
+        percentile_low = float(settings["percentile_low"])
+        percentile_high = float(settings["percentile_high"])
+        detail_radius = float(settings["detail_radius"])
+        detail_strength = float(settings["detail_strength"])
+        gamma = float(settings["gamma"])
+        contrast = float(settings["contrast"])
+        blur_radius = float(settings["blur_radius"])
+        invert_values = bool(settings["invert_values"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
+
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -1726,21 +1828,31 @@ class x1ColorRegionMask:
 
 
 class x1EmissiveMap:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "source_mode": "combined_emissive",
+            "threshold": 0.6,
+            "softness": 0.1,
+            "saturation_gate": 0.35,
+            "intensity": 1.5,
+            "blur_radius": 0.0,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "source_mode": (
-                    ["combined_emissive", "bright_color", "saturated_color", "mask_color", "white_hotspots"],
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
                 ),
-                "threshold": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "softness": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 0.5, "step": 0.01}),
-                "saturation_gate": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "intensity": ("FLOAT", {"default": 1.5, "min": 0.0, "max": 8.0, "step": 0.01}),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 64.0, "step": 0.1}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "source_mask": ("MASK",),
@@ -1756,17 +1868,34 @@ class x1EmissiveMap:
     def run(
         self,
         image: torch.Tensor,
-        source_mode: str = "combined_emissive",
-        threshold: float = 0.6,
-        softness: float = 0.1,
-        saturation_gate: float = 0.35,
-        intensity: float = 1.5,
-        blur_radius: float = 0.0,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         source_mask: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "threshold": {"min": 0.0, "max": 1.0},
+                "softness": {"min": 0.0, "max": 0.5},
+                "saturation_gate": {"min": 0.0, "max": 1.0},
+                "intensity": {"min": 0.0, "max": 8.0},
+                "blur_radius": {"min": 0.0, "max": 64.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        source_mode = str(settings["source_mode"])
+        threshold = float(settings["threshold"])
+        softness = float(settings["softness"])
+        saturation_gate = float(settings["saturation_gate"])
+        intensity = float(settings["intensity"])
+        blur_radius = float(settings["blur_radius"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
+
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -1810,25 +1939,37 @@ class x1EmissiveMap:
 
 
 class x1CavityMap:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "source_mode": "luma",
+            "polarity": "concave",
+            "normalize_mode": "auto_percentile",
+            "value_min": 0.0,
+            "value_max": 1.0,
+            "percentile_low": 2.0,
+            "percentile_high": 98.0,
+            "radius": 2.5,
+            "gamma": 1.0,
+            "contrast": 1.35,
+            "blur_radius": 0.0,
+            "invert_values": False,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "source_mode": (["luma", "red", "green", "blue", "max_rgb", "value", "alpha", "mask"],),
-                "polarity": (["concave", "convex", "both"],),
-                "normalize_mode": (["auto_percentile", "manual_range", "auto_range"],),
-                "value_min": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "value_max": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "percentile_low": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "percentile_high": ("FLOAT", {"default": 98.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "radius": ("FLOAT", {"default": 2.5, "min": 0.1, "max": 64.0, "step": 0.1}),
-                "gamma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.35, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 128.0, "step": 0.1}),
-                "invert_values": ("BOOLEAN", {"default": False}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "source_mask": ("MASK",),
@@ -1844,23 +1985,43 @@ class x1CavityMap:
     def run(
         self,
         image: torch.Tensor,
-        source_mode: str = "luma",
-        polarity: str = "concave",
-        normalize_mode: str = "auto_percentile",
-        value_min: float = 0.0,
-        value_max: float = 1.0,
-        percentile_low: float = 2.0,
-        percentile_high: float = 98.0,
-        radius: float = 2.5,
-        gamma: float = 1.0,
-        contrast: float = 1.35,
-        blur_radius: float = 0.0,
-        invert_values: bool = False,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         source_mask: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "value_min": {"min": 0.0, "max": 1.0},
+                "value_max": {"min": 0.0, "max": 1.0},
+                "percentile_low": {"min": 0.0, "max": 100.0},
+                "percentile_high": {"min": 0.0, "max": 100.0},
+                "radius": {"min": 0.1, "max": 64.0},
+                "gamma": {"min": 0.1, "max": 4.0},
+                "contrast": {"min": 0.1, "max": 4.0},
+                "blur_radius": {"min": 0.0, "max": 128.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_values", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        source_mode = str(settings["source_mode"])
+        polarity = str(settings["polarity"])
+        normalize_mode = str(settings["normalize_mode"])
+        value_min = float(settings["value_min"])
+        value_max = float(settings["value_max"])
+        percentile_low = float(settings["percentile_low"])
+        percentile_high = float(settings["percentile_high"])
+        radius = float(settings["radius"])
+        gamma = float(settings["gamma"])
+        contrast = float(settings["contrast"])
+        blur_radius = float(settings["blur_radius"])
+        invert_values = bool(settings["invert_values"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
+
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -1926,26 +2087,38 @@ class x1CavityMap:
 
 
 class x1EdgeWearMask:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "source_mode": "combined_edge_wear",
+            "normalize_mode": "auto_percentile",
+            "value_min": 0.0,
+            "value_max": 1.0,
+            "percentile_low": 2.0,
+            "percentile_high": 98.0,
+            "edge_radius": 5.0,
+            "detail_radius": 2.0,
+            "detail_strength": 0.50,
+            "gamma": 1.0,
+            "contrast": 1.25,
+            "blur_radius": 0.0,
+            "invert_values": False,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "source_mode": (["combined_edge_wear", "luma", "inverse_luma", "value", "detail", "mask"],),
-                "normalize_mode": (["auto_percentile", "manual_range", "auto_range"],),
-                "value_min": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "value_max": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "percentile_low": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "percentile_high": ("FLOAT", {"default": 98.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "edge_radius": ("FLOAT", {"default": 5.0, "min": 0.1, "max": 128.0, "step": 0.1}),
-                "detail_radius": ("FLOAT", {"default": 2.0, "min": 0.1, "max": 64.0, "step": 0.1}),
-                "detail_strength": ("FLOAT", {"default": 0.50, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "gamma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.25, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 128.0, "step": 0.1}),
-                "invert_values": ("BOOLEAN", {"default": False}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "source_mask": ("MASK",),
@@ -1961,24 +2134,46 @@ class x1EdgeWearMask:
     def run(
         self,
         image: torch.Tensor,
-        source_mode: str = "combined_edge_wear",
-        normalize_mode: str = "auto_percentile",
-        value_min: float = 0.0,
-        value_max: float = 1.0,
-        percentile_low: float = 2.0,
-        percentile_high: float = 98.0,
-        edge_radius: float = 5.0,
-        detail_radius: float = 2.0,
-        detail_strength: float = 0.50,
-        gamma: float = 1.0,
-        contrast: float = 1.25,
-        blur_radius: float = 0.0,
-        invert_values: bool = False,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         source_mask: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "value_min": {"min": 0.0, "max": 1.0},
+                "value_max": {"min": 0.0, "max": 1.0},
+                "percentile_low": {"min": 0.0, "max": 100.0},
+                "percentile_high": {"min": 0.0, "max": 100.0},
+                "edge_radius": {"min": 0.1, "max": 128.0},
+                "detail_radius": {"min": 0.1, "max": 64.0},
+                "detail_strength": {"min": 0.0, "max": 2.0},
+                "gamma": {"min": 0.1, "max": 4.0},
+                "contrast": {"min": 0.1, "max": 4.0},
+                "blur_radius": {"min": 0.0, "max": 128.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_values", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        source_mode = str(settings["source_mode"])
+        normalize_mode = str(settings["normalize_mode"])
+        value_min = float(settings["value_min"])
+        value_max = float(settings["value_max"])
+        percentile_low = float(settings["percentile_low"])
+        percentile_high = float(settings["percentile_high"])
+        edge_radius = float(settings["edge_radius"])
+        detail_radius = float(settings["detail_radius"])
+        detail_strength = float(settings["detail_strength"])
+        gamma = float(settings["gamma"])
+        contrast = float(settings["contrast"])
+        blur_radius = float(settings["blur_radius"])
+        invert_values = bool(settings["invert_values"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
+
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)
@@ -2037,25 +2232,37 @@ class x1EdgeWearMask:
 
 
 class x1NormalMap:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "source_mode": "luma",
+            "normalize_mode": "auto_percentile",
+            "value_min": 0.0,
+            "value_max": 1.0,
+            "percentile_low": 2.0,
+            "percentile_high": 98.0,
+            "gamma": 1.0,
+            "blur_radius": 0.0,
+            "strength": 4.0,
+            "convention": "opengl",
+            "invert_height": False,
+            "invert_x": False,
+            "mask_feather": 8.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "source_mode": (["luma", "red", "green", "blue", "max_rgb", "saturation", "value", "alpha", "mask"],),
-                "normalize_mode": (["auto_percentile", "manual_range", "auto_range"],),
-                "value_min": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "value_max": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "percentile_low": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "percentile_high": ("FLOAT", {"default": 98.0, "min": 0.0, "max": 100.0, "step": 0.1}),
-                "gamma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 4.0, "step": 0.01}),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 128.0, "step": 0.1}),
-                "strength": ("FLOAT", {"default": 4.0, "min": 0.0, "max": 64.0, "step": 0.1}),
-                "convention": (["opengl", "directx"],),
-                "invert_height": ("BOOLEAN", {"default": False}),
-                "invert_x": ("BOOLEAN", {"default": False}),
-                "mask_feather": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "source_mask": ("MASK",),
@@ -2071,23 +2278,42 @@ class x1NormalMap:
     def run(
         self,
         image: torch.Tensor,
-        source_mode: str = "luma",
-        normalize_mode: str = "auto_percentile",
-        value_min: float = 0.0,
-        value_max: float = 1.0,
-        percentile_low: float = 2.0,
-        percentile_high: float = 98.0,
-        gamma: float = 1.0,
-        blur_radius: float = 0.0,
-        strength: float = 4.0,
-        convention: str = "opengl",
-        invert_height: bool = False,
-        invert_x: bool = False,
-        mask_feather: float = 8.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         source_mask: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "value_min": {"min": 0.0, "max": 1.0},
+                "value_max": {"min": 0.0, "max": 1.0},
+                "percentile_low": {"min": 0.0, "max": 100.0},
+                "percentile_high": {"min": 0.0, "max": 100.0},
+                "gamma": {"min": 0.1, "max": 4.0},
+                "blur_radius": {"min": 0.0, "max": 128.0},
+                "strength": {"min": 0.0, "max": 64.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_height", "invert_x", "invert_mask"},
+            legacy=legacy_settings,
+        )
+        source_mode = str(settings["source_mode"])
+        normalize_mode = str(settings["normalize_mode"])
+        value_min = float(settings["value_min"])
+        value_max = float(settings["value_max"])
+        percentile_low = float(settings["percentile_low"])
+        percentile_high = float(settings["percentile_high"])
+        gamma = float(settings["gamma"])
+        blur_radius = float(settings["blur_radius"])
+        strength = float(settings["strength"])
+        convention = str(settings["convention"])
+        invert_height = bool(settings["invert_height"])
+        invert_x = bool(settings["invert_x"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
+
         batch = to_image_batch(image)
         b, h, w, c = batch.shape
         src_np = batch.detach().cpu().numpy().astype(np.float32, copy=False)

@@ -1,3 +1,4 @@
+import json
 import math
 from dataclasses import dataclass, replace
 from typing import Optional
@@ -7,6 +8,7 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import torch
 
 from ..categories import FX_PHOTO, FX_STYLIZE
+from ..lib.settings_bundle import parse_settings_payload
 
 
 @dataclass(frozen=True)
@@ -14,30 +16,43 @@ class ProcessSettings:
     exposure: float
     contrast: float
     saturation: float
+    tone_warmth: float
+    tone_fade: float
     pixelate_size: int
     posterize_bits: int
     halftone_strength: float
     halftone_size: int
+    stylize_ink_strength: float
+    stylize_ink_threshold: float
     film_grain_strength: float
     film_grain_size: float
     film_grain_seed: int
+    film_grain_chroma: float
     vignette_strength: float
     vignette_roundness: float
     fractal_strength: float
     fractal_scale: float
     fractal_octaves: int
     fractal_seed: int
+    fractal_contrast: float
+    fractal_drift: float
     bokeh_strength: float
     bokeh_radius: float
     bokeh_threshold: float
+    bokeh_softness: float
+    bokeh_warmth: float
     rgb_shift_x: int
     rgb_shift_y: int
     prismatic_strength: float
     prismatic_distance: float
     prismatic_angle: float
+    chromatic_edge_weight: float
+    chromatic_green_shift: float
     bloom_strength: float
     bloom_radius: float
     bloom_threshold: float
+    bloom_softness: float
+    bloom_warmth: float
     blur_radius: float
     sharpen: float
 
@@ -175,6 +190,25 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
     if abs(settings.saturation - 1.0) > 1e-6:
         out = _rgb_float_from_pil(ImageEnhance.Color(_pil_from_rgb_float(out)).enhance(settings.saturation))
 
+    if abs(settings.tone_warmth) > 1e-6:
+        warmth = float(max(-1.0, min(1.0, settings.tone_warmth)))
+        warmed = out.copy()
+        if warmth >= 0.0:
+            warmed[..., 0] = np.clip(warmed[..., 0] + ((1.0 - warmed[..., 0]) * warmth * 0.18), 0.0, 1.0)
+            warmed[..., 1] = np.clip(warmed[..., 1] + ((1.0 - warmed[..., 1]) * warmth * 0.04), 0.0, 1.0)
+            warmed[..., 2] = np.clip(warmed[..., 2] * (1.0 - warmth * 0.14), 0.0, 1.0)
+        else:
+            cool = abs(warmth)
+            warmed[..., 0] = np.clip(warmed[..., 0] * (1.0 - cool * 0.16), 0.0, 1.0)
+            warmed[..., 1] = np.clip(warmed[..., 1] + ((1.0 - warmed[..., 1]) * cool * 0.03), 0.0, 1.0)
+            warmed[..., 2] = np.clip(warmed[..., 2] + ((1.0 - warmed[..., 2]) * cool * 0.18), 0.0, 1.0)
+        out = np.clip(warmed, 0.0, 1.0)
+
+    if settings.tone_fade > 1e-6:
+        fade = float(min(1.0, max(0.0, settings.tone_fade)))
+        faded = np.clip((out * (1.0 - 0.18 * fade)) + (0.08 * fade), 0.0, 1.0)
+        out = np.clip((out * (1.0 - fade)) + (faded * fade), 0.0, 1.0)
+
     if settings.posterize_bits < 8:
         bits = int(min(8, max(1, settings.posterize_bits)))
         out = _rgb_float_from_pil(ImageOps.posterize(_pil_from_rgb_float(out), bits=bits))
@@ -204,6 +238,17 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
         mix = float(min(1.0, max(0.0, settings.halftone_strength)))
         out = np.clip(out * (1.0 - mix) + halftone * mix, 0.0, 1.0)
 
+    if settings.stylize_ink_strength > 1e-6:
+        lum = 0.2126 * out[..., 0] + 0.7152 * out[..., 1] + 0.0722 * out[..., 2]
+        dx = np.abs(np.roll(lum, -1, axis=1) - lum)
+        dy = np.abs(np.roll(lum, -1, axis=0) - lum)
+        edge = np.sqrt((dx * dx) + (dy * dy))
+        thr = float(min(1.0, max(0.0, settings.stylize_ink_threshold))) * 0.35
+        ink_mask = np.clip((edge - thr) / max(1e-6, 0.48 - thr), 0.0, 1.0).astype(np.float32, copy=False)
+        ink_mix = float(min(1.0, max(0.0, settings.stylize_ink_strength)))
+        ink_dark = 1.0 - (ink_mask[..., None] * ink_mix * 0.82)
+        out = np.clip(out * ink_dark, 0.0, 1.0)
+
     if settings.film_grain_strength > 1e-6:
         h, w = out.shape[:2]
         grain = _fractal_noise(
@@ -215,6 +260,7 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
         ) - 0.5
         luminance = 0.2126 * out[..., 0] + 0.7152 * out[..., 1] + 0.0722 * out[..., 2]
         shadow_weight = 0.35 + 0.65 * (1.0 - np.clip(luminance, 0.0, 1.0))
+        grain_mono = np.repeat(grain[..., None], 3, axis=-1)
         grain_rgb = np.stack(
             [
                 grain,
@@ -223,6 +269,8 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
             ],
             axis=-1,
         )
+        chroma_mix = float(min(1.0, max(0.0, settings.film_grain_chroma)))
+        grain_rgb = (grain_mono * (1.0 - chroma_mix)) + (grain_rgb * chroma_mix)
         out = np.clip(
             out + grain_rgb * (0.22 * settings.film_grain_strength) * shadow_weight[..., None],
             0.0,
@@ -248,12 +296,14 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
             octaves=settings.fractal_octaves,
             seed=settings.fractal_seed,
         )
-        n = noise - 0.5
+        contrast = float(max(0.1, settings.fractal_contrast))
+        n = (noise - 0.5) * contrast
+        drift_px = int(max(0, round(settings.fractal_drift * 12.0)))
         chroma = np.stack(
             [
-                np.roll(n, 1, axis=1),
+                np.roll(n, max(1, drift_px), axis=1),
                 n,
-                np.roll(n, -1, axis=0),
+                np.roll(n, -max(1, drift_px), axis=0),
             ],
             axis=-1,
         )
@@ -263,9 +313,22 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
         threshold = float(min(1.0, max(0.0, settings.bloom_threshold)))
         denom = max(1e-6, 1.0 - threshold)
         highlights = np.clip((out - threshold) / denom, 0.0, 1.0)
-        bloom = _rgb_float_from_pil(
+        softness = float(min(1.0, max(0.0, settings.bloom_softness)))
+        bloom_a = _rgb_float_from_pil(
             _pil_from_rgb_float(highlights).filter(ImageFilter.GaussianBlur(radius=settings.bloom_radius))
         )
+        bloom_b = _rgb_float_from_pil(
+            _pil_from_rgb_float(highlights).filter(ImageFilter.GaussianBlur(radius=settings.bloom_radius * (1.5 + softness * 1.7)))
+        )
+        bloom = np.clip((bloom_a * (0.82 - softness * 0.22)) + (bloom_b * (0.18 + softness * 0.22)), 0.0, 1.0)
+        warmth = float(max(-1.0, min(1.0, settings.bloom_warmth)))
+        if abs(warmth) > 1e-6:
+            if warmth >= 0.0:
+                tint = np.asarray([1.0 + warmth * 0.22, 1.0 + warmth * 0.05, 1.0 - warmth * 0.16], dtype=np.float32)
+            else:
+                cool = abs(warmth)
+                tint = np.asarray([1.0 - cool * 0.16, 1.0 + cool * 0.04, 1.0 + cool * 0.22], dtype=np.float32)
+            bloom = np.clip(bloom * tint[None, None, :], 0.0, 1.0)
         out = np.clip(out + bloom * settings.bloom_strength, 0.0, 1.0)
 
     if settings.bokeh_strength > 1e-6 and settings.bokeh_radius > 1e-6:
@@ -274,11 +337,20 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
         denom = max(1e-6, 1.0 - threshold)
         highlights = np.clip((luminance - threshold) / denom, 0.0, 1.0)
         source = out * highlights[..., None]
+        softness = float(min(1.0, max(0.0, settings.bokeh_softness)))
         blur_a = _rgb_float_from_pil(_pil_from_rgb_float(source).filter(ImageFilter.GaussianBlur(settings.bokeh_radius)))
         blur_b = _rgb_float_from_pil(
-            _pil_from_rgb_float(source).filter(ImageFilter.GaussianBlur(settings.bokeh_radius * 1.9))
+            _pil_from_rgb_float(source).filter(ImageFilter.GaussianBlur(settings.bokeh_radius * (1.4 + softness * 1.3)))
         )
-        bokeh = np.clip(blur_a * 0.68 + blur_b * 0.32, 0.0, 1.0)
+        bokeh = np.clip(blur_a * (0.76 - softness * 0.22) + blur_b * (0.24 + softness * 0.22), 0.0, 1.0)
+        warmth = float(max(-1.0, min(1.0, settings.bokeh_warmth)))
+        if abs(warmth) > 1e-6:
+            if warmth >= 0.0:
+                tint = np.asarray([1.0 + warmth * 0.18, 1.0 + warmth * 0.06, 1.0 - warmth * 0.14], dtype=np.float32)
+            else:
+                cool = abs(warmth)
+                tint = np.asarray([1.0 - cool * 0.12, 1.0 + cool * 0.05, 1.0 + cool * 0.18], dtype=np.float32)
+            bokeh = np.clip(bokeh * tint[None, None, :], 0.0, 1.0)
         out = np.clip(out + bokeh * settings.bokeh_strength, 0.0, 1.0)
 
     if settings.blur_radius > 1e-6:
@@ -295,8 +367,20 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
         dx = int(settings.rgb_shift_x)
         dy = int(settings.rgb_shift_y)
         red = _shift_2d_clamped(out[..., 0], dx, dy)
+        green = _shift_2d_clamped(
+            out[..., 1],
+            int(round(dx * settings.chromatic_green_shift * 0.5)),
+            int(round(dy * settings.chromatic_green_shift * 0.5)),
+        )
         blue = _shift_2d_clamped(out[..., 2], -dx, -dy)
-        out = np.stack([red, out[..., 1], blue], axis=-1)
+        shifted = np.stack([red, green, blue], axis=-1)
+        h, w = out.shape[:2]
+        xx, yy = _centered_xy_grid(h, w)
+        lens = np.sqrt(xx * xx + yy * yy)
+        lens = np.clip((lens - 0.05) / 1.15, 0.0, 1.0).astype(np.float32, copy=False)
+        edge_weight = float(min(1.0, max(0.0, settings.chromatic_edge_weight)))
+        weight = (1.0 - edge_weight) + (lens * edge_weight)
+        out = np.clip((out * (1.0 - weight[..., None])) + (shifted * weight[..., None]), 0.0, 1.0)
 
     if settings.prismatic_strength > 1e-6 and settings.prismatic_distance > 1e-6:
         theta = math.radians(settings.prismatic_angle % 360.0)
@@ -305,11 +389,21 @@ def _apply_effects(src_rgb: np.ndarray, settings: ProcessSettings) -> np.ndarray
         dy = int(round(math.sin(theta) * dist))
         if dx != 0 or dy != 0:
             red = _shift_2d_clamped(out[..., 0], dx, dy)
-            green = _shift_2d_clamped(out[..., 1], int(round(dx * 0.35)), int(round(dy * 0.35)))
+            green = _shift_2d_clamped(
+                out[..., 1],
+                int(round(dx * (0.35 + settings.chromatic_green_shift * 0.2))),
+                int(round(dy * (0.35 + settings.chromatic_green_shift * 0.2))),
+            )
             blue = _shift_2d_clamped(out[..., 2], -dx, -dy)
             prism = np.stack([red, green, blue], axis=-1)
             mix = min(1.0, max(0.0, settings.prismatic_strength))
-            out = np.clip(out * (1.0 - mix) + prism * mix, 0.0, 1.0)
+            h, w = out.shape[:2]
+            xx, yy = _centered_xy_grid(h, w)
+            lens = np.sqrt(xx * xx + yy * yy)
+            lens = np.clip((lens - 0.05) / 1.15, 0.0, 1.0).astype(np.float32, copy=False)
+            edge_weight = float(min(1.0, max(0.0, settings.chromatic_edge_weight)))
+            weight = ((1.0 - edge_weight) + (lens * edge_weight)) * mix
+            out = np.clip(out * (1.0 - weight[..., None]) + prism * weight[..., None], 0.0, 1.0)
             if settings.prismatic_strength > 1.0:
                 boost = min(1.0, (settings.prismatic_strength - 1.0) * 0.5)
                 out = np.clip(out + (prism - out) * boost, 0.0, 1.0)
@@ -321,30 +415,43 @@ _DEFAULT_PROCESS_SETTINGS = ProcessSettings(
     exposure=0.0,
     contrast=1.0,
     saturation=1.0,
+    tone_warmth=0.0,
+    tone_fade=0.0,
     pixelate_size=1,
     posterize_bits=8,
     halftone_strength=0.0,
     halftone_size=8,
+    stylize_ink_strength=0.0,
+    stylize_ink_threshold=0.28,
     film_grain_strength=0.0,
     film_grain_size=32.0,
     film_grain_seed=42,
+    film_grain_chroma=0.35,
     vignette_strength=0.0,
     vignette_roundness=1.2,
     fractal_strength=0.0,
     fractal_scale=96.0,
     fractal_octaves=4,
     fractal_seed=23,
+    fractal_contrast=1.0,
+    fractal_drift=0.1,
     bokeh_strength=0.0,
     bokeh_radius=10.0,
     bokeh_threshold=0.72,
+    bokeh_softness=0.5,
+    bokeh_warmth=0.0,
     rgb_shift_x=0,
     rgb_shift_y=0,
     prismatic_strength=0.0,
     prismatic_distance=5.0,
     prismatic_angle=25.0,
+    chromatic_edge_weight=0.65,
+    chromatic_green_shift=0.0,
     bloom_strength=0.0,
     bloom_radius=14.0,
     bloom_threshold=0.7,
+    bloom_softness=0.4,
+    bloom_warmth=0.0,
     blur_radius=0.0,
     sharpen=0.0,
 )
@@ -556,15 +663,30 @@ def _run_pixelate_node(
 
 
 class x1Tone:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "exposure": 0.0,
+            "contrast": 1.0,
+            "saturation": 1.0,
+            "tone_warmth": 0.0,
+            "tone_fade": 0.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "exposure": ("FLOAT", {"default": 0.0, "min": -2.0, "max": 2.0, "step": 0.01}),
-                "contrast": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "saturation": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 3.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -579,44 +701,74 @@ class x1Tone:
     def run(
         self,
         image: torch.Tensor,
-        exposure: float = 0.0,
-        contrast: float = 1.0,
-        saturation: float = 1.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
-        settings = _with_settings(
-            exposure=float(exposure),
-            contrast=float(max(0.0, contrast)),
-            saturation=float(max(0.0, saturation)),
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "exposure": {"min": -2.0, "max": 2.0},
+                "contrast": {"min": 0.0, "max": 3.0},
+                "saturation": {"min": 0.0, "max": 3.0},
+                "tone_warmth": {"min": -1.0, "max": 1.0},
+                "tone_fade": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
         )
-        detail = "exposure={:.2f}, contrast={:.2f}, saturation={:.2f}".format(
+        settings = _with_settings(
+            exposure=float(settings_payload["exposure"]),
+            contrast=float(max(0.0, settings_payload["contrast"])),
+            saturation=float(max(0.0, settings_payload["saturation"])),
+            tone_warmth=float(settings_payload["tone_warmth"]),
+            tone_fade=float(settings_payload["tone_fade"]),
+        )
+        detail = "exposure={:.2f}, contrast={:.2f}, saturation={:.2f}, warmth={:.2f}, fade={:.2f}".format(
             settings.exposure,
             settings.contrast,
             settings.saturation,
+            settings.tone_warmth,
+            settings.tone_fade,
         )
         return _run_effect_node(
             label="x1Tone",
             detail=detail,
             image=image,
             settings=settings,
-            mask_feather=mask_feather,
-            invert_mask=invert_mask,
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )
 
 
 class x1Stylize:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "posterize_bits": 8,
+            "halftone_strength": 0.0,
+            "halftone_size": 8,
+            "stylize_ink_strength": 0.0,
+            "stylize_ink_threshold": 0.28,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "posterize_bits": ("INT", {"default": 8, "min": 1, "max": 8, "step": 1}),
-                "halftone_strength": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "halftone_size": ("INT", {"default": 8, "min": 2, "max": 128, "step": 1}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -631,49 +783,77 @@ class x1Stylize:
     def run(
         self,
         image: torch.Tensor,
-        posterize_bits: int = 8,
-        halftone_strength: float = 0.0,
-        halftone_size: int = 8,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
-        settings = _with_settings(
-            posterize_bits=int(min(8, max(1, posterize_bits))),
-            halftone_strength=float(min(1.0, max(0.0, halftone_strength))),
-            halftone_size=int(max(2, halftone_size)),
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "posterize_bits": {"min": 1, "max": 8, "integer": True},
+                "halftone_strength": {"min": 0.0, "max": 1.0},
+                "halftone_size": {"min": 2, "max": 128, "integer": True},
+                "stylize_ink_strength": {"min": 0.0, "max": 1.0},
+                "stylize_ink_threshold": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
         )
-        detail = "posterize={}bit, halftone={:.2f}@{}".format(
+        settings = _with_settings(
+            posterize_bits=int(min(8, max(1, settings_payload["posterize_bits"]))),
+            halftone_strength=float(min(1.0, max(0.0, settings_payload["halftone_strength"]))),
+            halftone_size=int(max(2, settings_payload["halftone_size"])),
+            stylize_ink_strength=float(min(1.0, max(0.0, settings_payload["stylize_ink_strength"]))),
+            stylize_ink_threshold=float(min(1.0, max(0.0, settings_payload["stylize_ink_threshold"]))),
+        )
+        detail = "posterize={}bit, halftone={:.2f}@{}, ink={:.2f}(thr={:.2f})".format(
             settings.posterize_bits,
             settings.halftone_strength,
             settings.halftone_size,
+            settings.stylize_ink_strength,
+            settings.stylize_ink_threshold,
         )
         return _run_effect_node(
             label="x1Stylize",
             detail=detail,
             image=image,
             settings=settings,
-            mask_feather=mask_feather,
-            invert_mask=invert_mask,
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )
 
 
 class x1Pixelate:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "pixel_size_x": 8,
+            "pixel_size_y": 8,
+            "downsample_mode": "box",
+            "upscale_mode": "nearest",
+            "cell_blend": 0.0,
+            "color_levels": 0,
+            "grid_strength": 0.0,
+            "grid_width": 1,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "pixel_size_x": ("INT", {"default": 8, "min": 1, "max": 256, "step": 1}),
-                "pixel_size_y": ("INT", {"default": 8, "min": 1, "max": 256, "step": 1}),
-                "downsample_mode": (list(_PIXEL_DOWNSAMPLE_MODES.keys()),),
-                "upscale_mode": (list(_PIXEL_UPSAMPLE_MODES.keys()),),
-                "cell_blend": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "color_levels": ("INT", {"default": 0, "min": 0, "max": 64, "step": 1}),
-                "grid_strength": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "grid_width": ("INT", {"default": 1, "min": 0, "max": 16, "step": 1}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -688,46 +868,73 @@ class x1Pixelate:
     def run(
         self,
         image: torch.Tensor,
-        pixel_size_x: int = 8,
-        pixel_size_y: int = 8,
-        downsample_mode: str = "box",
-        upscale_mode: str = "nearest",
-        cell_blend: float = 0.0,
-        color_levels: int = 0,
-        grid_strength: float = 0.0,
-        grid_width: int = 1,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "pixel_size_x": {"min": 1, "max": 256, "integer": True},
+                "pixel_size_y": {"min": 1, "max": 256, "integer": True},
+                "cell_blend": {"min": 0.0, "max": 1.0},
+                "color_levels": {"min": 0, "max": 64, "integer": True},
+                "grid_strength": {"min": 0.0, "max": 1.0},
+                "grid_width": {"min": 0, "max": 16, "integer": True},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        downsample_mode = str(settings_payload["downsample_mode"])
+        if downsample_mode not in _PIXEL_DOWNSAMPLE_MODES:
+            downsample_mode = "box"
+        upscale_mode = str(settings_payload["upscale_mode"])
+        if upscale_mode not in _PIXEL_UPSAMPLE_MODES:
+            upscale_mode = "nearest"
         return _run_pixelate_node(
             image=image,
-            pixel_size_x=int(max(1, pixel_size_x)),
-            pixel_size_y=int(max(1, pixel_size_y)),
-            downsample_mode=str(downsample_mode),
-            upscale_mode=str(upscale_mode),
-            cell_blend=float(cell_blend),
-            color_levels=int(color_levels),
-            grid_strength=float(grid_strength),
-            grid_width=int(grid_width),
-            mask_feather=float(mask_feather),
-            invert_mask=bool(invert_mask),
+            pixel_size_x=int(max(1, settings_payload["pixel_size_x"])),
+            pixel_size_y=int(max(1, settings_payload["pixel_size_y"])),
+            downsample_mode=downsample_mode,
+            upscale_mode=upscale_mode,
+            cell_blend=float(settings_payload["cell_blend"]),
+            color_levels=int(settings_payload["color_levels"]),
+            grid_strength=float(settings_payload["grid_strength"]),
+            grid_width=int(settings_payload["grid_width"]),
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )
 
 
 class x1Film:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "film_grain_strength": 0.0,
+            "film_grain_size": 32.0,
+            "film_grain_seed": 42,
+            "film_grain_chroma": 0.35,
+            "vignette_strength": 0.0,
+            "vignette_roundness": 1.2,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "film_grain_strength": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.5, "step": 0.01}),
-                "film_grain_size": ("FLOAT", {"default": 32.0, "min": 2.0, "max": 256.0, "step": 1.0}),
-                "film_grain_seed": ("INT", {"default": 42, "min": 0, "max": 999999, "step": 1}),
-                "vignette_strength": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "vignette_roundness": ("FLOAT", {"default": 1.2, "min": 0.2, "max": 3.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -742,26 +949,38 @@ class x1Film:
     def run(
         self,
         image: torch.Tensor,
-        film_grain_strength: float = 0.0,
-        film_grain_size: float = 32.0,
-        film_grain_seed: int = 42,
-        vignette_strength: float = 0.0,
-        vignette_roundness: float = 1.2,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
-        settings = _with_settings(
-            film_grain_strength=float(max(0.0, film_grain_strength)),
-            film_grain_size=float(max(2.0, film_grain_size)),
-            film_grain_seed=int(max(0, film_grain_seed)),
-            vignette_strength=float(min(1.0, max(0.0, vignette_strength))),
-            vignette_roundness=float(max(0.2, vignette_roundness)),
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "film_grain_strength": {"min": 0.0, "max": 1.5},
+                "film_grain_size": {"min": 2.0, "max": 256.0},
+                "film_grain_seed": {"min": 0, "max": 999999, "integer": True},
+                "film_grain_chroma": {"min": 0.0, "max": 1.0},
+                "vignette_strength": {"min": 0.0, "max": 1.0},
+                "vignette_roundness": {"min": 0.2, "max": 3.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
         )
-        detail = "grain={:.2f}(s{:.1f},seed{}), vignette={:.2f}(r{:.2f})".format(
+        settings = _with_settings(
+            film_grain_strength=float(max(0.0, settings_payload["film_grain_strength"])),
+            film_grain_size=float(max(2.0, settings_payload["film_grain_size"])),
+            film_grain_seed=int(max(0, settings_payload["film_grain_seed"])),
+            film_grain_chroma=float(min(1.0, max(0.0, settings_payload["film_grain_chroma"]))),
+            vignette_strength=float(min(1.0, max(0.0, settings_payload["vignette_strength"]))),
+            vignette_roundness=float(max(0.2, settings_payload["vignette_roundness"])),
+        )
+        detail = "grain={:.2f}(s{:.1f},seed{},chroma{:.2f}), vignette={:.2f}(r{:.2f})".format(
             settings.film_grain_strength,
             settings.film_grain_size,
             settings.film_grain_seed,
+            settings.film_grain_chroma,
             settings.vignette_strength,
             settings.vignette_roundness,
         )
@@ -770,23 +989,38 @@ class x1Film:
             detail=detail,
             image=image,
             settings=settings,
-            mask_feather=mask_feather,
-            invert_mask=invert_mask,
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )
 
 
 class x1Fractal:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "fractal_strength": 0.0,
+            "fractal_scale": 96.0,
+            "fractal_octaves": 4,
+            "fractal_seed": 23,
+            "fractal_contrast": 1.0,
+            "fractal_drift": 0.1,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "fractal_strength": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "fractal_scale": ("FLOAT", {"default": 96.0, "min": 2.0, "max": 1024.0, "step": 1.0}),
-                "fractal_octaves": ("INT", {"default": 4, "min": 1, "max": 8, "step": 1}),
-                "fractal_seed": ("INT", {"default": 23, "min": 0, "max": 999999, "step": 1}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -801,47 +1035,77 @@ class x1Fractal:
     def run(
         self,
         image: torch.Tensor,
-        fractal_strength: float = 0.0,
-        fractal_scale: float = 96.0,
-        fractal_octaves: int = 4,
-        fractal_seed: int = 23,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
-        settings = _with_settings(
-            fractal_strength=float(min(1.0, max(0.0, fractal_strength))),
-            fractal_scale=float(max(2.0, fractal_scale)),
-            fractal_octaves=int(min(8, max(1, fractal_octaves))),
-            fractal_seed=int(max(0, fractal_seed)),
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "fractal_strength": {"min": 0.0, "max": 1.0},
+                "fractal_scale": {"min": 2.0, "max": 1024.0},
+                "fractal_octaves": {"min": 1, "max": 8, "integer": True},
+                "fractal_seed": {"min": 0, "max": 999999, "integer": True},
+                "fractal_contrast": {"min": 0.1, "max": 3.0},
+                "fractal_drift": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
         )
-        detail = "fractal={:.2f}(s{:.1f},o{},seed{})".format(
+        settings = _with_settings(
+            fractal_strength=float(min(1.0, max(0.0, settings_payload["fractal_strength"]))),
+            fractal_scale=float(max(2.0, settings_payload["fractal_scale"])),
+            fractal_octaves=int(min(8, max(1, settings_payload["fractal_octaves"]))),
+            fractal_seed=int(max(0, settings_payload["fractal_seed"])),
+            fractal_contrast=float(max(0.1, settings_payload["fractal_contrast"])),
+            fractal_drift=float(min(1.0, max(0.0, settings_payload["fractal_drift"]))),
+        )
+        detail = "fractal={:.2f}(s{:.1f},o{},seed{},c{:.2f},d{:.2f})".format(
             settings.fractal_strength,
             settings.fractal_scale,
             settings.fractal_octaves,
             settings.fractal_seed,
+            settings.fractal_contrast,
+            settings.fractal_drift,
         )
         return _run_effect_node(
             label="x1Fractal",
             detail=detail,
             image=image,
             settings=settings,
-            mask_feather=mask_feather,
-            invert_mask=invert_mask,
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )
 
 
 class x1Bloom:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "bloom_strength": 0.0,
+            "bloom_radius": 14.0,
+            "bloom_threshold": 0.7,
+            "bloom_softness": 0.4,
+            "bloom_warmth": 0.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "bloom_strength": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "bloom_radius": ("FLOAT", {"default": 14.0, "min": 0.0, "max": 128.0, "step": 0.5}),
-                "bloom_threshold": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -856,44 +1120,74 @@ class x1Bloom:
     def run(
         self,
         image: torch.Tensor,
-        bloom_strength: float = 0.0,
-        bloom_radius: float = 14.0,
-        bloom_threshold: float = 0.7,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
-        settings = _with_settings(
-            bloom_strength=float(max(0.0, bloom_strength)),
-            bloom_radius=float(max(0.0, bloom_radius)),
-            bloom_threshold=float(min(1.0, max(0.0, bloom_threshold))),
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "bloom_strength": {"min": 0.0, "max": 2.0},
+                "bloom_radius": {"min": 0.0, "max": 128.0},
+                "bloom_threshold": {"min": 0.0, "max": 1.0},
+                "bloom_softness": {"min": 0.0, "max": 1.0},
+                "bloom_warmth": {"min": -1.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
         )
-        detail = "bloom={:.2f}@{:.1f}(thr={:.2f})".format(
+        settings = _with_settings(
+            bloom_strength=float(max(0.0, settings_payload["bloom_strength"])),
+            bloom_radius=float(max(0.0, settings_payload["bloom_radius"])),
+            bloom_threshold=float(min(1.0, max(0.0, settings_payload["bloom_threshold"]))),
+            bloom_softness=float(min(1.0, max(0.0, settings_payload["bloom_softness"]))),
+            bloom_warmth=float(max(-1.0, min(1.0, settings_payload["bloom_warmth"]))),
+        )
+        detail = "bloom={:.2f}@{:.1f}(thr={:.2f},soft={:.2f},warm={:.2f})".format(
             settings.bloom_strength,
             settings.bloom_radius,
             settings.bloom_threshold,
+            settings.bloom_softness,
+            settings.bloom_warmth,
         )
         return _run_effect_node(
             label="x1Bloom",
             detail=detail,
             image=image,
             settings=settings,
-            mask_feather=mask_feather,
-            invert_mask=invert_mask,
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )
 
 
 class x1Bokeh:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "bokeh_strength": 0.0,
+            "bokeh_radius": 10.0,
+            "bokeh_threshold": 0.72,
+            "bokeh_softness": 0.5,
+            "bokeh_warmth": 0.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "bokeh_strength": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "bokeh_radius": ("FLOAT", {"default": 10.0, "min": 0.0, "max": 128.0, "step": 0.5}),
-                "bokeh_threshold": ("FLOAT", {"default": 0.72, "min": 0.0, "max": 1.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -908,46 +1202,76 @@ class x1Bokeh:
     def run(
         self,
         image: torch.Tensor,
-        bokeh_strength: float = 0.0,
-        bokeh_radius: float = 10.0,
-        bokeh_threshold: float = 0.72,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
-        settings = _with_settings(
-            bokeh_strength=float(max(0.0, bokeh_strength)),
-            bokeh_radius=float(max(0.0, bokeh_radius)),
-            bokeh_threshold=float(min(1.0, max(0.0, bokeh_threshold))),
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "bokeh_strength": {"min": 0.0, "max": 2.0},
+                "bokeh_radius": {"min": 0.0, "max": 128.0},
+                "bokeh_threshold": {"min": 0.0, "max": 1.0},
+                "bokeh_softness": {"min": 0.0, "max": 1.0},
+                "bokeh_warmth": {"min": -1.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
         )
-        detail = "bokeh={:.2f}@{:.1f}(thr={:.2f})".format(
+        settings = _with_settings(
+            bokeh_strength=float(max(0.0, settings_payload["bokeh_strength"])),
+            bokeh_radius=float(max(0.0, settings_payload["bokeh_radius"])),
+            bokeh_threshold=float(min(1.0, max(0.0, settings_payload["bokeh_threshold"]))),
+            bokeh_softness=float(min(1.0, max(0.0, settings_payload["bokeh_softness"]))),
+            bokeh_warmth=float(max(-1.0, min(1.0, settings_payload["bokeh_warmth"]))),
+        )
+        detail = "bokeh={:.2f}@{:.1f}(thr={:.2f},soft={:.2f},warm={:.2f})".format(
             settings.bokeh_strength,
             settings.bokeh_radius,
             settings.bokeh_threshold,
+            settings.bokeh_softness,
+            settings.bokeh_warmth,
         )
         return _run_effect_node(
             label="x1Bokeh",
             detail=detail,
             image=image,
             settings=settings,
-            mask_feather=mask_feather,
-            invert_mask=invert_mask,
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )
 
 
 class x1Chromatic:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "rgb_shift_x": 0,
+            "rgb_shift_y": 0,
+            "prismatic_strength": 0.0,
+            "prismatic_distance": 5.0,
+            "prismatic_angle": 25.0,
+            "chromatic_edge_weight": 0.65,
+            "chromatic_green_shift": 0.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "rgb_shift_x": ("INT", {"default": 0, "min": -128, "max": 128, "step": 1}),
-                "rgb_shift_y": ("INT", {"default": 0, "min": -128, "max": 128, "step": 1}),
-                "prismatic_strength": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "step": 0.01}),
-                "prismatic_distance": ("FLOAT", {"default": 5.0, "min": 0.0, "max": 128.0, "step": 0.5}),
-                "prismatic_angle": ("FLOAT", {"default": 25.0, "min": 0.0, "max": 360.0, "step": 1.0}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -962,49 +1286,77 @@ class x1Chromatic:
     def run(
         self,
         image: torch.Tensor,
-        rgb_shift_x: int = 0,
-        rgb_shift_y: int = 0,
-        prismatic_strength: float = 0.0,
-        prismatic_distance: float = 5.0,
-        prismatic_angle: float = 25.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
-        settings = _with_settings(
-            rgb_shift_x=int(rgb_shift_x),
-            rgb_shift_y=int(rgb_shift_y),
-            prismatic_strength=float(max(0.0, prismatic_strength)),
-            prismatic_distance=float(max(0.0, prismatic_distance)),
-            prismatic_angle=float(prismatic_angle),
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "rgb_shift_x": {"min": -128, "max": 128, "integer": True},
+                "rgb_shift_y": {"min": -128, "max": 128, "integer": True},
+                "prismatic_strength": {"min": 0.0, "max": 2.0},
+                "prismatic_distance": {"min": 0.0, "max": 128.0},
+                "prismatic_angle": {"min": 0.0, "max": 360.0},
+                "chromatic_edge_weight": {"min": 0.0, "max": 1.0},
+                "chromatic_green_shift": {"min": -1.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
         )
-        detail = "rgb_shift=({},{}), prismatic={:.2f}@{:.1f}px/{:.0f}deg".format(
+        settings = _with_settings(
+            rgb_shift_x=int(settings_payload["rgb_shift_x"]),
+            rgb_shift_y=int(settings_payload["rgb_shift_y"]),
+            prismatic_strength=float(max(0.0, settings_payload["prismatic_strength"])),
+            prismatic_distance=float(max(0.0, settings_payload["prismatic_distance"])),
+            prismatic_angle=float(settings_payload["prismatic_angle"]),
+            chromatic_edge_weight=float(min(1.0, max(0.0, settings_payload["chromatic_edge_weight"]))),
+            chromatic_green_shift=float(max(-1.0, min(1.0, settings_payload["chromatic_green_shift"]))),
+        )
+        detail = "rgb_shift=({},{}), prismatic={:.2f}@{:.1f}px/{:.0f}deg, edge={:.2f}, green={:.2f}".format(
             settings.rgb_shift_x,
             settings.rgb_shift_y,
             settings.prismatic_strength,
             settings.prismatic_distance,
             settings.prismatic_angle,
+            settings.chromatic_edge_weight,
+            settings.chromatic_green_shift,
         )
         return _run_effect_node(
             label="x1Chromatic",
             detail=detail,
             image=image,
             settings=settings,
-            mask_feather=mask_feather,
-            invert_mask=invert_mask,
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )
 
 
 class x1Focus:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "blur_radius": 0.0,
+            "sharpen": 0.0,
+            "mask_feather": 12.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 128.0, "step": 0.5}),
-                "sharpen": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 2.0, "step": 0.01}),
-                **_mask_required_inputs(),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -1019,15 +1371,24 @@ class x1Focus:
     def run(
         self,
         image: torch.Tensor,
-        blur_radius: float = 0.0,
-        sharpen: float = 0.0,
-        mask_feather: float = 12.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings_payload = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "blur_radius": {"min": 0.0, "max": 128.0},
+                "sharpen": {"min": 0.0, "max": 2.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
         settings = _with_settings(
-            blur_radius=float(max(0.0, blur_radius)),
-            sharpen=float(max(0.0, sharpen)),
+            blur_radius=float(max(0.0, settings_payload["blur_radius"])),
+            sharpen=float(max(0.0, settings_payload["sharpen"])),
         )
         detail = "blur={:.1f}px, sharpen={:.2f}".format(settings.blur_radius, settings.sharpen)
         return _run_effect_node(
@@ -1035,7 +1396,7 @@ class x1Focus:
             detail=detail,
             image=image,
             settings=settings,
-            mask_feather=mask_feather,
-            invert_mask=invert_mask,
+            mask_feather=float(settings_payload["mask_feather"]),
+            invert_mask=bool(settings_payload["invert_mask"]),
             mask=mask,
         )

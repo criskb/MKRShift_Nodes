@@ -1,3 +1,4 @@
+import json
 import math
 from typing import Optional
 
@@ -7,6 +8,7 @@ import torch
 
 from ..categories import FX_DISTORT, FX_OPTICS
 from ..lib.image_shared import gaussian_blur_rgb_np, luma_np, smoothstep_np, to_image_batch
+from ..lib.settings_bundle import parse_settings_payload
 from ..lib.vfx_shared import apply_masked_output, normalized_grid, sample_rgb_grid, screen_blend_np
 
 
@@ -66,25 +68,37 @@ def _lens_dirt_texture(h: int, w: int, dirt_scale: float, dirt_contrast: float, 
 
 
 class x1LensDirtBloom:
+    @staticmethod
+    def _default_settings() -> dict:
+        return {
+            "threshold": 0.72,
+            "softness": 0.10,
+            "bloom_radius": 18.0,
+            "bloom_strength": 0.75,
+            "dirt_amount": 0.65,
+            "dirt_scale": 72.0,
+            "dirt_contrast": 1.35,
+            "tint_r": 1.0,
+            "tint_g": 0.96,
+            "tint_b": 0.88,
+            "seed": 23,
+            "mix": 1.0,
+            "mask_feather": 10.0,
+            "invert_mask": False,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "threshold": ("FLOAT", {"default": 0.72, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "softness": ("FLOAT", {"default": 0.10, "min": 0.0, "max": 0.5, "step": 0.005}),
-                "bloom_radius": ("FLOAT", {"default": 18.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "bloom_strength": ("FLOAT", {"default": 0.75, "min": 0.0, "max": 3.0, "step": 0.01}),
-                "dirt_amount": ("FLOAT", {"default": 0.65, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "dirt_scale": ("FLOAT", {"default": 72.0, "min": 8.0, "max": 512.0, "step": 1.0}),
-                "dirt_contrast": ("FLOAT", {"default": 1.35, "min": 0.2, "max": 4.0, "step": 0.01}),
-                "tint_r": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "tint_g": ("FLOAT", {"default": 0.96, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "tint_b": ("FLOAT", {"default": 0.88, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "seed": ("INT", {"default": 23, "min": 0, "max": 2147483647}),
-                "mix": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "mask_feather": ("FLOAT", {"default": 10.0, "min": 0.0, "max": 256.0, "step": 0.5}),
-                "invert_mask": ("BOOLEAN", {"default": False}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "mask": ("MASK",),
@@ -99,22 +113,45 @@ class x1LensDirtBloom:
     def run(
         self,
         image: torch.Tensor,
-        threshold: float = 0.72,
-        softness: float = 0.10,
-        bloom_radius: float = 18.0,
-        bloom_strength: float = 0.75,
-        dirt_amount: float = 0.65,
-        dirt_scale: float = 72.0,
-        dirt_contrast: float = 1.35,
-        tint_r: float = 1.0,
-        tint_g: float = 0.96,
-        tint_b: float = 0.88,
-        seed: int = 23,
-        mix: float = 1.0,
-        mask_feather: float = 10.0,
-        invert_mask: bool = False,
+        settings_json: str = "{}",
         mask: Optional[torch.Tensor] = None,
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "threshold": {"min": 0.0, "max": 1.0},
+                "softness": {"min": 0.0, "max": 0.5},
+                "bloom_radius": {"min": 0.0, "max": 256.0},
+                "bloom_strength": {"min": 0.0, "max": 3.0},
+                "dirt_amount": {"min": 0.0, "max": 1.0},
+                "dirt_scale": {"min": 8.0, "max": 512.0},
+                "dirt_contrast": {"min": 0.2, "max": 4.0},
+                "tint_r": {"min": 0.0, "max": 1.0},
+                "tint_g": {"min": 0.0, "max": 1.0},
+                "tint_b": {"min": 0.0, "max": 1.0},
+                "seed": {"min": 0, "max": 2147483647, "integer": True},
+                "mix": {"min": 0.0, "max": 1.0},
+                "mask_feather": {"min": 0.0, "max": 256.0},
+            },
+            boolean_keys={"invert_mask"},
+            legacy=legacy_settings,
+        )
+        threshold = float(settings["threshold"])
+        softness = float(settings["softness"])
+        bloom_radius = float(settings["bloom_radius"])
+        bloom_strength = float(settings["bloom_strength"])
+        dirt_amount = float(settings["dirt_amount"])
+        dirt_scale = float(settings["dirt_scale"])
+        dirt_contrast = float(settings["dirt_contrast"])
+        tint_r = float(settings["tint_r"])
+        tint_g = float(settings["tint_g"])
+        tint_b = float(settings["tint_b"])
+        seed = int(settings["seed"])
+        mix = float(settings["mix"])
+        mask_feather = float(settings["mask_feather"])
+        invert_mask = bool(settings["invert_mask"])
         batch = to_image_batch(image)
         b, h, w, _ = batch.shape
         src_np = batch[..., :3].detach().cpu().numpy().astype(np.float32, copy=False)

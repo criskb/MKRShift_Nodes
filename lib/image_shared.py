@@ -1,3 +1,4 @@
+import math
 from typing import Optional
 
 import numpy as np
@@ -84,18 +85,63 @@ def luma_np(rgb: np.ndarray) -> np.ndarray:
 def resize_rgb_np(rgb: np.ndarray, h: int, w: int) -> np.ndarray:
     if rgb.shape[0] == h and rgb.shape[1] == w:
         return rgb.astype(np.float32, copy=False)
-    pil = Image.fromarray(np.clip(rgb * 255.0, 0.0, 255.0).astype(np.uint8), mode="RGB")
-    pil = pil.resize((w, h), resample=Image.Resampling.BILINEAR)
-    return (np.asarray(pil, dtype=np.float32) / 255.0).astype(np.float32, copy=False)
+    src = np.asarray(rgb, dtype=np.float32)
+    if src.ndim == 2:
+        pil = Image.fromarray(src, mode="F")
+        pil = pil.resize((w, h), resample=Image.Resampling.BILINEAR)
+        return np.asarray(pil, dtype=np.float32).astype(np.float32, copy=False)
+
+    channels = []
+    for channel_index in range(src.shape[-1]):
+        pil = Image.fromarray(src[..., channel_index], mode="F")
+        pil = pil.resize((w, h), resample=Image.Resampling.BILINEAR)
+        channels.append(np.asarray(pil, dtype=np.float32))
+    return np.clip(np.stack(channels, axis=-1), 0.0, 1.0).astype(np.float32, copy=False)
+
+
+def _gaussian_kernel_1d(radius: float) -> np.ndarray:
+    sigma = float(max(1e-3, radius))
+    half_width = max(1, int(math.ceil(sigma * 3.0)))
+    axis = np.arange(-half_width, half_width + 1, dtype=np.float32)
+    kernel = np.exp(-(axis * axis) / (2.0 * sigma * sigma)).astype(np.float32, copy=False)
+    total = float(kernel.sum())
+    if total <= 1e-8:
+        return np.asarray([1.0], dtype=np.float32)
+    return (kernel / total).astype(np.float32, copy=False)
+
+
+def _convolve_reflect_2d(channel: np.ndarray, kernel: np.ndarray, axis: int) -> np.ndarray:
+    pad = int(len(kernel) // 2)
+    if pad <= 0:
+        return channel.astype(np.float32, copy=False)
+    pad_spec = ((pad, pad), (0, 0)) if axis == 0 else ((0, 0), (pad, pad))
+    padded = np.pad(channel.astype(np.float32, copy=False), pad_spec, mode="reflect")
+    out = np.zeros_like(channel, dtype=np.float32)
+    if axis == 0:
+        for offset, weight in enumerate(kernel):
+            out += padded[offset:offset + channel.shape[0], :] * float(weight)
+    else:
+        for offset, weight in enumerate(kernel):
+            out += padded[:, offset:offset + channel.shape[1]] * float(weight)
+    return out.astype(np.float32, copy=False)
 
 
 def gaussian_blur_rgb_np(rgb: np.ndarray, radius: float) -> np.ndarray:
     r = float(max(0.0, radius))
     if r <= 1e-6:
         return rgb.astype(np.float32, copy=False)
-    pil = Image.fromarray(np.clip(rgb * 255.0, 0.0, 255.0).astype(np.uint8), mode="RGB")
-    pil = pil.filter(ImageFilter.GaussianBlur(radius=r))
-    return (np.asarray(pil, dtype=np.float32) / 255.0).astype(np.float32, copy=False)
+    kernel = _gaussian_kernel_1d(r)
+    src = np.asarray(rgb, dtype=np.float32)
+    if src.ndim == 2:
+        vertical = _convolve_reflect_2d(src, kernel, axis=0)
+        return _convolve_reflect_2d(vertical, kernel, axis=1)
+
+    channels = []
+    for channel_index in range(src.shape[-1]):
+        channel = src[..., channel_index]
+        vertical = _convolve_reflect_2d(channel, kernel, axis=0)
+        channels.append(_convolve_reflect_2d(vertical, kernel, axis=1))
+    return np.clip(np.stack(channels, axis=-1), 0.0, 1.0).astype(np.float32, copy=False)
 
 
 def rgb_to_hsv_np(rgb: np.ndarray):

@@ -1023,8 +1023,10 @@ class MKRAudioLimiter:
             "required": {
                 "audio": ("*",),
                 "threshold_db": ("FLOAT", {"default": -1.0, "min": -24.0, "max": 0.0, "step": 0.1}),
+                "ceiling_db": ("FLOAT", {"default": -0.5, "min": -24.0, "max": 0.0, "step": 0.1}),
                 "release_ms": ("FLOAT", {"default": 50.0, "min": 1.0, "max": 1000.0, "step": 0.1}),
                 "makeup_db": ("FLOAT", {"default": 0.0, "min": -24.0, "max": 24.0, "step": 0.1}),
+                "soft_clip": ("BOOLEAN", {"default": False}),
                 "normalize_peak": ("BOOLEAN", {"default": False}),
                 "output_format": (["auto", "wav", "mp3", "flac", "ogg"], {"default": "auto"}),
                 "filename_prefix": ("STRING", {"default": "MKR_audio_limiter"}),
@@ -1045,8 +1047,10 @@ class MKRAudioLimiter:
         self,
         audio: Any,
         threshold_db: float = -1.0,
+        ceiling_db: float = -0.5,
         release_ms: float = 50.0,
         makeup_db: float = 0.0,
+        soft_clip: bool = False,
         normalize_peak: bool = False,
         output_format: str = "auto",
         filename_prefix: str = "MKR_audio_limiter",
@@ -1063,6 +1067,7 @@ class MKRAudioLimiter:
 
         w = waveform.astype(np.float32, copy=False)
         threshold = float(max(1e-6, 10.0 ** (float(threshold_db) / 20.0)))
+        ceiling = float(max(1e-6, 10.0 ** (float(ceiling_db) / 20.0)))
         rel_samples = max(1, int(round(float(max(1.0, release_ms)) * float(sample_rate) / 1000.0)))
         release_coeff = float(math.exp(-1.0 / float(rel_samples)))
 
@@ -1075,11 +1080,15 @@ class MKRAudioLimiter:
             out[:, i] = w[:, i] * gain
 
         out *= float(_amp_from_db(makeup_db))
+        if bool(soft_clip):
+            out = (np.tanh(out / ceiling) * ceiling).astype(np.float32, copy=False)
+        else:
+            out = np.clip(out, -ceiling, ceiling)
         if bool(normalize_peak):
             peak = float(np.max(np.abs(out)))
             if peak > 1e-9:
-                out *= float(0.98 / peak)
-        out = np.clip(out, -1.0, 1.0)
+                out *= float(ceiling / peak)
+        out = np.clip(out, -ceiling, ceiling)
 
         return _save_audio_result(
             waveform=out,

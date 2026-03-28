@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -6,6 +7,7 @@ from PIL import Image, ImageDraw
 from ..categories import GCODE_PREVIEW
 from ..lib.gcode_mesh import _render_mesh_preview
 from ..lib.gcode_shared import _json_text, _pil_to_batch, _render_plan_preview
+from ..lib.settings_bundle import parse_settings_payload
 from ..lib.gcode_slicer import _plan_from_gcode_text
 
 
@@ -37,12 +39,24 @@ def _combine_split(left: Image.Image, right: Image.Image) -> Image.Image:
 class MKRGCodePreview:
     SEARCH_ALIASES = ["gcode preview", "toolpath preview", "mesh preview", "3d print preview"]
 
+    @staticmethod
+    def _default_settings() -> Dict[str, Any]:
+        return {
+            "view_mode": "auto",
+            "preview_size": 768,
+        }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "view_mode": (["auto", "plan_top", "mesh_isometric", "mesh_top", "split"], {"default": "auto"}),
-                "preview_size": ("INT", {"default": 768, "min": 128, "max": 2048, "step": 16}),
+                "settings_json": (
+                    "STRING",
+                    {
+                        "default": json.dumps(cls._default_settings(), separators=(",", ":")),
+                        "multiline": True,
+                    },
+                ),
             },
             "optional": {
                 "plan": ("MKR_GCODE_PLAN", {"forceInput": True}),
@@ -60,20 +74,29 @@ class MKRGCodePreview:
 
     def run(
         self,
-        view_mode: str = "auto",
-        preview_size: int = 768,
+        settings_json: str = "{}",
         plan: Optional[Dict[str, Any]] = None,
         mesh: Optional[Dict[str, Any]] = None,
         profile: Optional[Dict[str, Any]] = None,
         gcode_text: str = "",
         gcode_path: str = "",
+        **legacy_settings,
     ):
+        settings = parse_settings_payload(
+            settings_json=settings_json,
+            defaults=self._default_settings(),
+            numeric_specs={
+                "preview_size": {"min": 128, "max": 2048, "integer": True},
+            },
+            legacy=legacy_settings,
+        )
         warnings = []
         parsed_plan = plan if isinstance(plan, dict) else None
         source_gcode = _load_gcode_text(gcode_text, gcode_path)
         if parsed_plan is None and source_gcode:
             parsed_plan = _plan_from_gcode_text(source_gcode, profile)
-        mode = str(view_mode or "auto").strip().lower()
+        mode = str(settings.get("view_mode", "auto") or "auto").strip().lower()
+        preview_size = int(settings.get("preview_size", 768) or 768)
         if mode == "auto":
             if parsed_plan and isinstance(mesh, dict) and mesh.get("tris"):
                 mode = "split"
