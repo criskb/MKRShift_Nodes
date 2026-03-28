@@ -18,6 +18,6 @@ Repository = "https://github.com/criskb/MKRShift_Nodes"
 v3 = []
 
 [tool.comfy]
-DisplayName = "MKRShift Nodes"
-PublisherId = "criskb"
+DisplayName = "mkrshift-nodes"
+PublisherId = "criskb-api-key"
 requires-comfyui = ">=0.18.1"
