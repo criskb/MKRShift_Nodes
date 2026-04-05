@@ -53,6 +53,7 @@ FX_COMPOSITE = f"{VFX_ROOT}/Composite"
 UTILITY_MASK = f"{ROOT}/Utility/Mask"
 UTILITY_RESIZE = f"{ROOT}/Utility/Resize"
 UTILITY_LAYOUT = f"{ROOT}/Utility/Layout"
+UTILITY_LOGIC = f"{ROOT}/Utility/Logic"
 UTILITY_SHADER = f"{ROOT}/Utility/Shader"
 UTILITY_PHOTO = f"{ROOT}/Utility/Photo"
 

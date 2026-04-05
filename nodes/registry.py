@@ -93,6 +93,7 @@ from .network_addon_runtime_nodes import (
 )
 from .pose_studio_nodes import MKRPoseStudio
 from .image_layout_nodes import MKRImageCombineGrid, MKRImageSplitGrid
+from .utility_logic_nodes import MKRToggleSwitch
 from .preview_nodes import MKRBatchCollagePreview
 from .inspect_compare_nodes import MKRBatchDifferencePreview
 from .heatmap_nodes import x1Heatmap, x1Heightmap
@@ -414,6 +415,7 @@ NODE_CLASS_MAPPINGS = {
     "MKRThemeDebugger": MKRThemeDebugger,
     "MKRImageSplitGrid": MKRImageSplitGrid,
     "MKRImageCombineGrid": MKRImageCombineGrid,
+    "MKRToggleSwitch": MKRToggleSwitch,
     "MKRGCodePrinterProfile": MKRGCodePrinterProfile,
     "MKRGCodeOrcaProfileLoader": MKRGCodeOrcaProfileLoader,
     "MKRGCodeLoadMeshModel": MKRGCodeLoadMeshModel,
@@ -735,6 +737,7 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRThemeDebugger": "Theme Debugger • MKRShift Nodes",
     "MKRImageSplitGrid": "Image Split Grid • MKRShift Nodes",
     "MKRImageCombineGrid": "Image Combine Grid • MKRShift Nodes",
+    "MKRToggleSwitch": "Toggle Switch • MKRShift Nodes",
     "MKRGCodePrinterProfile": "G-code Printer Profile • MKRShift Nodes",
     "MKRGCodeOrcaProfileLoader": "G-code Orca Profile Loader • MKRShift Nodes",
     "MKRGCodeLoadMeshModel": "G-code Load Mesh Model • MKRShift Nodes",

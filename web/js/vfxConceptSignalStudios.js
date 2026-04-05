@@ -1562,7 +1562,7 @@ const NODE_CONFIGS = {
     metrics: [
       { label: "Scan", get: (node) => formatNumber(getNumber(node, "scanline_strength", 0.28)) },
       { label: "Density", get: (node) => formatNumber(getNumber(node, "scanline_density", 1.0)) },
-      { label: "Noise", get: (node) => formatNumber(getNumber(node, "noise_strength", 0.05), 3) },
+      { label: "Noise", get: (node) => formatNumber(getNumber(node, "noise_strength", 0.05), 3), visibleWhen: (node) => getNumber(node, "noise_strength", 0.05) > 0.001 },
     ],
     presets: [
       { label: "Broadcast", tone: "accent", values: { scanline_strength: 0.26, scanline_density: 0.95, phosphor_strength: 0.22, bloom_bleed: 0.12, warp_strength: 0.08, curvature: 0.10, noise_strength: 0.02 } },
@@ -1653,7 +1653,7 @@ const NODE_CONFIGS = {
       height: 226,
       draw: drawWarpDisplacePreview,
       readouts: [
-        { label: "Noise Scale", get: (node) => formatNumber(getNumber(node, "noise_scale", 64.0), 1) },
+        { label: "Noise Scale", get: (node) => formatNumber(getNumber(node, "noise_scale", 64.0), 1), visibleWhen: (node) => !hasInputLink(node, "direction_map") },
         { label: "Dir Map", get: (node) => hasInputLink(node, "direction_map") ? "Live" : "Proc" },
         { label: "Strength Map", get: (node) => hasInputLink(node, "strength_map") ? "Live" : "Uniform" },
       ],
@@ -1731,7 +1731,7 @@ const NODE_CONFIGS = {
       readouts: [
         { label: "Strength", get: (node) => formatNumber(getNumber(node, "glow_strength", 1.0)) },
         { label: "Softness", get: (node) => formatNumber(getNumber(node, "edge_softness", 1.0)) },
-        { label: "Ink", get: (node) => formatNumber(getNumber(node, "ink_amount", 0.45)) },
+        { label: "Ink", get: (node) => formatNumber(getNumber(node, "ink_amount", 0.45)), visibleWhen: (node) => String(getValue(node, "composite_mode", "screen")) === "ink" },
       ],
       help: "Threshold finds the contour energy, spread controls the halo radius, and ink mode uses the same edge key to darken instead of glow.",
     },
@@ -1790,6 +1790,7 @@ function buildPanel(node, config) {
   metricsWrap.className = "mkr-grade-metrics";
   const metricViews = (config.metrics || []).map((metric) => {
     const view = createGradeMetric(metric.label, safeViewText(metric.get, node));
+    view.element.style.display = controlIsVisible(node, metric) ? "" : "none";
     metricsWrap.appendChild(view.element);
     return { ...metric, view };
   });
@@ -1815,6 +1816,7 @@ function buildPanel(node, config) {
   readoutWrap.className = "mkr-grade-inline";
   const readoutViews = (config.graph.readouts || []).map((readout) => {
     const view = createGradeReadout(readout.label, safeViewText(readout.get, node));
+    view.element.style.display = controlIsVisible(node, readout) ? "" : "none";
     readoutWrap.appendChild(view.element);
     return { ...readout, view };
   });
@@ -1873,8 +1875,24 @@ function buildPanel(node, config) {
   }
 
   function refresh() {
-    metricViews.forEach((metric) => metric.view.setValue(safeViewText(metric.get, node)));
-    readoutViews.forEach((readout) => readout.view.setValue(safeViewText(readout.get, node)));
+    let visibleMetricCount = 0;
+    metricViews.forEach((metric) => {
+      metric.view.setValue(safeViewText(metric.get, node));
+      const visible = controlIsVisible(node, metric);
+      metric.view.element.style.display = visible ? "" : "none";
+      if (visible) visibleMetricCount += 1;
+    });
+    metricsWrap.style.display = visibleMetricCount > 0 ? "" : "none";
+
+    let visibleReadoutCount = 0;
+    readoutViews.forEach((readout) => {
+      readout.view.setValue(safeViewText(readout.get, node));
+      const visible = controlIsVisible(node, readout);
+      readout.view.element.style.display = visible ? "" : "none";
+      if (visible) visibleReadoutCount += 1;
+    });
+    readoutWrap.style.display = visibleReadoutCount > 0 ? "" : "none";
+
     controlViews.forEach(({ spec, control }) => {
       try {
         control.setValue(readControlValue(node, spec));
