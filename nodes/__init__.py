@@ -2,7 +2,7 @@ from .core_nodes import AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRChar
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
 from .prompt_nodes import MKRCLIPTextEncodePrompt
 from .addon_workflow_nodes import MKRAddonWorkflowInterface
-from .extension_builder_nodes import MKRNodeExtensionBuilderAdvanced, MKRNodeExtensionBuilderPlan
+from .extension_builder_nodes import MKRNodeExtensionBuilderAdvanced, MKRNodeExtensionBuilderPlan, MKRNodeExtensionPyprojectPlan
 from .addon_debug_nodes import MKRAddonStats, MKRJSONDiff
 from .bridge_nodes import (
     MKRBlenderCameraShot,
@@ -92,6 +92,7 @@ from .network_addon_runtime_nodes import (
     MKRWatchFolderWrite,
 )
 from .pose_studio_nodes import MKRPoseStudio
+from .pixel_art_nodes import MKRPixelPaletteReduce, MKRSpriteSheetExtract
 from .inspect_compare_nodes import MKRBatchDifferencePreview
 from .publish_manifest_nodes import MKRPublishAssetManifest, MKRPublishCopyAtIndex, MKRPublishCopyDeck, MKRPublishManifestAtIndex
 from .publish_nodes import MKRPublishEndCard, MKRPublishPromoFrame
@@ -116,6 +117,7 @@ __all__ = [
     "MKRAddonWorkflowInterface",
     "MKRNodeExtensionBuilderAdvanced",
     "MKRNodeExtensionBuilderPlan",
+    "MKRNodeExtensionPyprojectPlan",
     "MKRJSONDiff",
     "MKRAddonStats",
     "MKRBlenderSceneImport",
@@ -187,6 +189,8 @@ __all__ = [
     "MKROSCSend",
     "MKRWatchFolderWrite",
     "MKRPoseStudio",
+    "MKRPixelPaletteReduce",
+    "MKRSpriteSheetExtract",
     "AngleShift",
     "Aspect1X",
     "Aspect1XBatch",

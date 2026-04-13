@@ -1,7 +1,7 @@
 from . import MKRCharacterCustomizer, AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRThemeDebugger
 from .prompt_nodes import MKRCLIPTextEncodePrompt
 from .addon_workflow_nodes import MKRAddonWorkflowInterface
-from .extension_builder_nodes import MKRNodeExtensionBuilderAdvanced, MKRNodeExtensionBuilderPlan
+from .extension_builder_nodes import MKRNodeExtensionBuilderAdvanced, MKRNodeExtensionBuilderPlan, MKRNodeExtensionPyprojectPlan
 from .addon_debug_nodes import MKRAddonStats, MKRJSONDiff
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
 from .bridge_nodes import (
@@ -93,6 +93,7 @@ from .network_addon_runtime_nodes import (
 )
 from .pose_studio_nodes import MKRPoseStudio
 from .image_layout_nodes import MKRImageCombineGrid, MKRImageSplitGrid
+from .pixel_art_nodes import MKRPixelPaletteReduce, MKRSpriteSheetExtract
 from .utility_logic_nodes import MKRToggleSwitch
 from .preview_nodes import MKRBatchCollagePreview
 from .inspect_compare_nodes import MKRBatchDifferencePreview
@@ -338,6 +339,7 @@ NODE_CLASS_MAPPINGS = {
     "MKRAddonWorkflowInterface": MKRAddonWorkflowInterface,
     "MKRNodeExtensionBuilderAdvanced": MKRNodeExtensionBuilderAdvanced,
     "MKRNodeExtensionBuilderPlan": MKRNodeExtensionBuilderPlan,
+    "MKRNodeExtensionPyprojectPlan": MKRNodeExtensionPyprojectPlan,
     "MKRJSONDiff": MKRJSONDiff,
     "MKRAddonStats": MKRAddonStats,
     "MKRBlenderSceneImport": MKRBlenderSceneImport,
@@ -416,6 +418,8 @@ NODE_CLASS_MAPPINGS = {
     "MKRThemeDebugger": MKRThemeDebugger,
     "MKRImageSplitGrid": MKRImageSplitGrid,
     "MKRImageCombineGrid": MKRImageCombineGrid,
+    "MKRPixelPaletteReduce": MKRPixelPaletteReduce,
+    "MKRSpriteSheetExtract": MKRSpriteSheetExtract,
     "MKRToggleSwitch": MKRToggleSwitch,
     "MKRGCodePrinterProfile": MKRGCodePrinterProfile,
     "MKRGCodeOrcaProfileLoader": MKRGCodeOrcaProfileLoader,
@@ -661,6 +665,7 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRAddonWorkflowInterface": "Addon Workflow Interface • MKRShift Nodes",
     "MKRNodeExtensionBuilderAdvanced": "Node Extension Builder Advanced • MKRShift Nodes",
     "MKRNodeExtensionBuilderPlan": "Node Extension Builder Plan • MKRShift Nodes",
+    "MKRNodeExtensionPyprojectPlan": "Node Extension Pyproject Plan • MKRShift Nodes",
     "MKRJSONDiff": "JSON Diff • MKRShift Nodes",
     "MKRAddonStats": "Addon Stats • MKRShift Nodes",
     "MKRBlenderSceneImport": "Blender Scene Import • MKRShift Nodes",
@@ -739,6 +744,8 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "MKRThemeDebugger": "Theme Debugger • MKRShift Nodes",
     "MKRImageSplitGrid": "Image Split Grid • MKRShift Nodes",
     "MKRImageCombineGrid": "Image Combine Grid • MKRShift Nodes",
+    "MKRPixelPaletteReduce": "Pixel Palette Reduce • MKRShift Nodes",
+    "MKRSpriteSheetExtract": "Sprite Sheet Extract • MKRShift Nodes",
     "MKRToggleSwitch": "Toggle Switch • MKRShift Nodes",
     "MKRGCodePrinterProfile": "G-code Printer Profile • MKRShift Nodes",
     "MKRGCodeOrcaProfileLoader": "G-code Orca Profile Loader • MKRShift Nodes",

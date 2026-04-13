@@ -17,6 +17,7 @@
   - [MKRAddonWorkflowInterface](MKRAddonWorkflowInterface.md)
   - [MKRNodeExtensionBuilderAdvanced](MKRNodeExtensionBuilderAdvanced.md)
   - [MKRNodeExtensionBuilderPlan](MKRNodeExtensionBuilderPlan.md)
+  - [MKRNodeExtensionPyprojectPlan](MKRNodeExtensionPyprojectPlan.md)
 - Addon Debug
   - [MKRJSONDiff](MKRJSONDiff.md)
   - [MKRAddonStats](MKRAddonStats.md)
@@ -113,6 +114,8 @@
   - [x1ColorWarpChromaLuma](x1ColorWarpChromaLuma.md)
 - Mask + Utility
   - [x1MaskGen](x1MaskGen.md)
+  - [MKRPixelPaletteReduce](MKRPixelPaletteReduce.md)
+  - [MKRSpriteSheetExtract](MKRSpriteSheetExtract.md)
 - Surface / Preview + Packing
   - [x1PreviewMaterial](x1PreviewMaterial.md)
   - [x1PBRPack](x1PBRPack.md)

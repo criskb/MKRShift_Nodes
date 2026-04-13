@@ -1,6 +1,6 @@
 {
-  "last_node_id": 2,
-  "last_link_id": 1,
+  "last_node_id": 3,
+  "last_link_id": 2,
   "nodes": [
     {
       "id": 1,
@@ -40,7 +40,7 @@
         { "name": "advanced_bundle_json", "type": "STRING", "link": 1 }
       ],
       "outputs": [
-        { "name": "builder_manifest_json", "type": "STRING", "links": null },
+        { "name": "builder_manifest_json", "type": "STRING", "links": [2] },
         { "name": "builder_command", "type": "STRING", "links": null },
         { "name": "summary_json", "type": "STRING", "links": null }
       ],
@@ -50,18 +50,42 @@
         "criskb",
         "0.1.0",
         "__init__.py",
-        "[\"MKRNodeExtensionBuilderAdvanced\", \"MKRNodeExtensionBuilderPlan\", \"x1SharpenPro\"]",
+        "[\"MKRNodeExtensionBuilderAdvanced\", \"MKRNodeExtensionBuilderPlan\", \"MKRNodeExtensionPyprojectPlan\", \"x1SharpenPro\"]",
         "{}"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "MKRNodeExtensionPyprojectPlan",
+      "pos": [1110, 260],
+      "size": [430, 280],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        { "name": "builder_manifest_json", "type": "STRING", "link": 2 }
+      ],
+      "outputs": [
+        { "name": "pyproject_toml", "type": "STRING", "links": null },
+        { "name": "summary_json", "type": "STRING", "links": null }
+      ],
+      "properties": { "Node name for S&R": "MKRNodeExtensionPyprojectPlan" },
+      "widgets_values": [
+        "",
+        "README.md",
+        ">=3.10",
+        "{\"includes\":[\"web\"],\"icon_path\":\"\"}"
       ]
     }
   ],
   "links": [
-    [1, 1, 0, 2, 0, "STRING"]
+    [1, 1, 0, 2, 0, "STRING"],
+    [2, 2, 0, 3, 0, "STRING"]
   ],
   "groups": [],
   "config": {},
   "extra": {
-    "ds": { "scale": 0.9, "offset": [100, 80] }
+    "ds": { "scale": 0.85, "offset": [60, 120] }
   },
   "version": 0.4
 }

@@ -23,4 +23,4 @@ Builds a structured `advanced_options_json` bundle for `MKRNodeExtensionBuilderP
 
 - Use this node when you want a cleaner main node surface and a reusable advanced-settings subgraph.
 - `extras_json` must be a JSON object. Invalid JSON falls back to `{}` and is reported in `summary_json`.
-- This node does not build the final manifest by itself. Connect its output into `MKRNodeExtensionBuilderPlan`.
+- This node does not build the final manifest by itself. Connect its output into `MKRNodeExtensionBuilderPlan`, then pass that manifest into `MKRNodeExtensionPyprojectPlan` if you want a matching `pyproject.toml` draft.

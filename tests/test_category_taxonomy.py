@@ -41,6 +41,7 @@ from MKRShift_Nodes.categories import (  # noqa: E402
     SURFACE_PREVIEW,
     SURFACE_TECH_ART,
     SURFACE_TEXTURE,
+    UTILITY_PIXEL,
     UTILITY_MAPS,
     UTILITY_TECH_ART,
     UTILITY_TEXTURE,
@@ -54,7 +55,11 @@ from MKRShift_Nodes.nodes.bridge_nodes import (  # noqa: E402
 )
 from MKRShift_Nodes.nodes.addon_workflow_nodes import MKRAddonWorkflowInterface  # noqa: E402
 from MKRShift_Nodes.nodes.addon_debug_nodes import MKRAddonStats, MKRJSONDiff  # noqa: E402
-from MKRShift_Nodes.nodes.extension_builder_nodes import MKRNodeExtensionBuilderAdvanced, MKRNodeExtensionBuilderPlan  # noqa: E402
+from MKRShift_Nodes.nodes.extension_builder_nodes import (  # noqa: E402
+    MKRNodeExtensionBuilderAdvanced,
+    MKRNodeExtensionBuilderPlan,
+    MKRNodeExtensionPyprojectPlan,
+)
 from MKRShift_Nodes.nodes.host_3d_image_bridge_nodes import (  # noqa: E402
     MKRBlenderImageImport,
     MKRBlenderImageOutputPlan,
@@ -184,6 +189,7 @@ from MKRShift_Nodes.nodes.texture_tool_nodes import (  # noqa: E402
     x1TextureStrata,
     x1TextureWeavePattern,
 )
+from MKRShift_Nodes.nodes.pixel_art_nodes import MKRPixelPaletteReduce, MKRSpriteSheetExtract  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_finishing_nodes import x1AnamorphicStreaks, x1HeatHaze  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_optics_nodes import x1LensDirtBloom, x1ShockwaveDistort  # noqa: E402
 from MKRShift_Nodes.nodes.vfx_composite_nodes import x1EdgeAberration, x1LightWrapComposite  # noqa: E402
@@ -208,6 +214,10 @@ class CategoryTaxonomyTests(unittest.TestCase):
     def test_prompt_node_lives_under_prompt_branch(self) -> None:
         self.assertEqual(MKRCLIPTextEncodePrompt.CATEGORY, CORE_PROMPT)
 
+    def test_pixel_art_nodes_live_under_pixel_utility_branch(self) -> None:
+        self.assertEqual(MKRPixelPaletteReduce.CATEGORY, UTILITY_PIXEL)
+        self.assertEqual(MKRSpriteSheetExtract.CATEGORY, UTILITY_PIXEL)
+
     def test_blender_bridge_nodes_live_under_bridge_branch(self) -> None:
         self.assertEqual(MKRBlenderSceneImport.CATEGORY, BRIDGE_BLENDER)
         self.assertEqual(MKRBlenderCameraShot.CATEGORY, BRIDGE_BLENDER)
@@ -221,6 +231,7 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(MKRAddonWorkflowInterface.CATEGORY, ADDONS_WORKFLOW)
         self.assertEqual(MKRNodeExtensionBuilderAdvanced.CATEGORY, ADDONS_WORKFLOW)
         self.assertEqual(MKRNodeExtensionBuilderPlan.CATEGORY, ADDONS_WORKFLOW)
+        self.assertEqual(MKRNodeExtensionPyprojectPlan.CATEGORY, ADDONS_WORKFLOW)
         self.assertEqual(MKRJSONDiff.CATEGORY, ADDONS_NETWORK)
         self.assertEqual(MKRAddonStats.CATEGORY, ADDONS_NETWORK)
 

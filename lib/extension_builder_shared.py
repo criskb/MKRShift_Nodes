@@ -3,6 +3,7 @@ import re
 from typing import Any, Dict, List, Tuple
 
 from .host_bridge_shared import clean_text, parse_json_object
+from .settings_bundle import parse_settings_bool
 
 
 DEFAULT_EXTENSION_BUILDER_COMMAND = (
@@ -20,6 +21,16 @@ _ADVANCED_TEXT_KEYS = (
     "skill_url",
     "builder_cli_command",
 )
+
+_TOML_ESCAPES = {
+    "\\": "\\\\",
+    "\"": "\\\"",
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
 
 
 def normalize_node_list(raw: str) -> Tuple[List[str], List[str]]:
@@ -137,3 +148,65 @@ def merge_advanced_options(raw_json: str, bundle_json: str = "") -> Tuple[Dict[s
     merged["extras"] = extras
 
     return (merged, warnings, bool(clean_text(bundle_json)))
+
+
+def parse_builder_manifest(raw_json: str) -> Tuple[Dict[str, Any], List[str]]:
+    payload, warnings = parse_json_object(raw_json, "builder_manifest_json")
+    if not payload:
+        warnings.append("builder_manifest_json did not include any manifest data")
+    return (payload, warnings)
+
+
+def derive_project_name(package_name: str, extension_name: str) -> str:
+    package_text = clean_text(package_name)
+    if "." in package_text:
+        package_text = package_text.split(".", 1)[1]
+    return clean_text(package_text) or clean_text(extension_name).lower().replace(" ", "-") or "mkrshift-nodes"
+
+
+def normalize_string_list(values: Any) -> List[str]:
+    if not isinstance(values, list):
+        return []
+    items: List[str] = []
+    seen = set()
+    for value in values:
+        text = clean_text(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        items.append(text)
+    return items
+
+
+def derive_repository_urls(repository_url: str, documentation_url: str = "", bug_tracker_url: str = "") -> Tuple[str, str]:
+    repository = clean_text(repository_url)
+    documentation = clean_text(documentation_url)
+    bug_tracker = clean_text(bug_tracker_url)
+
+    if repository.startswith("https://github.com/"):
+        if not documentation:
+            documentation = repository.rstrip("/") + "/wiki"
+        if not bug_tracker:
+            bug_tracker = repository.rstrip("/") + "/issues"
+    return (documentation, bug_tracker)
+
+
+def normalize_requires_comfyui(value: str) -> str:
+    token = clean_text(value)
+    if not token:
+        return ""
+    if token.startswith((">=", "<=", "==", "!=", "~=", ">", "<")):
+        return token
+    return f">={token}"
+
+
+def should_include_v3_dependency(options: Dict[str, Any], extras: Dict[str, Any]) -> bool:
+    if "include_v3_optional_dependency" in options:
+        return parse_settings_bool(options.get("include_v3_optional_dependency"), False)
+    return parse_settings_bool(extras.get("supports_v3_companions"), False)
+
+
+def toml_string(value: str) -> str:
+    text = str(value)
+    escaped = "".join(_TOML_ESCAPES.get(char, char) for char in text)
+    return f"\"{escaped}\""

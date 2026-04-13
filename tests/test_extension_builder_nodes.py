@@ -3,6 +3,11 @@ import sys
 import unittest
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    tomllib = None
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_PARENT = REPO_ROOT.parent
@@ -13,6 +18,7 @@ if str(PACKAGE_PARENT) not in sys.path:
 from MKRShift_Nodes.nodes.extension_builder_nodes import (  # noqa: E402
     MKRNodeExtensionBuilderAdvanced,
     MKRNodeExtensionBuilderPlan,
+    MKRNodeExtensionPyprojectPlan,
 )
 
 
@@ -171,6 +177,83 @@ class ExtensionBuilderNodeTests(unittest.TestCase):
         self.assertEqual(manifest["extras"]["workflow_examples_dir"], "example_workflows")
         self.assertEqual(manifest["extras"]["supports_v3_companions"], True)
         self.assertIn("tags", summary["advanced_keys"])
+
+    def test_pyproject_plan_generates_registry_ready_toml(self) -> None:
+        if tomllib is None:
+            self.skipTest("tomllib not available")
+
+        plan_node = MKRNodeExtensionBuilderPlan()
+        pyproject_node = MKRNodeExtensionPyprojectPlan()
+        manifest_text, _, _ = plan_node.build(
+            extension_name="MKRShift Utility Pack",
+            publisher="MKR Shift",
+            version="1.2.3",
+            entry_file="nodes/__init__.py",
+            node_list_json='["x1SharpenPro"]',
+            advanced_options_json=json.dumps(
+                {
+                    "repository": "https://github.com/criskb/MKRShift_Nodes",
+                    "description": "Utility extension pack.",
+                    "min_comfyui_version": "0.18.1",
+                    "extras": {"supports_v3_companions": True},
+                }
+            ),
+        )
+
+        pyproject_text, summary_text = pyproject_node.build(
+            builder_manifest_json=manifest_text,
+            version_override="",
+            readme_path="README.md",
+            requires_python=">=3.10",
+            pyproject_options_json=json.dumps({"includes": ["web"], "icon_path": "assets/icon.png"}),
+        )
+
+        payload = tomllib.loads(pyproject_text)
+        summary = json.loads(summary_text)
+
+        self.assertEqual(payload["project"]["name"], "mkrshift-utility-pack")
+        self.assertEqual(payload["project"]["version"], "1.2.3")
+        self.assertEqual(payload["project"]["readme"], "README.md")
+        self.assertEqual(payload["project"]["requires-python"], ">=3.10")
+        self.assertEqual(payload["project"]["optional-dependencies"]["v3"], ["comfy_api>=0.0.2"])
+        self.assertEqual(payload["project"]["urls"]["Documentation"], "https://github.com/criskb/MKRShift_Nodes/wiki")
+        self.assertEqual(payload["project"]["urls"]["Bug Tracker"], "https://github.com/criskb/MKRShift_Nodes/issues")
+        self.assertEqual(payload["tool"]["comfy"]["PublisherId"], "mkr-shift")
+        self.assertEqual(payload["tool"]["comfy"]["DisplayName"], "MKRShift Utility Pack")
+        self.assertEqual(payload["tool"]["comfy"]["includes"], ["web"])
+        self.assertEqual(payload["tool"]["comfy"]["requires-comfyui"], ">=0.18.1")
+        self.assertTrue(summary["has_v3_optional_dependency"])
+        self.assertEqual(summary["warnings"], [])
+
+    def test_pyproject_plan_supports_overrides_and_invalid_json_warning(self) -> None:
+        if tomllib is None:
+            self.skipTest("tomllib not available")
+
+        pyproject_node = MKRNodeExtensionPyprojectPlan()
+        pyproject_text, summary_text = pyproject_node.build(
+            builder_manifest_json=json.dumps(
+                {
+                    "name": "Pack",
+                    "package": "pub.pack",
+                    "publisher": "pub",
+                    "version": "0.1.0",
+                    "description": "Pack desc",
+                    "repository": "https://example.com/repo",
+                }
+            ),
+            version_override="2.0.0",
+            readme_path="docs/README.md",
+            requires_python=">=3.11",
+            pyproject_options_json="{bad}",
+        )
+
+        payload = tomllib.loads(pyproject_text)
+        summary = json.loads(summary_text)
+        self.assertEqual(payload["project"]["version"], "2.0.0")
+        self.assertEqual(payload["project"]["readme"], "docs/README.md")
+        self.assertEqual(payload["project"]["requires-python"], ">=3.11")
+        self.assertEqual(payload["tool"]["comfy"]["DisplayName"], "Pack")
+        self.assertIn("pyproject_options_json is not valid JSON", summary["warnings"])
 
 
 if __name__ == "__main__":

@@ -32,4 +32,5 @@ Builds a starter `comfyui-node-extension-builder` manifest and companion command
 - Keep frequently used values in primary inputs and place packaging-specific extras in `advanced_options_json` or, preferably, `MKRNodeExtensionBuilderAdvanced`.
 - The dedicated advanced node is the cleaner option when you want a reusable expert-only subgraph for tags, repository metadata, builder command overrides, or manifest extras.
 - Default flow: run the returned command, write `builder_manifest_json` to `extension.builder.json`, then run your local builder CLI.
+- Feed `builder_manifest_json` into `MKRNodeExtensionPyprojectPlan` when you want the same workflow to draft a matching `pyproject.toml`.
 - For onboarding, see `example_workflows/mkrshift_extension_builder_plan.json`.
