@@ -1,16 +1,44 @@
 {
-  "last_node_id": 1,
-  "last_link_id": 0,
+  "last_node_id": 2,
+  "last_link_id": 1,
   "nodes": [
     {
       "id": 1,
-      "type": "MKRNodeExtensionBuilderPlan",
-      "pos": [420, 280],
-      "size": [430, 330],
+      "type": "MKRNodeExtensionBuilderAdvanced",
+      "pos": [120, 260],
+      "size": [430, 360],
       "flags": {},
       "order": 0,
       "mode": 0,
       "inputs": [],
+      "outputs": [
+        { "name": "advanced_options_json", "type": "STRING", "links": [1] },
+        { "name": "summary_json", "type": "STRING", "links": null }
+      ],
+      "properties": { "Node name for S&R": "MKRNodeExtensionBuilderAdvanced" },
+      "widgets_values": [
+        "MKRShift Nodes extension package scaffold for ComfyUI distribution workflows.",
+        "https://github.com/criskb/MKRShift_Nodes",
+        "MIT",
+        "web",
+        "0.18.1",
+        "comfyui, mkrshift, workflow",
+        "{\"supports_v3_companions\":true,\"workflow_examples_dir\":\"example_workflows\"}",
+        "https://github.com/criskb/comfyui-node-extension-builder",
+        ""
+      ]
+    },
+    {
+      "id": 2,
+      "type": "MKRNodeExtensionBuilderPlan",
+      "pos": [620, 260],
+      "size": [430, 350],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        { "name": "advanced_bundle_json", "type": "STRING", "link": 1 }
+      ],
       "outputs": [
         { "name": "builder_manifest_json", "type": "STRING", "links": null },
         { "name": "builder_command", "type": "STRING", "links": null },
@@ -22,12 +50,14 @@
         "criskb",
         "0.1.0",
         "__init__.py",
-        "[\"MKRNodeExtensionBuilderPlan\", \"x1SharpenPro\"]",
-        "{\"repository\":\"https://github.com/criskb/MKRShift_Nodes\",\"license\":\"MIT\",\"skill_url\":\"https://github.com/criskb/comfyui-node-extension-builder\"}"
+        "[\"MKRNodeExtensionBuilderAdvanced\", \"MKRNodeExtensionBuilderPlan\", \"x1SharpenPro\"]",
+        "{}"
       ]
     }
   ],
-  "links": [],
+  "links": [
+    [1, 1, 0, 2, 0, "STRING"]
+  ],
   "groups": [],
   "config": {},
   "extra": {

@@ -15,6 +15,7 @@
   - [AxBCompare](AxBCompare.md)
 - Addon Workflow
   - [MKRAddonWorkflowInterface](MKRAddonWorkflowInterface.md)
+  - [MKRNodeExtensionBuilderAdvanced](MKRNodeExtensionBuilderAdvanced.md)
   - [MKRNodeExtensionBuilderPlan](MKRNodeExtensionBuilderPlan.md)
 - Addon Debug
   - [MKRJSONDiff](MKRJSONDiff.md)

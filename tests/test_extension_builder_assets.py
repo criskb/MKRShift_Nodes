@@ -22,6 +22,7 @@ class ExtensionBuilderAssetTests(unittest.TestCase):
         payload = json.loads(path.read_text(encoding="utf-8"))
         node_types = {node.get("type") for node in payload.get("nodes", []) if isinstance(node, dict)}
         self.assertIn("MKRNodeExtensionBuilderPlan", node_types)
+        self.assertIn("MKRNodeExtensionBuilderAdvanced", node_types)
 
 
 if __name__ == "__main__":

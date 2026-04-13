@@ -65,6 +65,7 @@ class NodePackSmokeTests(unittest.TestCase):
             "MKROutfitSet",
             "MKRCLIPTextEncodePrompt",
             "MKRAddonWorkflowInterface",
+            "MKRNodeExtensionBuilderAdvanced",
             "MKRJSONDiff",
             "MKRAddonStats",
             "MKRBlenderSceneImport",

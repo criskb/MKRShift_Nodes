@@ -9,7 +9,7 @@ Builds a starter `comfyui-node-extension-builder` manifest and companion command
 - `version`: Semver version string. Invalid values auto-fallback to `0.1.0`.
 - `entry_file`: Python entry file (`__init__.py` by default).
 - `node_list_json`: JSON array of node names or node objects (`{"name":"Node", "enabled":true}`).
-- `advanced_options_json`: Optional expert metadata JSON:
+- `advanced_options_json`: Optional inline expert metadata JSON:
   - `description`
   - `repository`
   - `license`
@@ -19,6 +19,7 @@ Builds a starter `comfyui-node-extension-builder` manifest and companion command
   - `extras`
   - `skill_url` (marks skill-aware planning in summary output)
   - `builder_cli_command` (optional override for the returned command string)
+- `advanced_bundle_json`: Optional string input intended for `MKRNodeExtensionBuilderAdvanced`. Bundle values merge with `advanced_options_json`, and the bundle wins when both set the same text field.
 
 ## Outputs
 
@@ -28,6 +29,7 @@ Builds a starter `comfyui-node-extension-builder` manifest and companion command
 
 ## Notes
 
-- Keep frequently used values in primary inputs and place packaging-specific extras in `advanced_options_json`.
+- Keep frequently used values in primary inputs and place packaging-specific extras in `advanced_options_json` or, preferably, `MKRNodeExtensionBuilderAdvanced`.
+- The dedicated advanced node is the cleaner option when you want a reusable expert-only subgraph for tags, repository metadata, builder command overrides, or manifest extras.
 - Default flow: run the returned command, write `builder_manifest_json` to `extension.builder.json`, then run your local builder CLI.
 - For onboarding, see `example_workflows/mkrshift_extension_builder_plan.json`.

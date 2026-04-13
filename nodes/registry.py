@@ -1,7 +1,7 @@
 from . import MKRCharacterCustomizer, AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRThemeDebugger
 from .prompt_nodes import MKRCLIPTextEncodePrompt
 from .addon_workflow_nodes import MKRAddonWorkflowInterface
-from .extension_builder_nodes import MKRNodeExtensionBuilderPlan
+from .extension_builder_nodes import MKRNodeExtensionBuilderAdvanced, MKRNodeExtensionBuilderPlan
 from .addon_debug_nodes import MKRAddonStats, MKRJSONDiff
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
 from .bridge_nodes import (
@@ -336,6 +336,7 @@ NODE_CLASS_MAPPINGS = {
     "MKROutfitSet": MKROutfitSet,
     "MKRCLIPTextEncodePrompt": MKRCLIPTextEncodePrompt,
     "MKRAddonWorkflowInterface": MKRAddonWorkflowInterface,
+    "MKRNodeExtensionBuilderAdvanced": MKRNodeExtensionBuilderAdvanced,
     "MKRNodeExtensionBuilderPlan": MKRNodeExtensionBuilderPlan,
     "MKRJSONDiff": MKRJSONDiff,
     "MKRAddonStats": MKRAddonStats,
@@ -658,6 +659,7 @@ _RAW_NODE_DISPLAY_NAME_MAPPINGS = {
     "MKROutfitSet": "Outfit Set • MKRShift Nodes",
     "MKRCLIPTextEncodePrompt": "CLIP Text Encode (Prompt) • MKRShift Nodes",
     "MKRAddonWorkflowInterface": "Addon Workflow Interface • MKRShift Nodes",
+    "MKRNodeExtensionBuilderAdvanced": "Node Extension Builder Advanced • MKRShift Nodes",
     "MKRNodeExtensionBuilderPlan": "Node Extension Builder Plan • MKRShift Nodes",
     "MKRJSONDiff": "JSON Diff • MKRShift Nodes",
     "MKRAddonStats": "Addon Stats • MKRShift Nodes",

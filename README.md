@@ -20,7 +20,7 @@ MKRShift Nodes is a broad ComfyUI node pack focused on image craft and workflow 
 | --- | --- | --- |
 | Direction | `MKRCharacterCustomizer`, `MKRCharacterState`, `MKROutfitSet`, `MKRPoseStudio`, `AngleShift`, `Aspect1X`, `AxBCompare` | Character setup, persistent identity state, outfit variation, 3D pose blockout, angle exploration, compare views, and framing |
 | Blender Bridge | `MKRBlenderSceneImport`, `MKRBlenderCameraShot`, `MKRBlenderImageImport`, `MKRBlenderImageOutputPlan`, `MKRBlenderMaterialImport`, `MKRBlenderMaterialReturnPlan`, `MKRBlenderReturnPlan` | Import Blender camera, armature, image, and material payloads, derive shot/material metadata, and build return plans for roundtrip workflows |
-| Host Addons | `MKRBlenderSceneImport`, `MKRTouchDesignerImport`, `MKRTiXLImport`, `MKRNukeScriptImport`, `MKRPhotoshopDocumentImport`, `MKRAfterEffectsCompImport`, `MKRPremiereSequenceImport`, `MKRAffinityDocumentImport`, `MKRAffinityPhotoshopPluginPlan`, `MKRFusion360SceneImport`, `MKRFusion360ImageImport`, `MKRMayaSceneImport`, `MKRMayaImageImport`, `MKRNodeExtensionBuilderPlan` | Packet-first host integrations with per-application addon scaffolds under `addons/` and matching ComfyUI nodes under `Addons/...`, including image/texture handoff lanes for the 3D hosts, an Affinity route based on Photoshop-plugin compatibility, plus extension-builder manifest planning with optional expert JSON for repository/license metadata and skill-driven packaging command output |
+| Host Addons | `MKRBlenderSceneImport`, `MKRTouchDesignerImport`, `MKRTiXLImport`, `MKRNukeScriptImport`, `MKRPhotoshopDocumentImport`, `MKRAfterEffectsCompImport`, `MKRPremiereSequenceImport`, `MKRAffinityDocumentImport`, `MKRAffinityPhotoshopPluginPlan`, `MKRFusion360SceneImport`, `MKRFusion360ImageImport`, `MKRMayaSceneImport`, `MKRMayaImageImport`, `MKRNodeExtensionBuilderAdvanced`, `MKRNodeExtensionBuilderPlan` | Packet-first host integrations with per-application addon scaffolds under `addons/` and matching ComfyUI nodes under `Addons/...`, including image/texture handoff lanes for the 3D hosts, an Affinity route based on Photoshop-plugin compatibility, plus an extension-builder lane with a cleaner advanced sidecar node for repository/license/tag metadata and skill-driven packaging command output |
 | Network Transport | `MKRAddonEndpointPlan`, `MKROSCMessagePlan`, `MKRNDIStreamPlan`, `MKRSpoutSenderPlan`, `MKRSyphonSenderPlan`, `MKRTCPBridgePlan`, `MKRHTTPWebhookPlan`, `MKRWatchFolderPlan`, `MKRWebSocketBridgePlan` | Reusable endpoint and transport plans for host add-ons, including HTTP endpoint jobs, OSC, NDI, Spout, Syphon, TCP, watch-folder, and WebSocket workflows |
 | Surface + Material | `x1PreviewMaterial`, `x1PBRPack`, `x1ClearcoatMap`, `x1ClearcoatRoughnessMap`, `x1EdgeWearMask`, `x1TextureDetileBlend` | Practical PBR map derivation, material preview, packing, wear masking, and anti-tiling texture cleanup |
 | Color + Lookdev | `xLUT`, `xLUTOutput`, `x1ColorWheels`, `x1Curves`, `x1ColorWarpHueSat`, `x1ColorWarpChromaLuma`, `x1PaletteMap` | LUT authoring, grading, color matching, mesh-based warping, and look building |
@@ -88,7 +88,7 @@ Subgraph blueprints for the addon/network lane live in `subgraphs/`.
 
 ## Extension Builder Quickstart
 
-This repo now includes a starter builder config at `extension.builder.json` and a minimal example workflow at `example_workflows/mkrshift_extension_builder_plan.json` for `MKRNodeExtensionBuilderPlan`.
+This repo now includes a starter builder config at `extension.builder.json` and a minimal example workflow at `example_workflows/mkrshift_extension_builder_plan.json` for `MKRNodeExtensionBuilderPlan` plus the `MKRNodeExtensionBuilderAdvanced` sidecar node.
 
 Suggested build command:
 
@@ -96,7 +96,7 @@ Suggested build command:
 python3 /opt/codex/skills/.system/skill-installer/scripts/install-skill-from-github.py --repo criskb/comfyui-node-extension-builder --path . --name comfyui-node-extension-builder
 ```
 
-Then write the `builder_manifest_json` output from `MKRNodeExtensionBuilderPlan` to `extension.builder.json` and run your preferred builder CLI (or pass `builder_cli_command` in `advanced_options_json`).
+Then write the `builder_manifest_json` output from `MKRNodeExtensionBuilderPlan` to `extension.builder.json` and run your preferred builder CLI. For cleaner graphs, keep expert metadata on `MKRNodeExtensionBuilderAdvanced` and connect its `advanced_options_json` output into `advanced_bundle_json` on the plan node.
 
 ## Notes
 

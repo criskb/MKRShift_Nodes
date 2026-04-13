@@ -54,6 +54,7 @@ from MKRShift_Nodes.nodes.bridge_nodes import (  # noqa: E402
 )
 from MKRShift_Nodes.nodes.addon_workflow_nodes import MKRAddonWorkflowInterface  # noqa: E402
 from MKRShift_Nodes.nodes.addon_debug_nodes import MKRAddonStats, MKRJSONDiff  # noqa: E402
+from MKRShift_Nodes.nodes.extension_builder_nodes import MKRNodeExtensionBuilderAdvanced, MKRNodeExtensionBuilderPlan  # noqa: E402
 from MKRShift_Nodes.nodes.host_3d_image_bridge_nodes import (  # noqa: E402
     MKRBlenderImageImport,
     MKRBlenderImageOutputPlan,
@@ -218,6 +219,8 @@ class CategoryTaxonomyTests(unittest.TestCase):
         self.assertEqual(MKRBlenderReturnPlan.CATEGORY, BRIDGE_BLENDER)
         self.assertEqual(MKRBlenderReturnOutput.CATEGORY, BRIDGE_BLENDER)
         self.assertEqual(MKRAddonWorkflowInterface.CATEGORY, ADDONS_WORKFLOW)
+        self.assertEqual(MKRNodeExtensionBuilderAdvanced.CATEGORY, ADDONS_WORKFLOW)
+        self.assertEqual(MKRNodeExtensionBuilderPlan.CATEGORY, ADDONS_WORKFLOW)
         self.assertEqual(MKRJSONDiff.CATEGORY, ADDONS_NETWORK)
         self.assertEqual(MKRAddonStats.CATEGORY, ADDONS_NETWORK)
 

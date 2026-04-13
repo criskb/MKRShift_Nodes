@@ -2,6 +2,7 @@ from .core_nodes import AngleShift, Aspect1X, Aspect1XBatch, AxBCompare, MKRChar
 from .character_state_nodes import MKRCharacterState, MKROutfitSet
 from .prompt_nodes import MKRCLIPTextEncodePrompt
 from .addon_workflow_nodes import MKRAddonWorkflowInterface
+from .extension_builder_nodes import MKRNodeExtensionBuilderAdvanced, MKRNodeExtensionBuilderPlan
 from .addon_debug_nodes import MKRAddonStats, MKRJSONDiff
 from .bridge_nodes import (
     MKRBlenderCameraShot,
@@ -113,6 +114,8 @@ __all__ = [
     "MKROutfitSet",
     "MKRCLIPTextEncodePrompt",
     "MKRAddonWorkflowInterface",
+    "MKRNodeExtensionBuilderAdvanced",
+    "MKRNodeExtensionBuilderPlan",
     "MKRJSONDiff",
     "MKRAddonStats",
     "MKRBlenderSceneImport",
